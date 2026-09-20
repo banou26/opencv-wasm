@@ -179,8 +179,8 @@ Import the package and call `createOpenCV` inside an ES module worker. Send imag
 Prerequisites: Node 22+, npm, Python 3.12+, Docker, curl, tar and sha256sum. Linux is the verified build host.
 
 ```sh
-git clone git@github.com:banou26/opencv-js.git
-cd opencv-js
+git clone git@github.com:banou26/opencv-wasm.git
+cd opencv-wasm
 npm ci
 npm run build
 npm test

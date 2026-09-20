@@ -4,11 +4,11 @@
   "description": "OpenCV and contrib compiled to WebAssembly with generated TypeScript bindings",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/banou26/opencv-js.git"
+    "url": "git+https://github.com/banou26/opencv-wasm.git"
   },
-  "homepage": "https://github.com/banou26/opencv-js#readme",
+  "homepage": "https://github.com/banou26/opencv-wasm#readme",
   "bugs": {
-    "url": "https://github.com/banou26/opencv-js/issues"
+    "url": "https://github.com/banou26/opencv-wasm/issues"
   },
   "type": "module",
   "license": "Apache-2.0",

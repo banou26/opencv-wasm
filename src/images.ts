@@ -18,6 +18,12 @@ export const matFromArray = (cv: MainModule, rows: number, cols: number, type: n
     throw new RangeError('Unsupported matrix element type')
   }
   if (data.length !== rows * cols * channels) throw new RangeError('Data length does not match the matrix dimensions and channels')
+  // A caller can pass a live view of this instance. Allocating the destination
+  // may grow the heap and detach that view before its pixels have been copied.
+  if (ArrayBuffer.isView(data) && data.buffer === cv.HEAPU8.buffer) {
+    const borrowed = data as typeof data & { slice(): typeof data }
+    data = borrowed.slice()
+  }
   const mat = new cv.Mat(rows, cols, type)
   try {
     if (depth === 10 || depth === 11) {
@@ -33,6 +39,16 @@ export const matFromArray = (cv: MainModule, rows: number, cols: number, type: n
     } else {
       const view = depth === 0 || depth === 9 ? mat.data : depth === 1 ? mat.data8S : depth === 2 ? mat.data16U
         : depth === 3 ? mat.data16S : depth === 4 ? mat.data32S : depth === 5 ? mat.data32F : depth === 6 ? mat.data64F : mat.data32U
+      // Typed numeric arrays already guarantee numeric elements. Bulk copying is
+      // substantially faster for full video frames and preserves TypedArray's
+      // numeric conversion rules; boolean normalization still needs the loop.
+      if (depth !== 9 && (data instanceof Uint8Array || data instanceof Uint8ClampedArray
+        || data instanceof Int8Array || data instanceof Uint16Array || data instanceof Int16Array
+        || data instanceof Uint32Array || data instanceof Int32Array || data instanceof Float32Array
+        || data instanceof Float64Array)) {
+        view.set(data)
+        return mat
+      }
       for (let index = 0; index < data.length; index++) {
         const value = data[index]
         if (depth === 9) {

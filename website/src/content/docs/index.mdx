@@ -1,0 +1,44 @@
+---
+title: Computer vision, in your language.
+description: OpenCV 5 for TypeScript, the browser and Node.js. Learn the algorithms, inspect the API, and experiment with real WebAssembly.
+tableOfContents: false
+---
+import AlgorithmDiagram from '../../components/AlgorithmDiagram.astro'
+import { algorithms } from '../../data/algorithms'
+
+<div class="eyebrow"><span>opencv-wasm</span><span>OpenCV 5.0.0 · TypeScript · CPU WASM</span></div>
+
+<p class="lead">From pixels to an understanding of the scene. Bring OpenCV to the browser and Node.js, with typed APIs and a visual guide to the ideas behind them.</p>
+
+<div class="hero-actions"><a href="/start/quickstart/">Start building →</a><a href="/algorithms/">Explore the algorithms</a><a href="/lab/">Open the image lab</a></div>
+
+<AlgorithmDiagram algorithm={algorithms.find(a => a.id === 'homography')} />
+
+<div class="stats-strip"><span><b>5.0.0</b> native OpenCV</span><span><b>56</b> configured CPU modules</span><span><b>ESM</b> browser, worker, Node</span></div>
+
+## A library you can inspect
+
+`@banou/opencv` compiles OpenCV and its contrib modules directly from C++ to WebAssembly. The API includes image processing, features, calibration, tracking, machine learning, DNN inference and more. Your editor gets parameter descriptions, exact overloads and distinct native handle types.
+
+```ts
+import { createOpenCV, matFromArray } from '@banou/opencv'
+
+const cv = await createOpenCV()
+using image = matFromArray(cv, 2, 3, cv.CV_8UC1, [0, 30, 90, 150, 220, 255])
+using binary = new cv.Mat()
+cv.threshold(image, binary, 127, 255, cv.THRESH_BINARY)
+console.log(binary.data.slice()) // [0, 0, 0, 255, 255, 255]
+```
+
+This example runs in Node with the installed build. Browser bundlers should pass the WASM asset URL explicitly; the [quickstart](/start/quickstart/) shows the complete setup.
+
+<div class="atlas-grid">
+  <a class="atlas-card" href="/algorithms/"><small>Understand</small><h3>The algorithm atlas</h3><p>Annotated diagrams, practical uses, tuning parameters and failure cases. Follow the data through each method.</p><span>Learn by seeing →</span></a>
+  <a class="atlas-card" href="/api/"><small>Look up</small><h3>The complete reference</h3><p>Generated from the declarations you install. Search functions, classes and types, then inspect their exact signatures.</p><span>Browse the API →</span></a>
+  <a class="atlas-card" href="/lab/"><small>Experiment</small><h3>Real pixels, real WASM</h3><p>Explore filters, edges, thresholds and morphology. Change parameters and see the result in a browser worker.</p><span>Try an algorithm →</span></a>
+  <a class="atlas-card" href="/start/python/"><small>Migrate</small><h3>Coming from Python</h3><p>Keep familiar computer vision concepts while adopting destination matrices, typed results and explicit resource ownership.</p><span>Read the migration guide →</span></a>
+</div>
+
+## Know what is supported
+
+This is a CPU build with WebAssembly SIMD. Browser and Node use the same native engine. Models, fonts and OCR data are supplied by your application. Python name coverage is measured separately from behavior and signature compatibility; [the compatibility page](/reference/compatibility/) records both the capabilities and the limits.

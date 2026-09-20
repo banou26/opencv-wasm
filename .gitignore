@@ -7,3 +7,11 @@ lib/
 test-results/
 *.log
 __pycache__/
+website/.astro/
+website/dist/
+website/src/data/api.generated.json
+website/public/runtime/
+website/public/LICENSE.txt
+website/public/THIRD_PARTY_NOTICES.txt
+website/public/licenses/
+website/playwright-report/

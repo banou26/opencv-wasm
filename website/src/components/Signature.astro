@@ -1,0 +1,6 @@
+---
+import { apiURL } from '../lib/reference'
+const { code } = Astro.props as { code: string }
+const tokens = code.split(/(\b[A-Za-z_$][\w$]*\b)/g)
+---
+<pre class="signature" tabindex="0"><code>{tokens.map(token => apiURL(token) ? <a href={apiURL(token)}>{token}</a> : <span class:list={{ keyword: /^(void|number|string|boolean|null|undefined|new|export|declare|type|interface|const|readonly|bigint)$/.test(token) }}>{token}</span>)}</code></pre>

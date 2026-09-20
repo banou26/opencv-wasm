@@ -1,0 +1,6 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": { "lib": ["ESNext", "DOM", "DOM.Iterable"], "types": ["vite/client"], "allowJs": false },
+  "include": [".astro/types.d.ts", "src/**/*", "playwright.config.ts", "tests/**/*.ts"],
+  "exclude": ["dist", "node_modules", "public"]
+}

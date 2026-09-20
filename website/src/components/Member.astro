@@ -1,0 +1,15 @@
+---
+import Prose from './Prose.astro'
+import Signature from './Signature.astro'
+import type { Member } from '../lib/reference'
+const { member, id } = Astro.props as { member: Member; id?: string }
+---
+<section class="api-member" id={id}>
+  {id && <h3><a href={`#${id}`}>{member.static ? 'static ' : ''}{member.name}</a></h3>}
+  <Prose text={member.description} />
+  {member.signatures[0] && <Signature code={member.signatures.at(-1)!} />}
+  {member.signatures.length > 1 && <details class="overloads"><summary>{member.signatures.length} available overloads</summary>{member.signatures.map(s => <Signature code={s} />)}</details>}
+  {member.parameters.length > 0 && <dl class="parameters">{member.parameters.map(p => <div><dt><code>{p.name}</code></dt><dd><Prose text={p.description} /></dd></div>)}</dl>}
+  {member.returns && <div class="returns"><strong>Returns</strong><Prose text={member.returns} /></div>}
+  {member.sources.length > 0 && <p class="source-link">{member.sources.slice(0, 3).map((url, i) => <a href={url}>Upstream declaration{i ? ` ${i + 1}` : ''} ↗</a>)}</p>}
+</section>

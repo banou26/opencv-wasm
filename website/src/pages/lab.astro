@@ -1,0 +1,13 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import ImageLab from '../components/ImageLab.astro'
+---
+<StarlightPage frontmatter={{ title: 'Image laboratory', description: 'Run real OpenCV algorithms in a browser worker and explore the effect of their parameters.' }}>
+  <div class="eyebrow"><span>Live experiment</span><span>CPU · WebAssembly · Worker</span></div>
+  <p class="lead">Change one parameter. See which structures survive. These are actual OpenCV results from the same package you use in TypeScript.</p>
+  <ImageLab />
+  <h2 id="what-runs">What runs here</h2>
+  <p>The first run downloads the packaged WASM engine. The image is converted to grayscale, processed inside an ES module worker, copied out of native memory and drawn on the output canvas. Each native matrix and algorithm handle is disposed after processing.</p>
+  <p>Uploads are decoded locally and resized to at most 640 pixels on their longest side. Times include matrix upload, processing and output conversion; they exclude the first engine download and initialization. This is an exploration tool, not a controlled performance benchmark.</p>
+  <p>Read <a href="/guides/workers/">the worker guide</a> to use the same pattern in your application.</p>
+</StarlightPage>

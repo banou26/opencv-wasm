@@ -1,0 +1,88 @@
+---
+const operations = [
+  ['canny', 'Canny edges', 'Low threshold', 'The high threshold is 2.5× the low threshold. Weak edges must connect to strong ones.', 'canny'],
+  ['gaussian', 'Gaussian blur', 'Blur strength', 'The control increases sigma and the odd kernel width together.', 'gaussian-blur'],
+  ['median', 'Median filter', 'Neighbourhood size', 'The control selects an odd kernel width. Thin structures disappear along with specks.', 'median-filter'],
+  ['bilateral', 'Bilateral filter', 'Colour tolerance', 'The spatial radius stays fixed while colour tolerance increases.', 'bilateral-filter'],
+  ['sobel', 'Sobel x derivative', 'Display gain', 'A signed derivative is computed first, then displayed as an absolute 8-bit magnitude.', 'sobel'],
+  ['threshold', 'Binary threshold', 'Intensity threshold', 'The selected level maps to 0..255. Pixels above it become white.', 'threshold'],
+  ['adaptive', 'Adaptive threshold', 'Neighbourhood size', 'Gaussian local thresholding with a fixed C=5 and an odd block size.', 'adaptive-threshold'],
+  ['closing', 'Morphological closing', 'Kernel size', 'The input is thresholded at 127, then closed with an elliptical structuring element.', 'morphology'],
+  ['distance', 'Euclidean distance', 'Mask threshold', 'Threshold the image, compute exact L2 distance to zero, then normalize it for display.', 'distance-transform'],
+  ['clahe', 'CLAHE', 'Contrast limit', 'An 8×8 tile grid is used while the histogram clip limit changes.', 'clahe'],
+]
+---
+<image-lab>
+  <div class="lab-controls"><label>Algorithm<select name="algorithm">{operations.map(([id, title]) => <option value={id}>{title}</option>)}</select></label><label><span class="amount-label">Low threshold</span><input type="range" min="1" max="100" value="40" name="amount"/><output>40</output></label></div>
+  <p class="operation-note">{operations[0][3]}</p>
+  <div class="lab-canvases"><figure><canvas width="448" height="320" class="input" role="img" aria-label="Input image: a synthetic geometric scene"/><figcaption>Input · converted to grayscale for these examples</figcaption></figure><figure><canvas width="448" height="320" class="output" role="img" aria-label="OpenCV algorithm output"/><figcaption>Output · actual OpenCV 5 CPU WASM</figcaption></figure></div>
+  <div class="lab-actions"><button type="button" class="load-runtime">Load OpenCV and run</button><label class="file-button">Use an image<input type="file" accept="image/*" /></label><button type="button" class="reset-image">Reset image</button><button type="button" class="download" disabled>Save PNG</button></div>
+  <p class="lab-status" role="status" aria-live="polite">The engine loads only when you run an example. Image processing stays in a browser worker.</p>
+  <p><a class="guide-link" href="/algorithms/canny/">Read the visual explanation →</a></p>
+  <script type="application/json" class="lab-operations" set:html={JSON.stringify(operations)} />
+</image-lab>
+<script>
+  import LabWorker from '../scripts/lab.worker.ts?worker'
+  class ImageLab extends HTMLElement {
+    private worker?: Worker
+    connectedCallback() {
+      const input = this.querySelector<HTMLCanvasElement>('canvas.input')!, output = this.querySelector<HTMLCanvasElement>('canvas.output')!
+      const ctx = input.getContext('2d', { willReadFrequently: true })!, dst = output.getContext('2d')!
+      const select = this.querySelector<HTMLSelectElement>('select')!, slider = this.querySelector<HTMLInputElement>('[name=amount]')!, status = this.querySelector<HTMLElement>('.lab-status')!, run = this.querySelector<HTMLButtonElement>('.load-runtime')!, download = this.querySelector<HTMLButtonElement>('.download')!
+      const operations = JSON.parse(this.querySelector('.lab-operations')!.textContent!) as string[][]
+      let sequence = 0, busy = false, pending = false, ready = false, completedAlgorithm = 'canny'
+      const draw = () => {
+        input.width = output.width = 448; input.height = output.height = 320
+        const g = ctx.createLinearGradient(0, 0, 448, 320); g.addColorStop(0, '#222637'); g.addColorStop(1, '#afb7cc'); ctx.fillStyle = g; ctx.fillRect(0, 0, 448, 320)
+        ctx.fillStyle = '#d9d3f2'; ctx.fillRect(47, 77, 139, 178); ctx.fillStyle = '#525969'; ctx.fillRect(62, 95, 25, 28); ctx.fillRect(107, 95, 25, 28); ctx.fillRect(151, 95, 21, 28); ctx.fillRect(62, 148, 25, 27); ctx.fillRect(107, 148, 25, 27); ctx.fillRect(151, 148, 21, 27); ctx.fillRect(100, 206, 35, 49)
+        ctx.beginPath(); ctx.moveTo(31, 77); ctx.lineTo(116, 23); ctx.lineTo(200, 77); ctx.closePath(); ctx.fillStyle = '#9480d4'; ctx.fill()
+        ctx.beginPath(); ctx.arc(320, 108, 56, 0, Math.PI * 2); ctx.fillStyle = '#8eab91'; ctx.fill(); ctx.beginPath(); ctx.arc(337, 95, 25, 0, Math.PI * 2); ctx.fillStyle = '#b3cead'; ctx.fill(); ctx.fillStyle = '#534c51'; ctx.fillRect(312, 153, 15, 97)
+        ctx.fillStyle = '#dfc28e'; ctx.beginPath(); ctx.moveTo(96, 320); ctx.lineTo(175, 258); ctx.lineTo(221, 258); ctx.lineTo(320, 320); ctx.fill()
+        ctx.font = 'bold 18px system-ui'; ctx.fillStyle = '#f0ece6'; ctx.fillText('OpenCV 5', 250, 284)
+        for (let i = 0; i < 260; i++) { ctx.fillStyle = i % 2 ? '#ffffff70' : '#00000060'; ctx.fillRect((i * 191) % 448, (i * 73) % 320, 1, 1) }
+        dst.fillStyle = '#191c23'; dst.fillRect(0, 0, output.width, output.height); dst.font = '15px system-ui'; dst.fillStyle = '#9496a2'; dst.fillText('Run an algorithm to see its result', 106, 161)
+      }
+      const explain = () => { const op = operations.find(o => o[0] === select.value)!; this.querySelector('.amount-label')!.textContent = op[2]; this.querySelector('.operation-note')!.textContent = op[3]; this.querySelector<HTMLAnchorElement>('.guide-link')!.href = `/algorithms/${op[4]}/`; this.querySelector('output')!.textContent = slider.value }
+      const process = () => {
+        download.disabled = true
+        if (!this.worker) return
+        if (busy) { pending = true; return }
+        busy = true; status.textContent = ready ? 'Processing in the worker…' : 'Loading the WebAssembly engine…'
+        const image = ctx.getImageData(0, 0, input.width, input.height)
+        this.worker.postMessage({ id: ++sequence, pixels: image.data, width: image.width, height: image.height, algorithm: select.value, amount: Number(slider.value) }, [image.data.buffer])
+      }
+      run.addEventListener('click', () => {
+        if (!this.worker) {
+          this.worker = new LabWorker()
+          this.worker.onmessage = ({ data }) => {
+            busy = false
+            if (data.error) { status.textContent = `OpenCV could not process this input: ${data.error}`; run.disabled = false; pending = false; return }
+            ready = true; completedAlgorithm = data.algorithm
+            output.width = data.width; output.height = data.height; dst.putImageData(new ImageData(data.pixels, data.width, data.height), 0, 0)
+            status.textContent = `OpenCV ${data.version} · ${data.elapsed.toFixed(1)} ms · ${data.width} × ${data.height} · CPU WASM in a worker`
+            this.dataset.result = String(data.id); download.disabled = false; run.textContent = 'Run again'; run.disabled = false
+            if (pending) { pending = false; process() }
+          }
+          this.worker.onerror = event => { busy = false; run.disabled = false; status.textContent = `Worker failed: ${event.message}`; this.worker?.terminate(); this.worker = undefined; ready = false }
+        }
+        run.disabled = true; process()
+      })
+      select.addEventListener('change', () => { explain(); process() }); slider.addEventListener('input', () => { explain(); process() })
+      this.querySelector<HTMLInputElement>('[type=file]')!.addEventListener('change', async event => {
+        const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return
+        try {
+          const bitmap = await createImageBitmap(file), scale = Math.min(1, 640 / Math.max(bitmap.width, bitmap.height))
+          input.width = Math.max(1, Math.round(bitmap.width * scale)); input.height = Math.max(1, Math.round(bitmap.height * scale)); ctx.drawImage(bitmap, 0, 0, input.width, input.height); bitmap.close(); process()
+        } catch { status.textContent = 'This image could not be decoded by the browser. Try a PNG or JPEG.' }
+      })
+      this.querySelector('.reset-image')!.addEventListener('click', () => { draw(); process() })
+      download.addEventListener('click', () => { const link = document.createElement('a'); link.download = `opencv-${completedAlgorithm}.png`; link.href = output.toDataURL('image/png'); link.click() })
+      draw(); explain()
+    }
+    disconnectedCallback() { this.worker?.terminate(); this.worker = undefined }
+  }
+  if (!customElements.get('image-lab')) customElements.define('image-lab', ImageLab)
+</script>
+<style>
+  image-lab{display:block;margin:2rem 0}.lab-controls{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}.lab-controls label{font-size:.8rem;font-weight:600}.lab-controls select{display:block;margin-top:.5rem;width:100%;padding:.6rem .8rem;color:var(--sl-color-text);background:var(--panel);border:1px solid var(--line);border-radius:6px;font:inherit}.lab-controls input[type=range]{display:block;width:100%;margin:.9rem 0 .2rem;accent-color:var(--violet)}.lab-controls output{color:var(--muted);font:400 .75rem var(--sl-font-mono)}.operation-note{min-height:3rem;color:var(--muted);font-size:.85rem}.lab-canvases{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.lab-canvases figure{margin:0}.lab-canvases canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:7px;display:block}.lab-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin:1.5rem 0}.lab-actions button,.file-button{font:500 .78rem var(--sl-font);border:1px solid var(--line);border-radius:6px;padding:.6rem .85rem;color:var(--sl-color-text);background:var(--panel);cursor:pointer}.lab-actions .load-runtime{background:var(--sl-color-accent-high);color:var(--sl-color-bg);border:0}.lab-actions button:disabled{opacity:.5;cursor:default}.file-button input{max-width:1px;position:absolute;opacity:0}.file-button:focus-within{outline:2px solid var(--violet)}.lab-status{font:400 .77rem/1.6 var(--sl-font-mono);color:var(--mint);min-height:2.5rem}.guide-link{font-size:.85rem}@media(max-width:600px){.lab-controls,.lab-canvases{grid-template-columns:1fr}.operation-note{min-height:0}}
+</style>

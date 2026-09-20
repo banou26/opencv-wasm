@@ -1,0 +1,18 @@
+---
+import { Marked } from 'marked'
+import { apiURL } from '../lib/reference'
+const { text = '' } = Astro.props
+const escape = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+const renderer = new Marked({ renderer: {
+  html: ({ text }) => escape(text),
+  link({ href, tokens }) {
+    const label = this.parser.parseInline(tokens)
+    const target = href.startsWith('cv::') ? apiURL(href.slice(4).replaceAll('::', '_'))
+      : decodeURIComponent(href).includes('gapi_kernel_api') ? '/guides/graphs/'
+      : /^(https?:\/\/|\/|#)/.test(href) ? href : undefined
+    return target ? `<a href="${escape(target).replaceAll('"', '&quot;')}">${label}</a>` : label
+  },
+} })
+const html = await renderer.parse(text)
+---
+<div class="api-prose" set:html={html} />

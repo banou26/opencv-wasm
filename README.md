@@ -4,6 +4,8 @@ OpenCV 5.0.0 and opencv_contrib compiled directly from C++ to WebAssembly, with 
 
 Version 0.0.6 targets Python OpenCV 5. See the [migration notes](docs/opencv-5.md) for changed matrix type codes, new pixel types, tensor shapes and module names.
 
+The [documentation website](website/README.md) includes a searchable API reference, 94 visual algorithm guides, and an image laboratory that runs real OpenCV in a browser worker. After building the package, run `npm ci --prefix website` and `npm run docs:dev` to open it locally.
+
 This build includes 56 CPU modules, including G-API, video I/O, FreeType, HDF5, Tesseract OCR and SFM with Ceres. It supports custom graph kernels with mixed matrix, scalar, array and opaque ports, and generated JSDoc in the shipped TypeScript declarations. There are 69 execution scenarios checked in Node and Chromium. The API uses TypeScript and native matrices, with Python-style namespaces and factory aliases. It does not emulate NumPy or Python calling conventions. Read [coverage](docs/coverage.md) for the measured Python inventory, remaining gaps and module limits.
 
 ## Install the local build

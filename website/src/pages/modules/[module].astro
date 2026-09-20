@@ -1,0 +1,15 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { reference, moduleTitle } from '../../lib/reference'
+import FilterList from '../../components/FilterList.astro'
+import Prose from '../../components/Prose.astro'
+export function getStaticPaths() { return reference.modules.map(module => ({ params: { module }, props: { module } })) }
+const { module } = Astro.props
+const entries = reference.entries.filter(e => e.module === module), constants = reference.constants.filter(e => e.module === module)
+---
+<StarlightPage frontmatter={{ title: moduleTitle(module), description: `Functions, classes, types and constants in ${module}.` }}>
+  <p><a href="/modules/">All modules</a> / <code>{module}</code></p>
+  {!entries.length && <p class="callout">This target is compiled, but this inventory has no public declarations attributed to its headers. Compilation alone does not expose its C++ algorithms.</p>}
+  <FilterList label={`Filter ${module}`}><div class="reference-list">{entries.map(e => <a href={`/api/${e.slug}/`} data-search={`${e.display} ${e.description.slice(0, 160)}`}><strong>{e.display}</strong><span class="tag">{e.kind}</span><p>{e.description.split('\n')[0].replaceAll('*', '').slice(0, 180)}</p></a>)}</div></FilterList>
+  {constants.length > 0 && <><h2 id="constants">Constants</h2><p>Use the named constant from <code>cv</code>. In particular, OpenCV 5 matrix type codes differ from OpenCV 4.</p><dl class="constants">{constants.map(c => <div id={c.name}><dt><code>{c.display}</code></dt><dd><Prose text={c.description} /></dd></div>)}</dl></>}
+</StarlightPage>

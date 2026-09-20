@@ -1,0 +1,21 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { reference, apiURL, moduleTitle, type APIEntry } from '../../lib/reference'
+import Member from '../../components/Member.astro'
+import Dataflow from '../../components/Dataflow.astro'
+import { algorithms } from '../../data/algorithms'
+import AlgorithmDiagram from '../../components/AlgorithmDiagram.astro'
+export function getStaticPaths() { return reference.entries.map(entry => ({ params: { name: entry.slug }, props: { entry } })) }
+const { entry } = Astro.props as { entry: APIEntry }
+const visual = algorithms.find(a => a.apis.includes(entry.name))
+const description = entry.description.split('\n')[0].slice(0, 250)
+const headings = entry.members.map((m, i) => ({ depth: 3, slug: `member-${m.name}-${i}`, text: m.name }))
+---
+<StarlightPage frontmatter={{ title: entry.display, description, tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 } }} headings={headings}>
+  <div class="eyebrow"><a href={`/modules/${entry.module}/`}>{moduleTitle(entry.module)}</a><span>{entry.kind}</span><span>OpenCV 5.0.0</span></div>
+  {visual ? <aside class="visual-reference"><a href={`/algorithms/${visual.id}/`}>Explore visually: {visual.title} →</a><p>{visual.summary}</p><AlgorithmDiagram algorithm={visual} compact /></aside> : entry.kind !== 'type' && <Dataflow entry={entry} />}
+  {entry.kind === 'class' && <p class="callout">Native object: release it with <code>using</code> or <code>delete()</code>. Factories can return <code>null</code>; check before calling methods. {entry.bases.filter(b => b !== 'ClassHandle').map(b => <span>Inherits <a href={apiURL(b)}>{b}</a>. </span>)}</p>}
+  <Member member={entry} />
+  {entry.members.length > 0 && <><h2 id="members">Constructors and members</h2>{entry.members.map((m, i) => <Member member={m} id={`member-${m.name}-${i}`} />)}</>}
+  <p class="callout">These signatures describe this package. Upstream documentation can mention optional backends that are absent from this build. Check <a href="/reference/compatibility/">runtime compatibility</a> before choosing a backend or file format.</p>
+</StarlightPage>

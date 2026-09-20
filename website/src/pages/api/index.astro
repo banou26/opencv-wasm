@@ -1,0 +1,13 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import FilterList from '../../components/FilterList.astro'
+import { reference, moduleTitle } from '../../lib/reference'
+---
+<StarlightPage frontmatter={{ title: 'API browser', description: 'Search every native function, class, and TypeScript helper in this build.' }}>
+  <p class="lead">The declarations your editor sees, made readable. Exact overloads, parameter descriptions, return types, ownership, and links to the pinned OpenCV 5 source.</p>
+  <div class="stats-strip"><span><b>{reference.entries.length.toLocaleString()}</b> reference pages</span><span><b>{reference.constants.length.toLocaleString()}</b> constants</span><span><b>5.0.0</b> OpenCV</span></div>
+  <p>Functions take explicit output matrices. <a href="/start/python/">Read the Python migration guide</a> for namespaces, overload suffixes and memory ownership. <a href="/modules/">Browse modules and constants</a>.</p>
+  <FilterList label="Find a function, class, or type">
+    <div class="reference-list">{reference.entries.map(e => <a data-search={`${e.display} ${e.module} ${e.description.slice(0, 220)}`} href={`/api/${e.slug}/`}><div><strong>{e.display}</strong><span class="tag">{e.kind}</span><span class="module-label">{moduleTitle(e.module)}</span></div><p>{e.description.split('\n')[0].replaceAll('*', '').slice(0, 180)}</p></a>)}</div>
+  </FilterList>
+</StarlightPage>

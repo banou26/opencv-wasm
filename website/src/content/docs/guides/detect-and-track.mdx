@@ -1,0 +1,28 @@
+---
+title: Detect, then track
+description: Combine feature matching, robust geometry and local tracking into a practical realtime loop.
+---
+import AlgorithmDiagram from '../../../components/AlgorithmDiagram.astro'
+import { algorithms } from '../../../data/algorithms'
+
+Detection finds a target in a broad search space. Tracking follows an already located target through a smaller change. Combining them can reduce work per frame while retaining a way to recover after the target is lost.
+
+## Detect a textured plane
+
+Extract ORB or SIFT descriptors from the template and current frame. Match compatible descriptor types, reject ambiguous correspondences and fit a homography with a robust method. Check both the number and spatial distribution of inliers before accepting the pose.
+
+<AlgorithmDiagram algorithm={algorithms.find(a => a.id === 'homography')} />
+
+## Follow the pose
+
+Track good points with pyramidal Lucas-Kanade and re-estimate geometry from surviving correspondences. Alternatively, refine an already close warp with ECC when photometric alignment fits the target. Keep the last successful estimate as the next frame’s initialization.
+
+<AlgorithmDiagram algorithm={algorithms.find(a => a.id === 'ecc-alignment')} />
+
+## Decide when to detect again
+
+<div class="dataflow"><div class="dataflow-row"><div><small>ACQUIRE</small><strong>Features + matches + robust geometry</strong></div><span>→</span><div class="operation"><small>FOLLOW</small><strong>Lucas-Kanade or ECC</strong></div><span>→</span><div><small>VALIDATE</small><strong>Support, fit and plausible motion</strong></div></div></div>
+
+When confidence remains adequate, track the next frame. When tracking fails, support collapses or the warp becomes implausible, return to detection. Thresholds need to be calibrated against your footage; no universal inlier count establishes the right object.
+
+Keep detector output, tracking status and application confidence separate. A tracker returning a box is not proof that it still contains the intended target.

@@ -44,7 +44,11 @@
     "test:package": "npm pack && node scripts/test-package.mjs",
     "parity": "node scripts/python-parity.mjs",
     "test": "npm run typecheck && npm run test:node && npm run test:browser",
-    "prepack": "npm run build:js && node scripts/python-parity.mjs && node scripts/verify-package.mjs"
+    "prepack": "npm run build:js && node scripts/python-parity.mjs && node scripts/verify-package.mjs",
+    "docs:dev": "npm --prefix website run dev",
+    "docs:build": "npm --prefix website run build",
+    "docs:check": "npm --prefix website run check",
+    "docs:test": "npm --prefix website test"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

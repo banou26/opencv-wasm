@@ -1,0 +1,13 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { reference, moduleTitle } from '../../lib/reference'
+import FilterList from '../../components/FilterList.astro'
+---
+<StarlightPage frontmatter={{ title: 'Modules and features', description: 'What is compiled, what is exposed, and what runs in the browser.' }}>
+  <p class="lead">56 configured CPU modules. One WebAssembly instance. Browse the callable surface of each area below.</p>
+  <p>A compiled module does not imply every C++ algorithm has a binding. Modules with no generated reference entries are listed explicitly. <a href="/reference/compatibility/">Read the measured limits</a>.</p>
+  <FilterList label="Find a module"><div class="atlas-grid">{reference.modules.map(name => {
+    const entries = reference.entries.filter(e => e.module === name)
+    return <a class="atlas-card" data-search={`${name} ${moduleTitle(name)}`} href={`/modules/${name}/`}><small>{name}</small><h2>{moduleTitle(name)}</h2><p>{entries.filter(e => e.kind === 'function').length} functions · {entries.filter(e => e.kind === 'class').length} classes</p><span>Browse reference →</span></a>
+  })}</div></FilterList>
+</StarlightPage>

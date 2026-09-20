@@ -1,0 +1,25 @@
+---
+const { label = 'Filter this list', placeholder = 'Search names, modules, or descriptions…' } = Astro.props
+---
+<filter-list>
+  <label class="filter-label">{label}<input type="search" placeholder={placeholder} autocomplete="off" /></label>
+  <p class="filter-count" aria-live="polite"></p>
+  <slot />
+  <p class="filter-empty" hidden>No matches. Try an algorithm name, a module, or a shorter phrase.</p>
+</filter-list>
+<script>
+  class FilterList extends HTMLElement {
+    connectedCallback() {
+      const input = this.querySelector('input')!, rows = [...this.querySelectorAll<HTMLElement>('[data-search]')], counter = this.querySelector('.filter-count')!, empty = this.querySelector<HTMLElement>('.filter-empty')!
+      const filter = () => {
+        const words = input.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
+        let visible = 0
+        for (const row of rows) { row.hidden = !words.every(w => row.dataset.search!.toLocaleLowerCase().includes(w)); if (!row.hidden) visible++ }
+        counter.textContent = `${visible.toLocaleString()} of ${rows.length.toLocaleString()} entries`
+        empty.hidden = visible > 0
+      }
+      input.addEventListener('input', filter); filter()
+    }
+  }
+  if (!customElements.get('filter-list')) customElements.define('filter-list', FilterList)
+</script>

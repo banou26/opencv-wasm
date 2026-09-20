@@ -1,0 +1,11 @@
+---
+import type { APIEntry } from '../lib/reference'
+const { entry } = Astro.props as { entry: APIEntry }
+const parameters = entry.parameters.map(p => p.name)
+const returned = entry.signatures[0]?.match(/\):\s*([^;]+);?$/)?.[1]
+const result = returned || (entry.kind === 'class' ? 'Owned native handle' : 'See signature below')
+---
+<figure class="dataflow">
+  <div class="dataflow-row"><div><small>ARGUMENTS</small><strong>{parameters.slice(0, 4).join(', ') || (entry.kind === 'class' ? 'Constructor or factory' : 'See signature below')}</strong></div><span aria-hidden="true">→</span><div class="operation"><small>{entry.kind.toUpperCase()}</small><strong>{entry.display}</strong></div><span aria-hidden="true">→</span><div><small>RETURN TYPE</small><strong>{result}</strong></div></div>
+  <figcaption>Call structure. A void return can still write to destination arguments. The parameter descriptions define inputs, outputs and ownership.</figcaption>
+</figure>

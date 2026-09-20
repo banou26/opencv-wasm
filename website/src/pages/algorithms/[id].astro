@@ -1,0 +1,25 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import { algorithms, type Algorithm } from '../../data/algorithms'
+import AlgorithmDiagram from '../../components/AlgorithmDiagram.astro'
+import { apiURL } from '../../lib/reference'
+export function getStaticPaths() { return algorithms.map(algorithm => ({ params: { id: algorithm.id }, props: { algorithm } })) }
+const { algorithm: a } = Astro.props as { algorithm: Algorithm }
+const apis = a.apis.map(name => { const href = apiURL(name); if (!href) throw new Error(`Unknown native API ${name} in ${a.id}`); return { name, href } })
+const related = algorithms.filter(other => other.category === a.category && other !== a).slice(0, 4)
+const headings = [{ depth: 2, slug: 'use', text: 'When to use it' }, { depth: 2, slug: 'how', text: 'How it works' }, { depth: 2, slug: 'tune', text: 'What to tune' }, { depth: 2, slug: 'limits', text: 'Where it breaks down' }, { depth: 2, slug: 'api', text: 'TypeScript API' }]
+---
+<StarlightPage frontmatter={{ title: a.title, description: a.summary }} headings={headings}>
+  <div class="eyebrow"><a href="/algorithms/">Algorithm atlas</a><span>{a.category}</span></div>
+  <p class="lead">{a.summary}</p>
+  <AlgorithmDiagram algorithm={a} />
+  <h2 id="use">When to use it</h2><p>{a.use}</p>
+  <h2 id="how">How it works</h2><ol class="steps">{a.steps.map((step, i) => <li><b>0{i + 1}</b>{step}</li>)}</ol>
+  {a.formula && <p class="formula">{a.formula}</p>}
+  <h2 id="tune">What to tune</h2><p>{a.knobs}</p>
+  <h2 id="limits">Where it breaks down</h2><p class="callout">{a.caveat}</p>
+  <h2 id="api">TypeScript API</h2><p>Open an entry for its exact overloads, parameter descriptions, result ownership and pinned upstream source.</p>
+  <div class="reference-list">{apis.map(({ name, href }) => <a href={href}><strong>{name}</strong><span class="module-label">Reference →</span></a>)}</div>
+  <p>All of these calls execute on the CPU. Native objects need explicit disposal. See <a href="/start/matrices/">matrices and ownership</a> and <a href="/reference/compatibility/">build compatibility</a>.</p>
+  {related.length > 0 && <><h2 id="related">Related methods</h2><div class="atlas-grid">{related.map(other => <a class="atlas-card" href={`/algorithms/${other.id}/`}><h3>{other.title}</h3><p>{other.summary}</p></a>)}</div></>}
+</StarlightPage>

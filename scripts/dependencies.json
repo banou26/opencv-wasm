@@ -1,0 +1,46 @@
+{
+  "freetype-2.13.3": {
+    "url": "https://codeload.github.com/freetype/freetype/tar.gz/refs/tags/VER-2-13-3",
+    "sha256": "bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103"
+  },
+  "harfbuzz-10.2.0": {
+    "url": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/refs/tags/10.2.0",
+    "sha256": "11749926914fd488e08e744538f19329332487a6243eec39ef3c63efa154a578"
+  },
+  "hdf5-1.14.5": {
+    "url": "https://codeload.github.com/HDFGroup/hdf5/tar.gz/refs/tags/hdf5_1.14.5",
+    "sha256": "c83996dc79080a34e7b5244a1d5ea076abfd642ec12d7c25388e2fdd81d26350"
+  },
+  "leptonica-1.85.0": {
+    "url": "https://codeload.github.com/DanBloomberg/leptonica/tar.gz/refs/tags/1.85.0",
+    "sha256": "c01376bce0379d4ea4bc2ec5d5cbddaa49e2f06f88242619ab8c059e21adf233"
+  },
+  "tesseract-5.5.0": {
+    "url": "https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.0",
+    "sha256": "f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11"
+  },
+  "gflags-2.2.2": {
+    "url": "https://codeload.github.com/gflags/gflags/tar.gz/refs/tags/v2.2.2",
+    "sha256": "34af2f15cf7367513b352bdcd2493ab14ce43692d2dcd9dfc499492966c64dcf"
+  },
+  "glog-0.6.0": {
+    "url": "https://codeload.github.com/google/glog/tar.gz/refs/tags/v0.6.0",
+    "sha256": "8a83bf982f37bb70825df71a9709fa90ea9f4447fb3c099e1d720a439d88bad6"
+  },
+  "ceres-2.2.0": {
+    "url": "https://codeload.github.com/ceres-solver/ceres-solver/tar.gz/refs/tags/2.2.0",
+    "sha256": "12efacfadbfdc1bbfa203c236e96f4d3c210bed96994288b3ff0c8e7c6f350d4"
+  },
+  "imath-3.1.12": {
+    "url": "https://codeload.github.com/AcademySoftwareFoundation/Imath/tar.gz/refs/tags/v3.1.12",
+    "sha256": "8a1bc258f3149b5729c2f4f8ffd337c0e57f09096e4ba9784329f40c4a9035da"
+  },
+  "openexr-3.3.3": {
+    "url": "https://codeload.github.com/AcademySoftwareFoundation/openexr/tar.gz/refs/tags/v3.3.3",
+    "sha256": "0ffbd842a7ee2128d44affdea30f42294b4061293cde3aa75b61a53573413d1e"
+  },
+  "libdeflate-1.23": {
+    "url": "https://codeload.github.com/ebiggers/libdeflate/tar.gz/refs/tags/v1.23",
+    "sha256": "1ab18349b9fb0ce8a0ca4116bded725be7dcbfa709e19f6f983d99df1fb8b25f"
+  }
+}

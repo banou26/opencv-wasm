@@ -1,0 +1,9 @@
+node_modules/
+vendor/
+.cache/
+build/
+lib/
+*.tgz
+test-results/
+*.log
+__pycache__/

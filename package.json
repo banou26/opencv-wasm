@@ -1,0 +1,58 @@
+{
+  "name": "@banou/opencv",
+  "version": "0.0.6",
+  "description": "OpenCV and contrib compiled to WebAssembly with generated TypeScript bindings",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/banou26/opencv-js.git"
+  },
+  "homepage": "https://github.com/banou26/opencv-js#readme",
+  "bugs": {
+    "url": "https://github.com/banou26/opencv-js/issues"
+  },
+  "type": "module",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "files": [
+    "lib",
+    "src",
+    "docs",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./opencv_js.wasm": "./lib/opencv_js.wasm",
+    "./coverage.json": "./lib/coverage.json",
+    "./python-parity.json": "./lib/python-parity.json",
+    "./documentation.json": "./lib/documentation.json",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "build:js": "npm run docs && vite build && tsc -p tsconfig.build.json",
+    "docs": "python3 scripts/extract-docs.py && node scripts/finalize-types.mjs && node scripts/namespace-types.mjs",
+    "build": "npm run build:wasm && npm run build:js",
+    "typecheck": "tsc --noEmit",
+    "test:node": "node scripts/prepare-test-data.mjs && node --test tests/*.test.mjs",
+    "test:browser": "node scripts/prepare-test-data.mjs && playwright test",
+    "test:package": "npm pack && node scripts/test-package.mjs",
+    "parity": "node scripts/python-parity.mjs",
+    "test": "npm run typecheck && npm run test:node && npm run test:browser",
+    "prepack": "npm run build:js && node scripts/python-parity.mjs && node scripts/verify-package.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

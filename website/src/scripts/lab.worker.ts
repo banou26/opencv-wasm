@@ -58,7 +58,8 @@ self.onmessage = async ({ data }: MessageEvent<LabRequest>) => {
       version: cv.getVersionString(),
       note: experiment.note,
       native: experiment.native,
-      stages: experiment.stages
+      stages: experiment.stages,
+      download: experiment.download
     }
     const transfer: Transferable[] = [result.data.buffer]
     if (response.native) transfer.push(response.native.values.buffer)

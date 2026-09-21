@@ -25,7 +25,7 @@ const selected = catalog.find(entry => entry.id === initial)!
   <p class="source-note"></p>
   <div class="second-input" hidden><label class="file-button">Choose second image<input name="second" type="file" accept="image/*" /></label><button type="button" class="reset-second">Use demo pair</button><p class="second-note"></p></div>
   <div class="lab-assets"></div>
-  <div class="lab-actions"><button type="button" class="load-runtime">Load OpenCV and run</button><button type="button" class="cancel-run" disabled>Stop</button><label class="auto-run"><input type="checkbox" name="auto" checked/> Run when settings change</label><button type="button" class="download" disabled>Save PNG</button></div>
+  <div class="lab-actions"><button type="button" class="load-runtime">Load OpenCV and run</button><button type="button" class="cancel-run" disabled>Stop</button><label class="auto-run"><input type="checkbox" name="auto" checked/> Run when settings change</label><button type="button" class="download" disabled>Save PNG</button><button type="button" class="download-data" hidden disabled>Save measurements</button></div>
   <p class="lab-status" role="status" aria-live="polite">The engine loads on your first run. Your images stay in this browser.</p>
   <p class="result-note" role="status"></p>
   <div class="region-tools" hidden><button type="button" class="select-region" aria-pressed="false">Draw a region</button><span>Drag a rectangle on the input. You can also use the region coordinates above.</span></div>

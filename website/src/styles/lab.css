@@ -1,5 +1,6 @@
 image-lab {
   display: block;
+  container-type: inline-size;
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 1.25rem;
@@ -283,7 +284,7 @@ image-lab .image-dimensions {
   color: var(--muted);
 }
 image-lab .pixel-viewport {
-  height: 302px;
+  height: clamp(302px, 36cqi, 65vh);
   overflow: auto;
   background-color: #15171c;
   background-image:

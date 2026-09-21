@@ -125,3 +125,36 @@ test('desktop and mobile visual review artifacts', async ({ page }) => {
   await expect(page.locator('image-lab')).toHaveAttribute('data-result', '1', { timeout: 45_000 })
   await page.screenshot({ path: 'test-results/lab-desktop.png', fullPage: true })
 })
+
+test('desktop page outline floats without reserving content or preview width', async ({ page }) => {
+  for (const [width, theme] of [[1440, 'dark'], [1920, 'light']] as const) {
+    await page.setViewportSize({ width, height: 1100 })
+    await page.goto('/cookbook/motion-vectors/')
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme }, theme)
+    const toc = page.locator('.floating-toc')
+    await expect(toc).toBeVisible()
+    const initial = (await toc.boundingBox())!
+    expect(initial.x + initial.width).toBeGreaterThan(width - 24)
+    expect(initial.y).toBeGreaterThan(50)
+    expect(await toc.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+    const lab = (await page.locator('image-lab').boundingBox())!
+    expect(lab.x + lab.width).toBeGreaterThan(width - 60)
+    expect(lab.x).toBeGreaterThan(260)
+    await page.locator('.load-runtime').click()
+    await expect(page.locator('image-lab')).toHaveAttribute('data-state', 'ready')
+    const preview = (await page.locator('canvas.input').boundingBox())!
+    expect(preview.width).toBeGreaterThan(width === 1440 ? 500 : 700)
+    await expect(page.locator('canvas.input')).toHaveAttribute('width', '448')
+    await toc.getByRole('link', { name: 'Try it with your images', exact: true }).click()
+    await expect(page).toHaveURL(/#try$/)
+    const scrolled = (await toc.boundingBox())!
+    expect(Math.abs(scrolled.x - initial.x)).toBeLessThan(1)
+    expect(Math.abs(scrolled.y - initial.y)).toBeLessThan(1)
+    await page.screenshot({ path: `test-results/floating-outline-${theme}.png` })
+    await toc.locator('summary').focus()
+    await page.keyboard.press('Space')
+    await expect(toc.locator('nav')).toBeHidden()
+    expect((await toc.boundingBox())!.height).toBeLessThan(70)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+})

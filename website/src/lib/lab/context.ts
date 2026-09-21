@@ -1,6 +1,6 @@
 import type { Mat, OpenCV, Scalar } from '../../../../lib/index.js'
 import type * as Runtime from '../../../../lib/index.js'
-import type { LabRequest, LabStage, NativePixels } from './types'
+import type { LabDownload, LabRequest, LabStage, NativePixels } from './types'
 /** Native resources belong to one experiment and are released together, including on errors. */
 export class Experiment {
   private handles: { delete(): void }[] = []
@@ -11,6 +11,7 @@ export class Experiment {
   note = ''
   native?: NativePixels
   stages: LabStage[] = []
+  download?: LabDownload
   constructor(
     readonly cv: OpenCV,
     readonly runtime: typeof Runtime,
@@ -124,8 +125,8 @@ export class Experiment {
     this.raw(mat, labels)
     this.cv.normalize(mat, this.out, 0, 255, this.cv.NORM_MINMAX, this.cv.CV_8U)
   }
-  /** Copy an intermediate image for the pipeline viewer; floating fields retain native values beside a normalized preview. */
-  stage(title: string, mat: Mat, description: string) {
+  /** Copy an intermediate image and optional native measurements; every stage owns independent transferable buffers. */
+  stage(title: string, mat: Mat, description: string, measurements?: NativePixels) {
     let display = mat,
       native: NativePixels | undefined
     if (mat.depth() !== this.cv.CV_8U) {
@@ -136,6 +137,11 @@ export class Experiment {
       this.cv.normalize(mat, display, 0, 255, this.cv.NORM_MINMAX, this.cv.CV_8U)
     }
     const image = this.runtime.toImageData(this.cv, display)
+    if (measurements) {
+      if (measurements.values.length !== image.width * image.height * measurements.channels)
+        throw new Error('Stage measurements must match the preview dimensions.')
+      native = { ...measurements, values: Float32Array.from(measurements.values) }
+    }
     this.stages.push({ title, description, pixels: image.data, width: image.width, height: image.height, native })
   }
   /** Release all native allocations in reverse construction order. */

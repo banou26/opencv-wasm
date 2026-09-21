@@ -1,7 +1,7 @@
 import LabWorker from './lab.worker.ts?worker'
 import { PixelViewer } from '../lib/lab/viewer'
 import { drawSample } from '../lib/lab/sample'
-import type { LabImage, LabRecipe, LabRequest, LabResponse, Parameters } from '../lib/lab/types'
+import type { LabDownload, LabImage, LabRecipe, LabRequest, LabResponse, Parameters } from '../lib/lab/types'
 type Entry = LabRecipe & { id: string; title: string }
 class ImageLab extends HTMLElement {
   private worker?: Worker
@@ -23,6 +23,7 @@ class ImageLab extends HTMLElement {
       run = q<HTMLButtonElement>('.load-runtime'),
       stop = q<HTMLButtonElement>('.cancel-run'),
       save = q<HTMLButtonElement>('.download'),
+      saveData = q<HTMLButtonElement>('.download-data'),
       auto = q<HTMLInputElement>('[name=auto]'),
       resolution = q<HTMLSelectElement>('[name=resolution]')
     let original: HTMLCanvasElement | ImageBitmap = drawSample(),
@@ -40,6 +41,7 @@ class ImageLab extends HTMLElement {
       uploadEpoch = 0,
       secondEpoch = 0,
       filename = 'Built-in sample',
+      report: LabDownload | undefined,
       secondFilename = '',
       drag: { id: number; x: number; y: number } | undefined
     const loadingInputs = new Set<HTMLInputElement>()
@@ -125,6 +127,9 @@ class ImageLab extends HTMLElement {
     const invalidate = () => {
       revision++
       save.disabled = true
+      saveData.disabled = true
+      saveData.hidden = true
+      report = undefined
       this.viewer!.clearOutput()
       q('.result-note').textContent = ''
       q('.lab-stages').replaceChildren()
@@ -213,6 +218,10 @@ class ImageLab extends HTMLElement {
               q('.result-note').textContent = data.note
               this.dataset.result = String(data.id)
               save.disabled = false
+              report = data.download
+              saveData.hidden = !report
+              saveData.disabled = !report
+              saveData.textContent = report?.label ?? 'Save measurements'
               this.dataset.completedAlgorithm = data.algorithm
               const stages = data.stages ?? [],
                 buttons = q('.lab-stages')
@@ -266,6 +275,7 @@ class ImageLab extends HTMLElement {
       inFlightRevision = revision
       save.disabled = true
       stop.disabled = false
+      saveData.disabled = true
       run.textContent = 'Run again'
       message(loaded ? 'Processing in the worker…' : 'Loading the WebAssembly engine…', 'running')
       const request: LabRequest = {
@@ -651,6 +661,19 @@ class ImageLab extends HTMLElement {
           drag = undefined
           change()
         }
+      },
+      events
+    )
+    saveData.addEventListener(
+      'click',
+      () => {
+        if (!report || saveData.disabled) return
+        const link = document.createElement('a'),
+          url = URL.createObjectURL(new Blob([report.text], { type: report.mimeType }))
+        link.download = report.filename
+        link.href = url
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 0)
       },
       events
     )

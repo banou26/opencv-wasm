@@ -7,12 +7,14 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 - 94 visual guides with persistent input comparisons, distinct intermediate/result
   drawings, keyboard-accessible stages and optional step playback.
 - 94 focused OpenCV experiments, embedded in every algorithm guide and available in `/lab/`.
-- 22 runnable cookbook workflows with custom images, draggable regions, intermediate
+- 23 runnable cookbook workflows with custom images, draggable regions, intermediate
   previews and typed code examples. Browse `/cookbook/` or its grouped sidebar.
 - Image and model uploads, algorithm-specific parameters, synchronized zoom, exact
   RGBA sampling, native numeric fields and a keyboard-accessible pixel magnifier.
 - Browser, Node, Python migration, memory ownership, DNN and graph guides.
 - Full-text Pagefind search, local list filtering, light/dark themes and mobile navigation.
+- Full-width content with a collapsible floating page outline on desktop and
+  preview panes that grow with the available space.
 
 ## Run
 
@@ -48,7 +50,7 @@ npm test
 Checks include strict compilation of documentation examples, every generated
 internal link and fragment, native abstract-class reference coverage, search,
 keyboard interaction, playback, mobile layout and all 94 native algorithm labs plus
-22 cookbook workflows, including default OCR and super-resolution models.
+23 cookbook workflows, including default OCR and super-resolution models.
 Lab checks also cover image uploads, signed native values, zoom/pan, stale-result
 handling, parameter changes, model uploads and error recovery. Cookbook checks use
 known frame translations, verify alignment, count and split objects, preserve
@@ -115,6 +117,10 @@ This does not infer correspondence through a geometric warp.
 before releasing native handles. Stage buttons switch the output, its pixel values
 and its PNG export without rerunning the pipeline. `cookbook-code.ts` contains the
 short core examples, which are compiled against the package during `npm run check`.
+`src/lib/lab/motion.ts` combines phase-correlation alignment, bidirectional dense
+flow, texture and consistency checks, and per-cell medians. It exposes signed
+pixel and regional measurements, a dominant-translation residual view, and a JSON
+export with explicit unknown cells and processed-pixel units.
 Region drawing uses processed-image percentages and remains independent of viewer
 zoom. Numeric coordinates provide a keyboard alternative. Paired recipes resize
 the second image to the first image's processed dimensions and label that behavior.

@@ -1,5 +1,41 @@
 /** Typechecked core chains. The recipe pages define the cv, image, nextImage and rect inputs used here. */
 export const cookbookCode: Record<string, string> = {
+  'motion-vectors': `using beforeGray = new cv.Mat(), afterGray = new cv.Mat()
+cv.cvtColor(image, beforeGray, cv.COLOR_BGR2GRAY)
+cv.cvtColor(nextImage, afterGray, cv.COLOR_BGR2GRAY)
+using a = new cv.Mat(), b = new cv.Mat(), hann = new cv.Mat()
+beforeGray.convertTo(a, cv.CV_32F)
+afterGray.convertTo(b, cv.CV_32F)
+cv.createHanningWindow(hann, { width: image.cols, height: image.rows }, cv.CV_32F)
+const pan = cv.phaseCorrelate(a, b, hann)
+const usable = Number.isFinite(pan.value.x) && Number.isFinite(pan.value.y) && pan.response >= 0.1
+  && Math.abs(pan.value.x) < image.cols * 0.45 && Math.abs(pan.value.y) < image.rows * 0.45
+const dx = usable ? pan.value.x : 0, dy = usable ? pan.value.y : 0
+using toFirst = new cv.Mat(2, 3, cv.CV_64F), toSecond = new cv.Mat(2, 3, cv.CV_64F)
+toFirst.data64F.set([1, 0, -dx, 0, 1, -dy])
+toSecond.data64F.set([1, 0, dx, 0, 1, dy])
+using alignedAfter = new cv.Mat(), alignedBefore = new cv.Mat()
+const size = { width: image.cols, height: image.rows }
+cv.warpAffine(afterGray, alignedAfter, toFirst, size, cv.INTER_LINEAR, cv.BORDER_REFLECT_101)
+cv.warpAffine(beforeGray, alignedBefore, toSecond, size, cv.INTER_LINEAR, cv.BORDER_REFLECT_101)
+using forward = new cv.Mat(), backward = new cv.Mat()
+cv.calcOpticalFlowFarneback(beforeGray, alignedAfter, forward, 0.5, 4, 25, 5, 7, 1.5, 0)
+cv.calcOpticalFlowFarneback(afterGray, alignedBefore, backward, 0.5, 4, 25, 5, 7, 1.5, 0)
+const f = Float32Array.from(forward.data32F), r = Float32Array.from(backward.data32F)
+for (let i = 0; i < f.length; i += 2) {
+  f[i] += dx; f[i + 1] += dy
+  r[i] -= dx; r[i + 1] -= dy
+}
+forward.data32F.set(f)
+backward.data32F.set(r)
+using texture = new cv.Mat()
+cv.cornerMinEigenVal(beforeGray, texture, 7, 3)
+// forward.data32F[(y * image.cols + x) * 2 + 0] is dx, +1 is dy.
+// A point (x,y) in image should land at (x+dx,y+dy) in nextImage.
+// The full recipe bilinearly samples backward flow at that destination,
+// rejects weak texture and inconsistent returns, and takes per-cell medians.
+// Never report a textureless cell as a known zero-displacement measurement.
+`,
   'track-region': `using beforeGray = new cv.Mat(), afterGray = new cv.Mat()
 cv.cvtColor(image, beforeGray, cv.COLOR_BGR2GRAY)
 cv.cvtColor(nextImage, afterGray, cv.COLOR_BGR2GRAY)

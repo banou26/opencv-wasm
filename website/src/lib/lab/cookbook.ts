@@ -1,5 +1,6 @@
 import type { Mat } from '../../../../lib/index.js'
 import { Experiment, mint, orange } from './context'
+import { motionVectors } from './motion'
 
 const regionMask = (e: Experiment) => {
   const mask = e.own(e.cv.Mat.zeros(e.gray.rows, e.gray.cols, e.cv.CV_8U)),
@@ -105,6 +106,9 @@ export const cook = (e: Experiment): boolean => {
     id = e.request.algorithm.slice(9),
     n = (key: string) => e.n(key)
   switch (id) {
+    case 'motion-vectors':
+      motionVectors(e)
+      break
     case 'track-region': {
       const roi = regionMask(e),
         points = e.mat(),

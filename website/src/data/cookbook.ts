@@ -48,6 +48,49 @@ const recipe = (
 /** Curated recipes cover common multi-stage image tasks. Every recipe executes native OpenCV in the shared lab. */
 export const cookbook: CookbookRecipe[] = [
   recipe(
+    'motion-vectors',
+    'Measure regional motion vectors',
+    'Motion and matching',
+    'Measure delta vectors between a before frame and an after frame. See how far each region translated during a camera pan, inspect dense dx/dy values, or subtract the dominant image motion.',
+    [
+      step(
+        'Compensate for the initial pan',
+        'Phase correlation estimates a translation, then each frame is warped into the other’s coordinates before local flow estimation.',
+        'phase-correlation'
+      ),
+      step(
+        'Estimate dense displacement',
+        'Pyramidal Farneback flow estimates local residual motion in both directions. The preliminary pan is added back to obtain full displacement.',
+        'optical-flow-farneback'
+      ),
+      step(
+        'Check texture and summarize regions',
+        'Corner response and backward consistency filter uncertain samples. Each grid cell reports the median of its accepted vectors.',
+        'good-features'
+      )
+    ],
+    'Vectors map input pixels to the second image: positive dx is right, positive dy is down, in processed-image pixels per frame pair. The dominant median describes image motion, not physical camera motion. Subtracting it removes translation only. Rotation, parallax, occlusion, lighting changes and repeated patterns can defeat the estimates. Passing the checks is not a probability of correctness; dark or unlabelled cells have insufficient evidence. Both images are processed at the first image’s dimensions.',
+    [
+      n('cell', 'Region size (pixels)', 48, 16, 128, 8),
+      n('window', 'Flow window (odd pixels)', 25, 5, 61, 2),
+      n('levels', 'Pyramid levels', 4, 1, 6),
+      n('tolerance', 'Forward/backward tolerance (px)', 1.5, 0.25, 5, 0.25),
+      n('texture', 'Minimum texture (% strongest response)', 0.5, 0.1, 10, 0.1),
+      n('range', 'Dense colour scale (pixels)', 24, 1, 100),
+      n('gain', 'Arrow display multiplier', 1, 1, 8),
+      {
+        key: 'mode',
+        label: 'Vector view',
+        value: 'total',
+        options: [
+          ['total', 'Total displacement'],
+          ['residual', 'Subtract dominant translation']
+        ]
+      }
+    ],
+    { second: true, maxSide: 640 }
+  ),
+  recipe(
     'track-region',
     'Track a selected region',
     'Motion and matching',

@@ -1,0 +1,43 @@
+---
+import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro'
+---
+<details class="floating-toc" open>
+  <summary>On this page</summary>
+  <TableOfContents />
+</details>
+<style>
+  .floating-toc {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+    overflow: hidden;
+  }
+  summary {
+    padding: .85rem 1rem;
+    font-size: .9rem;
+    font-weight: 650;
+    cursor: pointer;
+    user-select: none;
+  }
+  summary:focus-visible { outline: 2px solid var(--violet); outline-offset: -4px; }
+  .floating-toc :global(starlight-toc) {
+    display: block;
+    max-height: min(60vh, calc(100dvh - var(--sl-nav-height) - 6rem));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding: 0 .8rem .85rem;
+  }
+  /* Preserve the stock navigation's accessible name without repeating the visible title. */
+  .floating-toc :global(h2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+</style>

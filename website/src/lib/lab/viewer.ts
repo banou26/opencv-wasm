@@ -187,7 +187,6 @@ export class PixelViewer {
         ? Math.min(
             ...this.panes.map((pane) =>
               Math.min(
-                1,
                 Math.max(1, pane.clientWidth - 2) / reference.width,
                 Math.max(1, pane.clientHeight - 2) / reference.height
               )
@@ -317,7 +316,8 @@ export class PixelViewer {
           index = (y * image.width + x) * raw.channels
         native.textContent = Array.from(
           { length: raw.channels },
-          (_, c) => `${raw.labels[c] ?? `channel ${c}`}: ${Number(raw.values[index + c].toPrecision(7))}`
+          (_, c) =>
+            `${raw.labels[c] ?? `channel ${c}`}: ${Number.isFinite(raw.values[index + c]) ? Number(raw.values[index + c].toPrecision(7)) : 'unavailable'}`
         ).join(' · ')
       } else
         native.textContent =

@@ -10,6 +10,7 @@ export default defineConfig({
     favicon: '/favicon.svg',
     social: [{ icon: 'github', label: 'Source repository', href: 'https://github.com/banou26/opencv-wasm' }],
     customCss: ['./src/styles/site.css'],
+    components: { TableOfContents: './src/components/FloatingTableOfContents.astro' },
     sidebar: [
       { label: 'Start here', items: [{ label: 'Overview', link: '/' }, 'start/quickstart', 'start/node', 'start/matrices', 'start/python'] },
       { label: 'Algorithms', collapsed: true, items: [

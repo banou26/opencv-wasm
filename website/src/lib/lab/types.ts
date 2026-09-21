@@ -14,6 +14,8 @@ export type LabRequest = LabImage & {
 export type NativePixels = { values: Float32Array; channels: number; labels: string[] }
 /** A copied intermediate image and its explanation, available without rerunning the pipeline. */
 export type LabStage = LabImage & { title: string; description: string; native?: NativePixels }
+/** A textual measurement report exported locally alongside an experiment's images. */
+export type LabDownload = { filename: string; mimeType: string; label: string; text: string }
 /** A completed experiment or an actionable error. Revisions let the UI discard obsolete results. */
 export type LabResponse =
   | { id: number; error: string }
@@ -25,6 +27,7 @@ export type LabResponse =
       note: string
       native?: NativePixels
       stages?: LabStage[]
+      download?: LabDownload
     })
 /** A labelled numeric, selection or JSON control with a documented starting value. */
 export type LabControl = {

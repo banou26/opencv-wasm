@@ -710,30 +710,7 @@ function photography(a: Algorithm): Visual {
         )
       ]
     )
-  return visual(
-    shot('Fine image level', scene(), 'Large features survive at coarser scales; small details gradually disappear.'),
-    [
-      shot(
-        'Smooth before decimation',
-        scene() + rect(68, 64, 82, 113, 'none', c.orange),
-        'Low-pass filtering limits aliasing before the sample spacing increases.'
-      ),
-      shot(
-        'Create a half-size level',
-        mini(80, 50, 160) + label(160, 196, '½ width × ½ height', c.orange, 'middle'),
-        'A half-size image contains one quarter as many samples.'
-      ),
-      shot(
-        'Build a scale pyramid',
-        mini(2, 9, 170) +
-          mini(190, 89, 90) +
-          mini(234, 175, 45) +
-          label(101, 161, 'level 0', c.muted, 'middle') +
-          label(233, 164, 'level 1', c.muted, 'middle'),
-        'Successive levels let an algorithm begin with broad structure and refine detail. A Laplacian pyramid additionally records differences between levels.'
-      )
-    ]
-  )
+  throw new Error(`No photography visual for ${a.id}`)
 }
 
 function colour(a: Algorithm): Visual {

@@ -3,6 +3,55 @@ import { createHash } from 'node:crypto'
 import { algorithms } from '../src/data/algorithms'
 import { algorithmVisual } from '../src/lib/visuals'
 import { palette } from '../src/lib/visuals/primitives'
+import { buildPyramidExample } from '../src/lib/visuals/pyramids'
+
+test('pyramid teaching samples match native filtering and reconstruct signed detail', async () => {
+  const { createOpenCV, matFromArray } = await import('../../lib/index.js')
+  const cv = await createOpenCV(),
+    lesson = buildPyramidExample(),
+    original = lesson.gaussian[0]
+  const input = matFromArray(cv, original.height, original.width, cv.CV_64FC1, original.pixels)
+  const [g1, g2, e1, e2, l0, l1, restored1, restored0, enlargedOnly] = Array.from({ length: 9 }, () => new cv.Mat())
+  try {
+    cv.pyrDown(input, g1)
+    cv.pyrDown(g1, g2)
+    cv.pyrUp(g1, e1)
+    cv.pyrUp(g2, e2)
+    cv.subtract(input, e1, l0)
+    cv.subtract(g1, e2, l1)
+    cv.add(e2, l1, restored1)
+    cv.pyrUp(restored1, restored0)
+    cv.add(restored0, l0, restored0)
+    cv.pyrUp(e2, enlargedOnly)
+    const native = [input, g1, g2, e1, e2, l0, l1, restored0, enlargedOnly]
+    const expected = [
+      ...lesson.gaussian,
+      ...lesson.expanded,
+      ...lesson.laplacian,
+      lesson.reconstructed,
+      lesson.enlargedOnly
+    ]
+    for (let i = 0; i < native.length; i++) {
+      expect([native[i].cols, native[i].rows]).toEqual([expected[i].width, expected[i].height])
+      const error = Math.max(...native[i].data64F.map((v, j) => Math.abs(v - expected[i].pixels[j])))
+      expect(error, `native agreement for matrix ${i}, including image borders`).toBeLessThan(1e-8)
+    }
+    expect(lesson.gaussian.map(({ width, height }) => [width, height])).toEqual([
+      [32, 24],
+      [16, 12],
+      [8, 6]
+    ])
+    for (const band of lesson.laplacian) {
+      expect(Math.min(...band.pixels)).toBeLessThan(-1)
+      expect(Math.max(...band.pixels)).toBeGreaterThan(1)
+    }
+    const error = (pixels: number[]) => Math.max(...pixels.map((v, i) => Math.abs(v - original.pixels[i])))
+    expect(error(lesson.enlargedOnly.pixels)).toBeGreaterThan(50)
+    expect(error(lesson.reconstructed.pixels)).toBeLessThan(1e-8)
+  } finally {
+    for (const mat of [input, g1, g2, e1, e2, l0, l1, restored1, restored0, enlargedOnly]) mat.delete()
+  }
+})
 
 test('computed mask and spectrum examples obey their illustrated operations', async ({ page }) => {
   const ids = ['erosion', 'dilation', 'morphology', 'dft', 'quality-metrics']
@@ -73,7 +122,7 @@ test('every authored guide has distinct, finite illustration stages', async ({ p
 })
 
 test('keyboard stages replace rendered images and retain the input', async ({ page }) => {
-  for (const id of ['gaussian-blur', 'canny', 'homography', 'kmeans', 'phase-unwrapping', 'nms']) {
+  for (const id of ['gaussian-blur', 'canny', 'homography', 'kmeans', 'phase-unwrapping', 'nms', 'image-pyramids']) {
     await page.goto(`/algorithms/${id}/`)
     const diagram = page.locator('algorithm-diagram'),
       input = diagram.locator('.diagram-input .diagram-art')
@@ -149,7 +198,7 @@ test('illustration contact sheets for visual review', async ({ page }) => {
     ['gaussian-blur', 'bilateral-filter', 'canny', 'morphology', 'connected-components', 'clahe'],
     ['homography', 'optical-flow-lk', 'kalman', 'stereo-bm', 'polar-warp', 'nms'],
     ['dft', 'phase-unwrapping', 'kmeans', 'pca', 'dnn-inference', 'quality-metrics'],
-    ['watershed', 'superpixels', 'pnp', 'camera-calibration', 'hough-lines', 'inpainting']
+    ['watershed', 'superpixels', 'pnp', 'camera-calibration', 'hough-lines', 'inpainting', 'image-pyramids']
   ]
   await page.setViewportSize({ width: 1360, height: 1000 })
   for (let group = 0; group < groups.length; group++) {

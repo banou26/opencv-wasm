@@ -1,25 +1,108 @@
 ---
-const { label = 'Filter this list', placeholder = 'Search names, modules, or descriptions…' } = Astro.props
+interface Props {
+  label?: string
+  placeholder?: string
+  itemLabel?: string
+  categories?: { name: string; count: number }[]
+  choices?: { id: string; label: string; category: string }[]
+}
+const { label = 'Filter this list', placeholder = 'Search names, modules, or descriptions…', itemLabel = 'entries', categories = [], choices = [] } = Astro.props
+const selectable = categories.length > 0 || choices.length > 0
 ---
-<filter-list>
-  <label class="filter-label">{label}<input type="search" placeholder={placeholder} autocomplete="off" /></label>
+<filter-list data-item-label={itemLabel}>
+  <label class="filter-label">{label}<input type="search" name="query" placeholder={placeholder} autocomplete="off" /></label>
+  {categories.length > 0 && <fieldset class="category-filters">
+    <legend>Categories</legend>
+    <div class="filter-actions"><button type="button" data-select-categories="all">All categories</button><button type="button" data-select-categories="none">No categories</button></div>
+    <div class="category-options">{categories.map(category => <label class="category-option"><input type="checkbox" data-category-filter value={category.name} checked aria-label={category.name}/><span>{category.name}</span><small aria-hidden="true">{category.count}</small></label>)}</div>
+  </fieldset>}
+  {choices.length > 0 && <details class="individual-filters">
+    <summary>Choose individual algorithms <span class="choice-count">{choices.length} selected</span></summary>
+    <div class="individual-body">
+      <p>Uncheck an algorithm to hide it. Category filters and the search above still apply.</p>
+      <label class="choice-search">Find in this selection<input type="search" name="choice-query" placeholder="Find an algorithm to show or hide…" autocomplete="off"/></label>
+      <div class="filter-actions"><button type="button" data-select-items="all">Show all algorithms</button><button type="button" data-select-items="none">Hide all algorithms</button></div>
+      <div class="individual-options">{choices.map(choice => <label data-choice-search={`${choice.label} ${choice.category}`}><input type="checkbox" data-item-filter value={choice.id} checked aria-label={choice.label}/><span>{choice.label}<small>{choice.category}</small></span></label>)}</div>
+      <p class="choice-empty" hidden>No algorithms match this selection search.</p>
+    </div>
+  </details>}
+  <div class="filter-status">
   <p class="filter-count" aria-live="polite"></p>
+  {selectable && <button type="button" class="filter-reset">Reset filters</button>}
+  </div>
   <slot />
-  <p class="filter-empty" hidden>No matches. Try an algorithm name, a module, or a shorter phrase.</p>
+  <p class="filter-empty" hidden>{selectable ? 'No matches. Try a shorter search or enable more categories and algorithms.' : 'No matches. Try an algorithm name, a module, or a shorter phrase.'}</p>
 </filter-list>
 <script>
   class FilterList extends HTMLElement {
+    private events?: AbortController
     connectedCallback() {
-      const input = this.querySelector('input')!, rows = [...this.querySelectorAll<HTMLElement>('[data-search]')], counter = this.querySelector('.filter-count')!, empty = this.querySelector<HTMLElement>('.filter-empty')!
+      this.events?.abort()
+      this.events = new AbortController()
+      const { signal } = this.events
+      const input = this.querySelector<HTMLInputElement>('[name=query]')!, rows = [...this.querySelectorAll<HTMLElement>('[data-search]')], counter = this.querySelector('.filter-count')!, empty = this.querySelector<HTMLElement>('.filter-empty')!
+      const categories = [...this.querySelectorAll<HTMLInputElement>('[data-category-filter]')], choices = [...this.querySelectorAll<HTMLInputElement>('[data-item-filter]')]
+      const choiceQuery = this.querySelector<HTMLInputElement>('[name=choice-query]'), choiceLabels = [...this.querySelectorAll<HTMLElement>('[data-choice-search]')], choiceEmpty = this.querySelector<HTMLElement>('.choice-empty'), choiceCount = this.querySelector('.choice-count'), reset = this.querySelector<HTMLButtonElement>('.filter-reset')
       const filter = () => {
         const words = input.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
+        const enabledCategories = new Set(categories.filter(c => c.checked).map(c => c.value)), enabledItems = new Set(choices.filter(c => c.checked).map(c => c.value))
         let visible = 0
-        for (const row of rows) { row.hidden = !words.every(w => row.dataset.search!.toLocaleLowerCase().includes(w)); if (!row.hidden) visible++ }
-        counter.textContent = `${visible.toLocaleString()} of ${rows.length.toLocaleString()} entries`
+        for (const row of rows) {
+          row.hidden = !(words.every(w => row.dataset.search!.toLocaleLowerCase().includes(w)) && (!categories.length || enabledCategories.has(row.dataset.category!)) && (!choices.length || enabledItems.has(row.dataset.filterId!)))
+          if (!row.hidden) visible++
+        }
+        counter.textContent = `${visible.toLocaleString()} of ${rows.length.toLocaleString()} ${this.dataset.itemLabel}`
         empty.hidden = visible > 0
+        if (choiceCount) choiceCount.textContent = `${enabledItems.size} selected`
+        if (reset) reset.disabled = !input.value && !choiceQuery?.value && enabledCategories.size === categories.length && enabledItems.size === choices.length
       }
-      input.addEventListener('input', filter); filter()
+      const filterChoices = () => {
+        const words = (choiceQuery?.value ?? '').toLocaleLowerCase().trim().split(/\s+/).filter(Boolean)
+        for (const label of choiceLabels) label.hidden = !words.every(word => label.dataset.choiceSearch!.toLocaleLowerCase().includes(word))
+        if (choiceEmpty) choiceEmpty.hidden = choiceLabels.some(label => !label.hidden)
+      }
+      input.addEventListener('input', filter, { signal })
+      for (const checkbox of [...categories, ...choices]) checkbox.addEventListener('change', filter, { signal })
+      for (const button of this.querySelectorAll<HTMLButtonElement>('[data-select-categories], [data-select-items]')) button.addEventListener('click', () => {
+        const categoryAction = button.dataset.selectCategories
+        for (const checkbox of categoryAction ? categories : choices) checkbox.checked = (categoryAction ?? button.dataset.selectItems) === 'all'
+        filter()
+      }, { signal })
+      choiceQuery?.addEventListener('input', () => { filterChoices(); filter() }, { signal })
+      reset?.addEventListener('click', () => {
+        input.value = ''
+        if (choiceQuery) choiceQuery.value = ''
+        for (const checkbox of [...categories, ...choices]) checkbox.checked = true
+        filterChoices(); filter()
+      }, { signal })
+      filterChoices(); filter()
     }
+    disconnectedCallback() { this.events?.abort() }
   }
   if (!customElements.get('filter-list')) customElements.define('filter-list', FilterList)
 </script>
+<style>
+  .category-filters{border:0;padding:0;min-width:0;margin:1.3rem 0}
+  .category-filters legend{font-size:.85rem;font-weight:600;padding:0}
+  .filter-actions{display:flex;flex-wrap:wrap;gap:.8rem;margin:.5rem 0 .8rem}
+  button{font:inherit;font-size:.78rem;color:var(--violet);background:transparent;border:0;padding:.2rem 0;cursor:pointer;text-underline-offset:.2em}
+  button:hover{text-decoration:underline}button:disabled{opacity:.45;cursor:default;text-decoration:none}
+  button:focus-visible,summary:focus-visible{outline:2px solid var(--violet);outline-offset:4px;border-radius:3px}
+  .category-options{display:flex;flex-wrap:wrap;gap:.5rem}
+  .category-option{display:flex;align-items:center;gap:.45rem;padding:.35rem .65rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:.78rem;cursor:pointer}
+  .category-option:has(:checked){border-color:color-mix(in srgb,var(--violet) 60%,var(--line));background:var(--sl-color-accent-low)}
+  input[type=checkbox]{accent-color:var(--violet);flex-shrink:0;width:1rem;height:1rem}
+  input[type=checkbox]:focus-visible{outline:2px solid var(--violet);outline-offset:3px}
+  .category-option small{color:var(--muted);font-size:.7rem}
+  .individual-filters{border:1px solid var(--line);border-radius:8px;margin:1rem 0;background:var(--panel)}
+  .individual-filters summary{font-size:.85rem;cursor:pointer;padding:.65rem .85rem}
+  .choice-count{font-size:.73rem;color:var(--muted);margin-left:.6rem}
+  .individual-body{padding:0 .85rem .85rem}.individual-body p{font-size:.78rem;color:var(--muted);margin:.3rem 0 .8rem}
+  .choice-search{display:block;font-size:.78rem}.choice-search input{display:block;width:100%;padding:.6rem .7rem;margin-top:.4rem;background:var(--sl-color-bg);color:var(--sl-color-text);border:1px solid var(--line);border-radius:5px;font:inherit}
+  .individual-options{max-height:19rem;overflow-y:auto;overscroll-behavior:contain;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.3rem .8rem;padding:.25rem}
+  .individual-options label{display:flex;align-items:center;gap:.6rem;font-size:.8rem;padding:.4rem;cursor:pointer;border-radius:4px}
+  .individual-options label:hover{background:var(--sl-color-accent-low)}.individual-options small{display:block;font-size:.7rem;color:var(--muted)}
+  .filter-status{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+  .category-options>*,.category-option>*,.filter-actions>*,.filter-status>*,.individual-options>*,.individual-options label>*{margin-top:0!important}
+  @media(max-width:550px){.individual-options{grid-template-columns:1fr}.category-option{font-size:.75rem}}
+</style>

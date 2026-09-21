@@ -99,3 +99,9 @@ export const algorithms: Algorithm[] = [
   entry('phase-unwrapping', 'Phase unwrapping', 'Signal', ['phase_unwrapping_HistogramPhaseUnwrapping'], 'Recover a continuous phase field from measurements wrapped into a fixed angular interval.', 'Process structured-light phase or other periodic measurements when a suitable quality map is available.', ['Estimate local phase reliability.', 'Resolve neighbouring differences modulo a full cycle.', 'Propagate consistent cycle offsets through reliable regions.'], 'Discontinuities, holes and noise can make the absolute cycle assignment ambiguous. Unwrapping does not supply an external absolute phase reference.', 'Set the image dimensions and reliability histogram parameters to match the input phase map.', 'polar', 'unwrapped phase = wrapped phase + 2π·integer offset'),
   entry('retina', 'Retina-inspired processing', 'Filtering', ['bioinspired_Retina'], 'Apply a bio-inspired model with separate detail/colour and motion-sensitive processing pathways.', 'Explore local adaptation, dynamic-range compression and transient visual responses.', ['Apply local adaptation and spatial filtering to the input.', 'Update the model’s temporal state.', 'Read the parvocellular and magnocellular pathway outputs.'], 'Temporal state means consecutive calls are related. The outputs are transformed visual signals, not a calibrated substitute for original intensities.', 'Configure sampling, colour mode and pathway adaptation parameters for the sequence. Reset state deliberately between unrelated clips.', 'background', 'input → spatial/temporal adaptation → detail and transient pathways'),
 ]
+
+/** Atlas categories in first-appearance order, shared by navigation and discovery filters. */
+export const algorithmGroups = [...new Set(algorithms.map(algorithm => algorithm.category))].map(category => ({
+  category,
+  algorithms: algorithms.filter(algorithm => algorithm.category === category),
+}))

@@ -1,11 +1,15 @@
 ---
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
-import { algorithms } from '../../data/algorithms'
+import { algorithms, algorithmGroups } from '../../data/algorithms'
 import FilterList from '../../components/FilterList.astro'
 ---
 <StarlightPage frontmatter={{ title: 'The algorithm atlas', description: 'Visual explanations of computer vision: what each method does, how it works, and when to use it.' }}>
   <div class="eyebrow"><span>Learn by seeing</span><span>{algorithms.length} visual guides</span></div>
   <p class="lead">Start with a problem. Follow the pixels, points, or probabilities through a method. Then open its exact TypeScript interface.</p>
   <p>Each guide includes an annotated diagram, the steps behind the result, tuning advice and failure cases. The <a href="/api/">complete API reference</a> includes additional methods and overloads. <a href="/lab/">The image laboratory</a> runs real WASM.</p>
-  <FilterList label="Find an algorithm or a use case" placeholder="Try noise, tracking, edges, calibration…"><div class="atlas-grid">{algorithms.map(a => <a class="atlas-card" data-search={`${a.title} ${a.category} ${a.summary} ${a.use} ${a.apis.join(' ')}`} href={`/algorithms/${a.id}/`}><small>{a.category}</small><h2>{a.title}</h2><p>{a.summary}</p><span>See how it works →</span></a>)}</div></FilterList>
+  <FilterList label="Find an algorithm or a use case" placeholder="Try noise, tracking, edges, calibration…" itemLabel="algorithms"
+    categories={algorithmGroups.map(group => ({ name: group.category, count: group.algorithms.length }))}
+    choices={algorithms.map(a => ({ id: a.id, label: a.title, category: a.category }))}>
+    <div class="atlas-grid">{algorithms.map(a => <a class="atlas-card" data-filter-id={a.id} data-category={a.category} data-search={`${a.title} ${a.category} ${a.summary} ${a.use} ${a.apis.join(' ')}`} href={`/algorithms/${a.id}/`}><small>{a.category}</small><h2>{a.title}</h2><p>{a.summary}</p><span>See how it works →</span></a>)}</div>
+  </FilterList>
 </StarlightPage>

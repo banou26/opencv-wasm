@@ -1,6 +1,6 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
-import { algorithms } from './src/data/algorithms.ts'
+import { algorithmGroups } from './src/data/algorithms.ts'
 
 export default defineConfig({
   integrations: [starlight({
@@ -13,7 +13,10 @@ export default defineConfig({
       { label: 'Start here', items: [{ label: 'Overview', link: '/' }, 'start/quickstart', 'start/node', 'start/matrices', 'start/python'] },
       { label: 'Algorithms', collapsed: true, items: [
         { label: 'All algorithms', link: '/algorithms/' },
-        ...algorithms.map(({ id, title }) => ({ label: title, link: `/algorithms/${id}/` })),
+        ...algorithmGroups.map(({ category, algorithms }) => ({
+          label: category, collapsed: true,
+          items: algorithms.map(({ id, title }) => ({ label: title, link: `/algorithms/${id}/` })),
+        })),
       ] },
       { label: 'Learn by seeing', items: [{ label: 'Image laboratory', link: '/lab/' }, 'guides/choose', 'guides/detect-and-track'] },
       { label: 'Build with OpenCV', items: ['guides/workers', 'guides/dnn', 'guides/graphs', 'guides/files', 'guides/cadence'] },

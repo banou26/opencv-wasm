@@ -3,16 +3,19 @@ title: Browser quickstart
 description: Install the built package, load its WASM asset in Vite, and run a typed image-processing pipeline.
 ---
 
-The package is currently distributed as a local tarball from the private repository. It is named `@banou/opencv`; the repository is named `opencv-wasm`.
+The npm package is named `@banou/opencv-wasm`; the repository is named `opencv-wasm`.
 
-## Install a built package
+## Install the package
 
-From the library repository, run `npm pack` after building it. In your application:
+In your application:
 
 ```sh
-npm install /path/to/banou-opencv-0.0.6.tgz
+npm install @banou/opencv-wasm
 npm install --save-dev typescript vite
 ```
+
+To use a local build, run `npm pack` in the library repository and install the
+resulting `banou-opencv-wasm-<version>.tgz` instead.
 
 Use TypeScript 5.9 or later and Node 22 or later for the application tooling:
 
@@ -35,8 +38,8 @@ Use TypeScript 5.9 or later and Node 22 or later for the application tooling:
 Vite’s `?url` import supplies the actual emitted asset URL. Keep one initialized instance for a pipeline instead of loading a new engine for every image.
 
 ```ts title="main.ts"
-import { Canny, COLOR_RGBA2GRAY, cvtColor, initOpenCV, Mat, matFromImageData, toImageData } from '@banou/opencv'
-import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
+import { Canny, COLOR_RGBA2GRAY, cvtColor, initOpenCV, Mat, matFromImageData, toImageData } from '@banou/opencv-wasm'
+import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
 
 await initOpenCV({ wasmUrl })
 const canvas = document.querySelector<HTMLCanvasElement>('#image')!
@@ -61,7 +64,7 @@ Importing the package does not fetch WASM. Call and await `initOpenCV` once befo
 `Mat` works as both a constructor and a TypeScript instance type:
 
 ```ts
-import { initOpenCV, Mat, CV_8UC3 } from '@banou/opencv'
+import { initOpenCV, Mat, CV_8UC3 } from '@banou/opencv-wasm'
 
 await initOpenCV()
 using image: Mat = new Mat(480, 640, CV_8UC3)

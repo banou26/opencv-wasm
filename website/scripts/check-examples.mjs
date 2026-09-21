@@ -39,11 +39,11 @@ try {
         }
       }
       const context = {
-        rect: "import('@banou/opencv').Rect",
-        cv: "import('@banou/opencv').OpenCV",
-        image: "import('@banou/opencv').Mat",
-        nextImage: "import('@banou/opencv').Mat",
-        graph: "import('@banou/opencv').GComputation",
+        rect: "import('@banou/opencv-wasm').Rect",
+        cv: "import('@banou/opencv-wasm').OpenCV",
+        image: "import('@banou/opencv-wasm').Mat",
+        nextImage: "import('@banou/opencv-wasm').Mat",
+        graph: "import('@banou/opencv-wasm').GComputation",
         canvas: 'HTMLCanvasElement',
         context: 'CanvasRenderingContext2D',
         modelBytes: 'Uint8Array<ArrayBuffer>',
@@ -69,7 +69,7 @@ try {
     skipLibCheck: false,
     lib: ['lib.esnext.d.ts', 'lib.dom.d.ts'],
     baseUrl: root,
-    paths: { '@banou/opencv': ['lib/index.d.ts'] },
+    paths: { '@banou/opencv-wasm': ['lib/index.d.ts'] },
     typeRoots: [path.join(root, 'node_modules/@types')],
     types: ['node']
   })

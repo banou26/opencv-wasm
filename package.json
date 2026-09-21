@@ -1,5 +1,5 @@
 {
-  "name": "@banou/opencv",
+  "name": "@banou/opencv-wasm",
   "version": "0.0.6",
   "description": "OpenCV and contrib compiled to WebAssembly with generated TypeScript bindings",
   "repository": {
@@ -12,6 +12,10 @@
   },
   "type": "module",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "sideEffects": false,
   "files": [
     "lib",

@@ -1,0 +1,149 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish an unpublished version after all checks pass (main only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build, test and pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      BUILD_JOBS: 3
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      archive: ${{ steps.package.outputs.archive }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Restore native build and downloaded sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # CMake paths stay at /work inside Docker. Only reuse matching build inputs;
+          # restoring patched vendor trees across script changes can retain old patches.
+          path: |
+            .cache
+            vendor
+            build
+          key: ${{ runner.os }}-${{ runner.arch }}-opencv-native-v1-${{ hashFiles('Dockerfile', '.dockerignore', 'scripts/**') }}
+      - name: Build OpenCV, contrib, dependencies and TypeScript bindings
+        run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Check types and run Node and Chromium tests
+        run: npm test
+      - name: Pack and test the installed npm package
+        run: npm run test:package
+      - name: Record the tested archive
+        id: package
+        run: |
+          version=$(node -p "require('./package.json').version")
+          archive="banou-opencv-wasm-${version}.tgz"
+          test -s "$archive"
+          sha256sum "$archive" > "${archive}.sha256"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - name: Save the tested package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-package-${{ github.sha }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish to npm
+    needs: build
+    if: >-
+      github.repository == 'banou26/opencv-wasm' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      published: ${{ steps.registry.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No registry-url or NODE_AUTH_TOKEN: npm obtains credentials through OIDC.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.0
+      - name: Check whether this version is already published
+        id: registry
+        run: node scripts/check-release.mjs
+      - name: Download the tested package from this run
+        if: steps.registry.outputs.publish == 'yes'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-package-${{ github.sha }}
+          path: release
+      - name: Publish the tested archive with provenance
+        if: steps.registry.outputs.publish == 'yes'
+        working-directory: release
+        env:
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+        run: |
+          sha256sum --check "${ARCHIVE}.sha256"
+          npm publish "./${ARCHIVE}" --access public --provenance --ignore-scripts --registry https://registry.npmjs.org
+
+  release:
+    name: Create GitHub release
+    needs: [build, publish]
+    if: needs.publish.outputs.published == 'yes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-package-${{ github.sha }}
+          path: release
+      - name: Tag the published commit and attach the package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+        run: |
+          tag="v${RELEASE_VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists"
+          else
+            gh release create "$tag" --target "$RELEASE_COMMIT" --title "$tag" --generate-notes \
+              "release/${ARCHIVE}" "release/${ARCHIVE}.sha256"
+          fi

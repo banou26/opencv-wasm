@@ -13,7 +13,7 @@ export const cookbookCode: Record<string, string> = {
   cvtColor,
   phaseCorrelate,
   warpAffine
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // Start with two equally sized, 8-bit BGR Mats from the initialized engine:
 // image is the BEFORE frame; nextImage is the AFTER frame.
@@ -160,7 +160,7 @@ cornerMinEigenVal(
   goodFeaturesToTrack,
   line,
   rectangle
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -243,7 +243,7 @@ for (let i = 0; i < 4; i++) line(output, corners[i], corners[(i + 1) % 4], [178,
   matchTemplate,
   meanStdDev,
   minMaxLoc
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -291,7 +291,7 @@ if (maxVal >= 0.6) {
   countNonZero,
   findHomography,
   warpPerspective
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -355,7 +355,7 @@ warpPerspective(nextImage, output, homography, { width: image.cols, height: imag
   NORM_HAMMING,
   ORB_create,
   drawMatches
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -396,7 +396,7 @@ drawMatches(image, first, nextImage, second, matches, output)
   getStructuringElement,
   morphologyEx,
   threshold
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -439,7 +439,7 @@ connectedComponentsWithStats(mask, labels, stats, centres)
   morphologyEx,
   quality_QualitySSIM_compute,
   threshold
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -479,7 +479,7 @@ console.log('Mean grayscale SSIM:', score[0])
   getStructuringElement,
   morphologyEx,
   threshold
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -529,7 +529,7 @@ console.log('Objects:', retained)
   minMaxLoc,
   threshold,
   watershed
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -585,7 +585,7 @@ watershed(image, markers)
   cvtColor,
   findContours,
   threshold
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -624,7 +624,7 @@ for (let i = 0; i < contours.size(); i++) {
   getStructuringElement,
   inRange,
   morphologyEx
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -664,7 +664,7 @@ connectedComponentsWithStats(mask, labels, stats, centres)
   cvtColor,
   findContours,
   threshold
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // rect is an in-bounds { x, y, width, height } rectangle in processed pixels.
@@ -709,7 +709,7 @@ crop.copyTo(output)
   Mat,
   cvtColor,
   grabCut
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // rect is an in-bounds { x, y, width, height } rectangle in processed pixels.
@@ -742,7 +742,7 @@ for (let i = 0; i < mask.data.length; i++) {
   GaussianBlur,
   Mat,
   grabCut
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // rect is an in-bounds { x, y, width, height } rectangle in processed pixels.
@@ -775,7 +775,7 @@ image.copyTo(output, mask)
   GaussianBlur,
   Mat,
   rectangle
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // rect is an in-bounds { x, y, width, height } rectangle in processed pixels.
@@ -806,7 +806,7 @@ blurred.copyTo(output, mask)
   extractChannel,
   fastNlMeansDenoisingColored,
   insertChannel
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -837,7 +837,7 @@ cvtColor(lab, output, COLOR_Lab2BGR)
   GaussianBlur,
   Mat,
   addWeighted
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -866,7 +866,7 @@ addWeighted(image, 1 + amount, blurred, -amount, 0, output)
   mean,
   multiply,
   normalize
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -903,7 +903,7 @@ console.log('Mean squared Laplacian:', mean(energy)[0])
   cvtColor,
   findContours,
   isContourConvex
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -945,7 +945,7 @@ for (let i = 0; i < contours.size(); i++) {
   adaptiveThreshold,
   cvtColor,
   divide
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -979,7 +979,7 @@ adaptiveThreshold(normalized, output, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BI
   cvtColor,
   getRotationMatrix2D,
   warpAffine
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.
@@ -1023,7 +1023,7 @@ warpAffine(image, output, rotation, { width: image.cols, height: image.rows })
   Mat,
   StereoSGBM_create,
   cvtColor
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // nextImage is the equally sized second frame from the same engine.
@@ -1066,7 +1066,7 @@ console.log('Depth values; 0 means invalid:', depthMetres)
   TERM_CRITERIA_EPS,
   bilateralFilter,
   kmeans
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 
 // The engine is already initialized; image is an 8-bit BGR Mat.
 // "using" releases native handles at scope exit; inspect or copy outputs before then.

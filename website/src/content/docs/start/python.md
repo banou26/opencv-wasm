@@ -22,7 +22,7 @@ The algorithms are compiled from OpenCV 5 C++. The JavaScript interface follows 
 Both familiar aliases and native class factories are typed. OpenCV 5 also moves some feature algorithms into `xfeatures2d`; inspect the actual reference instead of assuming the OpenCV 4 layout.
 
 ```ts
-import { KeyPointVector, Mat, SIFT_create } from '@banou/opencv'
+import { KeyPointVector, Mat, SIFT_create } from '@banou/opencv-wasm'
 using detector = SIFT_create()
 if (!detector) throw new Error('SIFT was not created')
 using points = new KeyPointVector()

@@ -8,7 +8,7 @@ Examples use named imports after one `await initOpenCV()` call. See the [initial
 G-API describes a computation before it receives actual images. A graph node is a placeholder for a value; executing the computation produces native results.
 
 ```ts
-import { gapi_BGR2Gray, GComputation, GIn, GMat, GOut, Mat } from '@banou/opencv'
+import { gapi_BGR2Gray, GComputation, GIn, GMat, GOut, Mat } from '@banou/opencv-wasm'
 using inputNode = new GMat()
 using outputNode = gapi_BGR2Gray(inputNode)
 using inputs = GIn([inputNode])
@@ -32,7 +32,7 @@ Graphs support matrices, scalars, typed arrays and opaque values. Typed custom k
 `compileStreaming()` returns the package’s serial asynchronous graph executor. It accepts synchronous or asynchronous frame producers and preserves native output ownership. It does not enable OpenCV’s parallel native streaming scheduler or `desync` regions.
 
 ```ts
-import { Mat } from '@banou/opencv'
+import { Mat } from '@banou/opencv-wasm'
 await using stream = graph.compileStreaming()
 stream.setSource([[image], [nextImage]])
 stream.start()

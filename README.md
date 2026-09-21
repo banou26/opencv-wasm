@@ -1,4 +1,4 @@
-# @banou/opencv
+# @banou/opencv-wasm
 
 OpenCV 5.0.0 and opencv_contrib compiled directly from C++ to WebAssembly, with generated TypeScript declarations, ESM loading, worker support and native image codecs. No Python runtime and no dependency on an existing OpenCV.js npm package.
 
@@ -8,19 +8,22 @@ The [documentation website](website/README.md) includes a searchable API referen
 
 This build includes 56 CPU modules, including G-API, video I/O, FreeType, HDF5, Tesseract OCR and SFM with Ceres. It supports custom graph kernels with mixed matrix, scalar, array and opaque ports, and generated JSDoc in the shipped TypeScript declarations. There are 69 execution scenarios checked in Node and Chromium. The API uses TypeScript and native matrices, with direct named imports and factory aliases. It does not emulate NumPy or Python calling conventions. Read [coverage](docs/coverage.md) for the measured Python inventory, remaining gaps and module limits.
 
-## Install the local build
+## Install
 
 ```sh
-npm install /path/to/banou-opencv-0.0.6.tgz
+npm install @banou/opencv-wasm
 ```
 
-The tarball is produced by `npm pack` in this repository. Nothing is published automatically.
+For a local build, run `npm pack` in this repository and install the resulting
+`banou-opencv-wasm-<version>.tgz` in your application. See
+[publishing](docs/publishing.md) for the GitHub Actions release workflow and its
+one-time npm setup.
 
 ## Vite and TypeScript
 
 ```ts
-import { COLOR_RGBA2GRAY, cvtColor, initOpenCV, Mat, matFromImageData, toImageData } from '@banou/opencv'
-import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
+import { COLOR_RGBA2GRAY, cvtColor, initOpenCV, Mat, matFromImageData, toImageData } from '@banou/opencv-wasm'
+import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
 
 await initOpenCV({ wasmUrl })
 
@@ -35,7 +38,7 @@ Use TypeScript 5.9 or later with `strict: true`, `lib: ["ESNext", "DOM"]`, and `
 Pass an explicit `wasmUrl` when bundling. For an unbundled deployment, serve `lib/` intact and import `lib/index.js`; the default loader resolves the colocated WASM. Serve `.wasm` as `application/wasm`. A current browser with WebAssembly SIMD is required. Cross-origin isolation and SharedArrayBuffer are not required.
 
 ```ts
-import { CV_8UC1, decodeImage, encodeImage, initOpenCV, matFromArray } from '@banou/opencv'
+import { CV_8UC1, decodeImage, encodeImage, initOpenCV, matFromArray } from '@banou/opencv-wasm'
 await initOpenCV()
 using image = matFromArray(2, 2, CV_8UC1, [0, 80, 160, 255])
 const png = encodeImage('.png', image)
@@ -61,7 +64,7 @@ This last example also runs in Node 22+ after installing the tarball. `wasmBinar
 ## DNN
 
 ```ts
-import { dnn_blobFromImage, dnn_readNetFromONNX, FS } from '@banou/opencv'
+import { dnn_blobFromImage, dnn_readNetFromONNX, FS } from '@banou/opencv-wasm'
 FS.writeFile('/model.onnx', modelBytes)
 using net = dnn_readNetFromONNX('/model.onnx')
 FS.unlink('/model.onnx')
@@ -78,7 +81,7 @@ Models are supplied by the application. Inference uses the CPU WASM backend. DNN
 ## CPU graphs
 
 ```ts
-import { gapi_BGR2Gray, GComputation, GIn, GMat, GOut, Mat } from '@banou/opencv'
+import { gapi_BGR2Gray, GComputation, GIn, GMat, GOut, Mat } from '@banou/opencv-wasm'
 using inputNode = new GMat()
 using outputNode = gapi_BGR2Gray(inputNode)
 using inputs = GIn([inputNode])
@@ -97,7 +100,7 @@ Graph execution supports matrix, scalar, typed array and opaque value nodes. `GA
 Custom matrix kernels execute inside the native CPU graph. Metadata callbacks return ordinary layout values; execution callbacks borrow native matrices and fill the preallocated outputs:
 
 ```ts
-import { bitwise_not, compile_args, GComputation, GIn, GMat, GOut, kernel as createKernel, op } from '@banou/opencv'
+import { bitwise_not, compile_args, GComputation, GIn, GMat, GOut, kernel as createKernel, op } from '@banou/opencv-wasm'
 using operation = op('app.invert', {
   inputs: 1,
   outputs: 1,
@@ -134,7 +137,7 @@ import {
   GOut,
   Mat,
   networks as cvNetworks
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 using network = dnn_readNetFromONNX('/model.onnx')
 using parameters = new gapi_dnn_Params('classifier', network)
 parameters.cfgInput('input', {
@@ -161,7 +164,7 @@ Use your model's input and output names. Omit `cfgInput` for raw `CV_32FC1` tens
 ## Frame streams
 
 ```ts
-import { Mat } from '@banou/opencv'
+import { Mat } from '@banou/opencv-wasm'
 await using stream = computation.compileStreaming(options)
 stream.setSource([[image], [nextImage]])
 stream.start()

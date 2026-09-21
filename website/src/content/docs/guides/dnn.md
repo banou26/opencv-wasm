@@ -10,7 +10,7 @@ This package uses OpenCV’s DNN engine on the CPU WASM backend. WebGPU, WebNN, 
 ## Load and execute
 
 ```ts
-import { dnn_blobFromImage, dnn_readNetFromONNX, FS } from '@banou/opencv'
+import { dnn_blobFromImage, dnn_readNetFromONNX, FS } from '@banou/opencv-wasm'
 FS.writeFile('/model.onnx', modelBytes)
 using net = dnn_readNetFromONNX('/model.onnx')
 FS.unlink('/model.onnx')

@@ -43,7 +43,7 @@ try {
   await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
   execFileSync('npm', ['install', join(repo, archive), '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumer, stdio: 'pipe' })
   await writeFile(join(consumer, 'check.ts'), `
-import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv'
+import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv-wasm'
 const cv = await createOpenCV()
 ${version5Check}
 ${namedCheck}
@@ -92,14 +92,14 @@ typedOperation.on([placeholder])
 `)
   await writeFile(join(consumer, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ESNext', 'DOM'] }, files: ['check.ts'] }))
   execFileSync(process.execPath, [join(repo, 'node_modules/typescript/bin/tsc'), '-p', join(consumer, 'tsconfig.json')], { stdio: 'pipe' })
-  checkEditorDocumentation(join(consumer, 'hover.ts'), '@banou/opencv')
-  execFileSync(process.execPath, ['--input-type=module', '-e', `import {createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage} from '@banou/opencv'; const cv=await createOpenCV(); if (typeof cv.SIFT.create !== 'function') throw new Error('Missing installed native API'); ${version5Check}
+  checkEditorDocumentation(join(consumer, 'hover.ts'), '@banou/opencv-wasm')
+  execFileSync(process.execPath, ['--input-type=module', '-e', `import {createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage} from '@banou/opencv-wasm'; const cv=await createOpenCV(); if (typeof cv.SIFT.create !== 'function') throw new Error('Missing installed native API'); ${version5Check}
 ${namedCheck} ${typedKernelCheck}`], { cwd: consumer, stdio: 'pipe' })
   await writeFile(join(consumer, 'index.html'), '<!doctype html><html><head><title>Installed OpenCV</title></head><body><output id="result"></output><script type="module" src="/app.ts"></script></body></html>')
   const modelBytes = [...await readFile(join(repo, 'tests/fixtures/relu.onnx'))]
   await writeFile(join(consumer, 'app.ts'), `
-import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv'
-import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
+import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv-wasm'
+import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
 const cv = await createOpenCV({ wasmUrl })
 await initOpenCV({ wasmUrl })
 ${version5Check}

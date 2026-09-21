@@ -18,10 +18,10 @@ import { algorithms } from '../../data/algorithms'
 
 ## A library you can inspect
 
-`@banou/opencv` compiles OpenCV and its contrib modules directly from C++ to WebAssembly. The API includes image processing, features, calibration, tracking, machine learning, DNN inference and more. Your editor gets parameter descriptions, exact overloads and distinct native handle types.
+`@banou/opencv-wasm` compiles OpenCV and its contrib modules directly from C++ to WebAssembly. The API includes image processing, features, calibration, tracking, machine learning, DNN inference and more. Your editor gets parameter descriptions, exact overloads and distinct native handle types.
 
 ```ts
-import { CV_8UC1, initOpenCV, Mat, matFromArray, THRESH_BINARY, threshold } from '@banou/opencv'
+import { CV_8UC1, initOpenCV, Mat, matFromArray, THRESH_BINARY, threshold } from '@banou/opencv-wasm'
 await initOpenCV()
 using image = matFromArray(2, 3, CV_8UC1, [0, 30, 90, 150, 220, 255])
 using binary = new Mat()

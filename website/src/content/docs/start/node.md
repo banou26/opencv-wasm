@@ -18,7 +18,7 @@ import {
   IMREAD_UNCHANGED,
   initOpenCV,
   Mat
-} from '@banou/opencv'
+} from '@banou/opencv-wasm'
 import { readFile, writeFile } from 'node:fs/promises'
 await initOpenCV()
 using image = decodeImage(await readFile('input.png'), IMREAD_UNCHANGED)
@@ -43,7 +43,7 @@ Run TypeScript with your existing build or a runner such as `tsx`. Use `module: 
 Node’s filesystem and `FS` are separate. `readFile` returns host file bytes. Native model loaders expect paths inside `FS`:
 
 ```ts
-import { dnn_readNetFromONNX, FS } from '@banou/opencv'
+import { dnn_readNetFromONNX, FS } from '@banou/opencv-wasm'
 FS.writeFile('/model.onnx', await readFile('model.onnx'))
 using net = dnn_readNetFromONNX('/model.onnx')
 FS.unlink('/model.onnx')

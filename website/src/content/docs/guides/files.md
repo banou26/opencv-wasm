@@ -8,7 +8,7 @@ Examples use named imports after one `await initOpenCV()` call. See the [initial
 Each OpenCV instance owns an in-memory filesystem, `FS`. Native paths refer to this filesystem. They are not host paths, URLs or browser file handles.
 
 ```ts
-import { dnn_readNetFromONNX, FS } from '@banou/opencv'
+import { dnn_readNetFromONNX, FS } from '@banou/opencv-wasm'
 const response = await fetch('/assets/model.onnx')
 if (!response.ok) throw new Error(`Model request failed: ${response.status}`)
 FS.writeFile('/model.onnx', new Uint8Array(await response.arrayBuffer()))

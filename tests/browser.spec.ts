@@ -1,5 +1,27 @@
 import { expect, test } from '@playwright/test'
 
+test('named imports initialize once and execute native constructors and algorithms', async ({ page }) => {
+  await page.goto('/')
+  const result = await page.evaluate(async () => {
+    const api = await import('/lib/index.js')
+    let before = ''
+    try { new api.Mat() } catch (error) { before = String(error) }
+    const first = api.initOpenCV(), second = api.initOpenCV()
+    const cv = await first
+    using input = new api.Mat(3, 3, api.CV_8UC1, [42, 0, 0, 0]), output = new api.Mat()
+    api.GaussianBlur(input, output, { width: 3, height: 3 }, 1)
+    using sift = api.SIFT.create()
+    using rgba = api.matFromImageData(new ImageData(new Uint8ClampedArray([11, 22, 33, 255]), 1, 1))
+    const pixels = [...api.toImageData(rgba).data]
+    return { before, sameLoad: first === second, identity: api.Mat === cv.Mat,
+      instance: output instanceof api.Mat, pixels: [...output.data], sift: !!sift,
+      dnn: typeof api.dnn_readNetFromONNX, fs: api.FS === cv.FS, rgba: pixels }
+  })
+  expect(result.before).toContain('await initOpenCV')
+  expect(result).toMatchObject({ sameLoad: true, identity: true, instance: true,
+    pixels: Array(9).fill(42), sift: true, dnn: 'function', fs: true, rgba: [11, 22, 33, 255] })
+})
+
 test('Chromium executes OpenCV 5 matrix types, shapes and CPU additions', async ({ page }) => {
   await page.goto('/')
   const result = await page.evaluate(async () => {

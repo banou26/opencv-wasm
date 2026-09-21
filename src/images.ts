@@ -1,4 +1,5 @@
 import type { MainModule, Mat } from '../lib/opencv.js'
+import { getDefaultOpenCV } from './default.js'
 
 /**
  * Copy numeric values into a new native matrix.
@@ -9,7 +10,7 @@ import type { MainModule, Mat } from '../lib/opencv.js'
  * @param data Row-major interleaved components. Use bigint for CV_64S/CV_64U, boolean or numeric values for CV_Bool, and numbers for other depths. Half and bfloat values are converted from numbers. Length must equal rows * cols * channels.
  * @returns An owned matrix to release with using or delete().
  */
-export const matFromArray = (cv: MainModule, rows: number, cols: number, type: number, data: ArrayLike<number> | ArrayLike<bigint> | ArrayLike<boolean>): Mat => {
+const matFromArrayForInstance = (cv: MainModule, rows: number, cols: number, type: number, data: ArrayLike<number> | ArrayLike<bigint> | ArrayLike<boolean>): Mat => {
   if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(cols) || rows < 0 || cols < 0) {
     throw new RangeError('Matrix dimensions must be nonnegative integers')
   }
@@ -73,7 +74,7 @@ export const matFromArray = (cv: MainModule, rows: number, cols: number, type: n
  * @param image ImageData or an equivalent object with RGBA bytes, width and height. The input remains caller-owned.
  * @returns An owned RGBA matrix. Dispose it after use; convert color order before passing it to algorithms that expect BGR.
  */
-export const matFromImageData = (cv: MainModule, image: Pick<ImageData, 'data' | 'width' | 'height'>): Mat =>
+const matFromImageDataForInstance = (cv: MainModule, image: Pick<ImageData, 'data' | 'width' | 'height'>): Mat =>
   matFromArray(cv, image.height, image.width, cv.CV_8UC4, image.data)
 
 /**
@@ -83,7 +84,7 @@ export const matFromImageData = (cv: MainModule, image: Pick<ImageData, 'data' |
  * @param order Input channel order. Defaults to BGR for three channels and RGBA for four; choose bgra for decoded alpha images.
  * @returns RGBA ImageData whose storage remains valid after the matrix is deleted.
  */
-export const toImageData = (cv: MainModule, mat: Mat, order: 'bgr' | 'rgb' | 'bgra' | 'rgba' = 'bgr'): ImageData => {
+const toImageDataForInstance = (cv: MainModule, mat: Mat, order: 'bgr' | 'rgb' | 'bgra' | 'rgba' = 'bgr'): ImageData => {
   if (mat.empty() || mat.depth() !== cv.CV_8U) throw new TypeError('Expected a nonempty 8-bit image')
   const rgba = new cv.Mat()
   try {
@@ -105,7 +106,7 @@ export const toImageData = (cv: MainModule, mat: Mat, order: 'bgr' | 'rgb' | 'bg
  * @param flags IMREAD flags, defaulting to IMREAD_COLOR. Color output uses BGR or BGRA.
  * @returns An owned decoded matrix. Throws if the codec cannot decode the image.
  */
-export const decodeImage = (cv: MainModule, bytes: Uint8Array, flags = cv.IMREAD_COLOR): Mat => {
+const decodeImageForInstance = (cv: MainModule, bytes: Uint8Array, flags = cv.IMREAD_COLOR): Mat => {
   const input = matFromArray(cv, 1, bytes.length, cv.CV_8UC1, bytes)
   try {
     const result = cv.imdecode(input, flags)
@@ -127,7 +128,7 @@ export const decodeImage = (cv: MainModule, bytes: Uint8Array, flags = cv.IMREAD
  * @param parameters Alternating IMWRITE parameter identifiers and values.
  * @returns A copied byte array with no native disposal requirement. Throws on an unsupported format or failed encoding.
  */
-export const encodeImage = (cv: MainModule, extension: string, mat: Mat, parameters: readonly number[] = []): Uint8Array<ArrayBuffer> => {
+const encodeImageForInstance = (cv: MainModule, extension: string, mat: Mat, parameters: readonly number[] = []): Uint8Array<ArrayBuffer> => {
   if (!extension.startsWith('.')) throw new TypeError('An image extension must start with a dot')
   if (parameters.length % 2) throw new RangeError('Codec parameters must be key/value pairs')
   const output = new cv.ucharVector()
@@ -140,4 +141,74 @@ export const encodeImage = (cv: MainModule, extension: string, mat: Mat, paramet
     params.delete()
     output.delete()
   }
+}
+
+
+/** Pixel components accepted by matFromArray. Exact 64-bit integers require bigint. */
+type PixelValues = ArrayLike<number> | ArrayLike<bigint> | ArrayLike<boolean>
+type ImagePixels = Pick<ImageData, 'data' | 'width' | 'height'>
+type ColourOrder = 'bgr' | 'rgb' | 'bgra' | 'rgba'
+
+/**
+ * Copy row-major interleaved values into an owned native matrix on the shared engine.
+ * Await initOpenCV() first. Length must equal rows × cols × channels; use bigint for 64-bit integers.
+ * @returns An owned matrix to release with using or delete(). Borrowed heap views are copied before allocation.
+ */
+export function matFromArray(rows: number, cols: number, type: number, data: PixelValues): Mat
+/** Copy numeric values into an owned matrix on an explicitly supplied isolated engine. */
+export function matFromArray(cv: MainModule, rows: number, cols: number, type: number, data: PixelValues): Mat
+export function matFromArray(...args: [number, number, number, PixelValues] | [MainModule, number, number, number, PixelValues]): Mat {
+  if (args.length === 4) return matFromArrayForInstance(getDefaultOpenCV(), ...args)
+  return matFromArrayForInstance(...args)
+}
+
+/** Copy canvas RGBA bytes into an owned CV_8UC4 matrix on the initialized shared engine. Dispose after use. */
+export function matFromImageData(image: ImagePixels): Mat
+/** Copy canvas RGBA bytes into an owned CV_8UC4 matrix on an isolated engine. */
+export function matFromImageData(cv: MainModule, image: ImagePixels): Mat
+export function matFromImageData(...args: [ImagePixels] | [MainModule, ImagePixels]): Mat {
+  if (args.length === 1) return matFromImageDataForInstance(getDefaultOpenCV(), ...args)
+  return matFromImageDataForInstance(...args)
+}
+
+/**
+ * Copy a shared-engine 8-bit matrix to independent RGBA ImageData, handling row strides.
+ * Requires ImageData in the environment. Default colour order is BGR for three channels, RGBA for four.
+ * Use bgra for decoded alpha images. The returned pixels remain valid after the matrix is disposed.
+ */
+export function toImageData(mat: Mat, order?: ColourOrder): ImageData
+/** Copy an isolated engine's 8-bit matrix to independent browser ImageData. */
+export function toImageData(cv: MainModule, mat: Mat, order?: ColourOrder): ImageData
+export function toImageData(first: MainModule | Mat, second?: Mat | ColourOrder, third?: ColourOrder): ImageData {
+  return 'HEAPU8' in first
+    ? toImageDataForInstance(first, second as Mat, third)
+    : toImageDataForInstance(getDefaultOpenCV(), first, second as ColourOrder | undefined)
+}
+
+/**
+ * Decode encoded bytes with native codecs on the initialized shared engine, in browsers or Node.
+ * Defaults to IMREAD_COLOR; output colour is BGR or BGRA. Throws if decoding fails.
+ * @returns An owned matrix to release with using or delete().
+ */
+export function decodeImage(bytes: Uint8Array, flags?: number): Mat
+/** Decode encoded bytes into an owned matrix on an explicitly supplied isolated engine. */
+export function decodeImage(cv: MainModule, bytes: Uint8Array, flags?: number): Mat
+export function decodeImage(first: MainModule | Uint8Array, second?: Uint8Array | number, third?: number): Mat {
+  return 'HEAPU8' in first
+    ? decodeImageForInstance(first, second as Uint8Array, third)
+    : decodeImageForInstance(getDefaultOpenCV(), first, second as number | undefined)
+}
+
+/**
+ * Encode a shared-engine matrix to independent image bytes; no DOM is required.
+ * Extension starts with a dot, such as .png. Native colour codecs expect BGR or BGRA.
+ * Parameters are alternating IMWRITE identifiers and values. Throws if encoding fails.
+ */
+export function encodeImage(extension: string, mat: Mat, parameters?: readonly number[]): Uint8Array<ArrayBuffer>
+/** Encode an isolated engine's matrix to independent image bytes. */
+export function encodeImage(cv: MainModule, extension: string, mat: Mat, parameters?: readonly number[]): Uint8Array<ArrayBuffer>
+export function encodeImage(first: MainModule | string, second: string | Mat, third?: Mat | readonly number[], fourth?: readonly number[]): Uint8Array<ArrayBuffer> {
+  return typeof first === 'string'
+    ? encodeImageForInstance(getDefaultOpenCV(), first, second as Mat, third as readonly number[] | undefined)
+    : encodeImageForInstance(first, second as string, third as Mat, fourth)
 }

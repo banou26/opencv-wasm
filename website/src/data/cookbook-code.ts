@@ -1,26 +1,41 @@
-/** Typechecked core chains. The recipe pages define the cv, image, nextImage and rect inputs used here. */
+/** Typechecked core chains. Initialize with initOpenCV first; the pages define image, nextImage and rect inputs. */
 export const cookbookCode: Record<string, string> = {
-  'motion-vectors': `using beforeGray = new cv.Mat(), afterGray = new cv.Mat()
-cv.cvtColor(image, beforeGray, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, afterGray, cv.COLOR_BGR2GRAY)
-using a = new cv.Mat(), b = new cv.Mat(), hann = new cv.Mat()
-beforeGray.convertTo(a, cv.CV_32F)
-afterGray.convertTo(b, cv.CV_32F)
-cv.createHanningWindow(hann, { width: image.cols, height: image.rows }, cv.CV_32F)
-const pan = cv.phaseCorrelate(a, b, hann)
+  'motion-vectors': `import {
+  BORDER_REFLECT_101,
+  COLOR_BGR2GRAY,
+  CV_32F,
+  CV_64F,
+  INTER_LINEAR,
+  Mat,
+  calcOpticalFlowFarneback,
+  cornerMinEigenVal,
+  createHanningWindow,
+  cvtColor,
+  phaseCorrelate,
+  warpAffine
+} from '@banou/opencv'
+
+using beforeGray = new Mat(), afterGray = new Mat()
+cvtColor(image, beforeGray, COLOR_BGR2GRAY)
+cvtColor(nextImage, afterGray, COLOR_BGR2GRAY)
+using a = new Mat(), b = new Mat(), hann = new Mat()
+beforeGray.convertTo(a, CV_32F)
+afterGray.convertTo(b, CV_32F)
+createHanningWindow(hann, { width: image.cols, height: image.rows }, CV_32F)
+const pan = phaseCorrelate(a, b, hann)
 const usable = Number.isFinite(pan.value.x) && Number.isFinite(pan.value.y) && pan.response >= 0.1
   && Math.abs(pan.value.x) < image.cols * 0.45 && Math.abs(pan.value.y) < image.rows * 0.45
 const dx = usable ? pan.value.x : 0, dy = usable ? pan.value.y : 0
-using toFirst = new cv.Mat(2, 3, cv.CV_64F), toSecond = new cv.Mat(2, 3, cv.CV_64F)
+using toFirst = new Mat(2, 3, CV_64F), toSecond = new Mat(2, 3, CV_64F)
 toFirst.data64F.set([1, 0, -dx, 0, 1, -dy])
 toSecond.data64F.set([1, 0, dx, 0, 1, dy])
-using alignedAfter = new cv.Mat(), alignedBefore = new cv.Mat()
+using alignedAfter = new Mat(), alignedBefore = new Mat()
 const size = { width: image.cols, height: image.rows }
-cv.warpAffine(afterGray, alignedAfter, toFirst, size, cv.INTER_LINEAR, cv.BORDER_REFLECT_101)
-cv.warpAffine(beforeGray, alignedBefore, toSecond, size, cv.INTER_LINEAR, cv.BORDER_REFLECT_101)
-using forward = new cv.Mat(), backward = new cv.Mat()
-cv.calcOpticalFlowFarneback(beforeGray, alignedAfter, forward, 0.5, 4, 25, 5, 7, 1.5, 0)
-cv.calcOpticalFlowFarneback(afterGray, alignedBefore, backward, 0.5, 4, 25, 5, 7, 1.5, 0)
+warpAffine(afterGray, alignedAfter, toFirst, size, INTER_LINEAR, BORDER_REFLECT_101)
+warpAffine(beforeGray, alignedBefore, toSecond, size, INTER_LINEAR, BORDER_REFLECT_101)
+using forward = new Mat(), backward = new Mat()
+calcOpticalFlowFarneback(beforeGray, alignedAfter, forward, 0.5, 4, 25, 5, 7, 1.5, 0)
+calcOpticalFlowFarneback(afterGray, alignedBefore, backward, 0.5, 4, 25, 5, 7, 1.5, 0)
 const f = Float32Array.from(forward.data32F), r = Float32Array.from(backward.data32F)
 for (let i = 0; i < f.length; i += 2) {
   f[i] += dx; f[i + 1] += dy
@@ -28,27 +43,42 @@ for (let i = 0; i < f.length; i += 2) {
 }
 forward.data32F.set(f)
 backward.data32F.set(r)
-using texture = new cv.Mat()
-cv.cornerMinEigenVal(beforeGray, texture, 7, 3)
+using texture = new Mat()
+cornerMinEigenVal(beforeGray, texture, 7, 3)
 // forward.data32F[(y * image.cols + x) * 2 + 0] is dx, +1 is dy.
 // A point (x,y) in image should land at (x+dx,y+dy) in nextImage.
 // The full recipe bilinearly samples backward flow at that destination,
 // rejects weak texture and inconsistent returns, and takes per-cell medians.
 // Never report a textureless cell as a known zero-displacement measurement.
 `,
-  'track-region': `using beforeGray = new cv.Mat(), afterGray = new cv.Mat()
-cv.cvtColor(image, beforeGray, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, afterGray, cv.COLOR_BGR2GRAY)
-using mask = cv.Mat.zeros(image.rows, image.cols, cv.CV_8U)
-cv.rectangle(mask, { x: rect.x, y: rect.y },
+  'track-region': `import {
+  COLOR_BGR2GRAY,
+  CV_32FC2,
+  CV_8U,
+  Mat,
+  RANSAC,
+  calcOpticalFlowPyrLK,
+  countNonZero,
+  cvtColor,
+  estimateAffinePartial2D,
+  goodFeaturesToTrack,
+  line,
+  rectangle
+} from '@banou/opencv'
+
+using beforeGray = new Mat(), afterGray = new Mat()
+cvtColor(image, beforeGray, COLOR_BGR2GRAY)
+cvtColor(nextImage, afterGray, COLOR_BGR2GRAY)
+using mask = Mat.zeros(image.rows, image.cols, CV_8U)
+rectangle(mask, { x: rect.x, y: rect.y },
   { x: rect.x + rect.width - 1, y: rect.y + rect.height - 1 }, [255, 0, 0, 0], -1)
-using points = new cv.Mat(), tracked = new cv.Mat()
-using status = new cv.Mat(), error = new cv.Mat()
-cv.goodFeaturesToTrack(beforeGray, points, 150, 0.01, 5, mask)
+using points = new Mat(), tracked = new Mat()
+using status = new Mat(), error = new Mat()
+goodFeaturesToTrack(beforeGray, points, 150, 0.01, 5, mask)
 if (points.rows < 4) throw new Error('Select a textured region with at least four corners')
-cv.calcOpticalFlowPyrLK(beforeGray, afterGray, points, tracked, status, error)
-using returned = new cv.Mat(), backwardStatus = new cv.Mat(), backwardError = new cv.Mat()
-cv.calcOpticalFlowPyrLK(afterGray, beforeGray, tracked, returned, backwardStatus, backwardError)
+calcOpticalFlowPyrLK(beforeGray, afterGray, points, tracked, status, error)
+using returned = new Mat(), backwardStatus = new Mat(), backwardError = new Mat()
+calcOpticalFlowPyrLK(afterGray, beforeGray, tracked, returned, backwardStatus, backwardError)
 const from: number[] = [], to: number[] = []
 for (let i = 0; i < points.rows; i++) {
   const x = points.data32F[i * 2], y = points.data32F[i * 2 + 1]
@@ -59,234 +89,471 @@ for (let i = 0; i < points.rows; i++) {
   }
 }
 if (from.length < 8) throw new Error('Too few consistent tracks')
-using sourcePoints = new cv.Mat(from.length / 2, 1, cv.CV_32FC2)
-using targetPoints = new cv.Mat(to.length / 2, 1, cv.CV_32FC2), inliers = new cv.Mat()
+using sourcePoints = new Mat(from.length / 2, 1, CV_32FC2)
+using targetPoints = new Mat(to.length / 2, 1, CV_32FC2), inliers = new Mat()
 sourcePoints.data32F.set(from)
 targetPoints.data32F.set(to)
-using transform = cv.estimateAffinePartial2D(sourcePoints, targetPoints, inliers, cv.RANSAC, 3)
-if (transform.empty() || cv.countNonZero(inliers) < 3) throw new Error('No stable region transform')
+using transform = estimateAffinePartial2D(sourcePoints, targetPoints, inliers, RANSAC, 3)
+if (transform.empty() || countNonZero(inliers) < 3) throw new Error('No stable region transform')
 const m = Array.from(transform.data64F)
 const corners = [[rect.x, rect.y], [rect.x + rect.width, rect.y],
   [rect.x + rect.width, rect.y + rect.height], [rect.x, rect.y + rect.height]]
   .map(([x, y]) => ({ x: Math.round(m[0] * x + m[1] * y + m[2]), y: Math.round(m[3] * x + m[4] * y + m[5]) }))
-using output = nextImage.clone()
-for (let i = 0; i < 4; i++) cv.line(output, corners[i], corners[(i + 1) % 4], [178, 216, 85, 255], 3)
+using output = nextImage.mat_clone()
+for (let i = 0; i < 4; i++) line(output, corners[i], corners[(i + 1) % 4], [178, 216, 85, 255], 3)
 `,
-  'locate-template': `using beforeGray = new cv.Mat(), afterGray = new cv.Mat()
-cv.cvtColor(image, beforeGray, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, afterGray, cv.COLOR_BGR2GRAY)
-using template = beforeGray.roi(rect), scores = new cv.Mat()
-using mean = new cv.Mat(), deviation = new cv.Mat()
-cv.meanStdDev(template, mean, deviation)
+  'locate-template': `import {
+  COLOR_BGR2GRAY,
+  Mat,
+  TM_CCOEFF_NORMED,
+  cvtColor,
+  matchTemplate,
+  meanStdDev,
+  minMaxLoc
+} from '@banou/opencv'
+
+using beforeGray = new Mat(), afterGray = new Mat()
+cvtColor(image, beforeGray, COLOR_BGR2GRAY)
+cvtColor(nextImage, afterGray, COLOR_BGR2GRAY)
+using template = beforeGray.roi(rect), scores = new Mat()
+using mean = new Mat(), deviation = new Mat()
+meanStdDev(template, mean, deviation)
 if (deviation.data64F[0] < 1) throw new Error('Select a textured patch')
-cv.matchTemplate(afterGray, template, scores, cv.TM_CCOEFF_NORMED)
-const { maxLoc, maxVal } = cv.minMaxLoc(scores)
+matchTemplate(afterGray, template, scores, TM_CCOEFF_NORMED)
+const { maxLoc, maxVal } = minMaxLoc(scores)
 if (maxVal >= 0.6) {
   console.log('Template top-left:', maxLoc, 'score:', maxVal)
 }
 `,
-  'align-images': `using orb = cv.ORB.create(800), matcher = new cv.BFMatcher(cv.NORM_HAMMING, true)
+  'align-images': `import {
+  BFMatcher,
+  CV_32FC2,
+  DMatchVector,
+  INTER_LINEAR,
+  KeyPointVector,
+  Mat,
+  NORM_HAMMING,
+  ORB_create,
+  RANSAC,
+  WARP_INVERSE_MAP,
+  countNonZero,
+  findHomography,
+  warpPerspective
+} from '@banou/opencv'
+
+using orb = ORB_create(800), matcher = new BFMatcher(NORM_HAMMING, true)
 if (!orb) throw new Error('ORB factory failed')
-using first = new cv.KeyPointVector(), second = new cv.KeyPointVector()
-using a = new cv.Mat(), b = new cv.Mat(), mask = new cv.Mat()
+using first = new KeyPointVector(), second = new KeyPointVector()
+using a = new Mat(), b = new Mat(), mask = new Mat()
 orb.detectAndCompute(image, mask, first, a)
 orb.detectAndCompute(nextImage, mask, second, b)
 if (a.empty() || b.empty()) throw new Error('Both images need features')
-using matches = new cv.DMatchVector()
+using matches = new DMatchVector()
 matcher.match(a, b, matches)
 const ordered = Array.from({ length: matches.size() }, (_, i) => matches.get(i)!)
   .sort((a, b) => a.distance - b.distance).slice(0, 200)
 if (ordered.length < 4) throw new Error('Fewer than four matches')
 const from = ordered.flatMap(m => { const p = first.get(m.queryIdx)!.pt; return [p.x, p.y] })
 const to = ordered.flatMap(m => { const p = second.get(m.trainIdx)!.pt; return [p.x, p.y] })
-using sourcePoints = new cv.Mat(ordered.length, 1, cv.CV_32FC2)
-using targetPoints = new cv.Mat(ordered.length, 1, cv.CV_32FC2), inliers = new cv.Mat()
+using sourcePoints = new Mat(ordered.length, 1, CV_32FC2)
+using targetPoints = new Mat(ordered.length, 1, CV_32FC2), inliers = new Mat()
 sourcePoints.data32F.set(from)
 targetPoints.data32F.set(to)
-using homography = cv.findHomography(sourcePoints, targetPoints, cv.RANSAC, 3, inliers)
-if (homography.empty() || cv.countNonZero(inliers) < 4) throw new Error('No stable homography')
-using output = new cv.Mat()
-cv.warpPerspective(nextImage, output, homography, { width: image.cols, height: image.rows },
-  cv.INTER_LINEAR | cv.WARP_INVERSE_MAP)
+using homography = findHomography(sourcePoints, targetPoints, RANSAC, 3, inliers)
+if (homography.empty() || countNonZero(inliers) < 4) throw new Error('No stable homography')
+using output = new Mat()
+warpPerspective(nextImage, output, homography, { width: image.cols, height: image.rows },
+  INTER_LINEAR | WARP_INVERSE_MAP)
 `,
-  'match-features': `using orb = cv.ORB.create(800), matcher = new cv.BFMatcher(cv.NORM_HAMMING, true)
+  'match-features': `import {
+  BFMatcher,
+  DMatchVector,
+  KeyPointVector,
+  Mat,
+  NORM_HAMMING,
+  ORB_create,
+  drawMatches
+} from '@banou/opencv'
+
+using orb = ORB_create(800), matcher = new BFMatcher(NORM_HAMMING, true)
 if (!orb) throw new Error('ORB factory failed')
-using first = new cv.KeyPointVector(), second = new cv.KeyPointVector()
-using a = new cv.Mat(), b = new cv.Mat(), mask = new cv.Mat()
+using first = new KeyPointVector(), second = new KeyPointVector()
+using a = new Mat(), b = new Mat(), mask = new Mat()
 orb.detectAndCompute(image, mask, first, a)
 orb.detectAndCompute(nextImage, mask, second, b)
-using matches = new cv.DMatchVector(), output = new cv.Mat()
+using matches = new DMatchVector(), output = new Mat()
 if (!a.empty() && !b.empty()) matcher.match(a, b, matches)
-cv.drawMatches(image, first, nextImage, second, matches, output)
+drawMatches(image, first, nextImage, second, matches, output)
 // This is the candidate view. RANSAC in the full recipe rejects inconsistent matches.
 `,
-  'detect-motion': `using a = new cv.Mat(), b = new cv.Mat(), difference = new cv.Mat(), mask = new cv.Mat()
-cv.cvtColor(image, a, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, b, cv.COLOR_BGR2GRAY)
-cv.GaussianBlur(a, a, { width: 5, height: 5 }, 1)
-cv.GaussianBlur(b, b, { width: 5, height: 5 }, 1)
-cv.absdiff(a, b, difference)
-cv.threshold(difference, mask, 25, 255, cv.THRESH_BINARY)
-using kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, { width: 3, height: 3 })
-cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel)
-using labels = new cv.Mat(), stats = new cv.Mat(), centres = new cv.Mat()
-cv.connectedComponentsWithStats(mask, labels, stats, centres)
+  'detect-motion': `import {
+  COLOR_BGR2GRAY,
+  GaussianBlur,
+  MORPH_CLOSE,
+  MORPH_ELLIPSE,
+  Mat,
+  THRESH_BINARY,
+  absdiff,
+  connectedComponentsWithStats,
+  cvtColor,
+  getStructuringElement,
+  morphologyEx,
+  threshold
+} from '@banou/opencv'
+
+using a = new Mat(), b = new Mat(), difference = new Mat(), mask = new Mat()
+cvtColor(image, a, COLOR_BGR2GRAY)
+cvtColor(nextImage, b, COLOR_BGR2GRAY)
+GaussianBlur(a, a, { width: 5, height: 5 }, 1)
+GaussianBlur(b, b, { width: 5, height: 5 }, 1)
+absdiff(a, b, difference)
+threshold(difference, mask, 25, 255, THRESH_BINARY)
+using kernel = getStructuringElement(MORPH_ELLIPSE, { width: 3, height: 3 })
+morphologyEx(mask, mask, MORPH_CLOSE, kernel)
+using labels = new Mat(), stats = new Mat(), centres = new Mat()
+connectedComponentsWithStats(mask, labels, stats, centres)
 `,
-  'compare-images': `using a = new cv.Mat(), b = new cv.Mat(), similarity = new cv.Mat(), mask = new cv.Mat()
-cv.cvtColor(image, a, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, b, cv.COLOR_BGR2GRAY)
-const score = cv.quality.QualitySSIM_compute(a, b, similarity)
-cv.threshold(similarity, mask, 0.8, 255, cv.THRESH_BINARY_INV)
-mask.convertTo(mask, cv.CV_8U)
-using kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, { width: 3, height: 3 })
-cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel)
+  'compare-images': `import {
+  COLOR_BGR2GRAY,
+  CV_8U,
+  MORPH_CLOSE,
+  MORPH_ELLIPSE,
+  Mat,
+  THRESH_BINARY_INV,
+  cvtColor,
+  getStructuringElement,
+  morphologyEx,
+  quality_QualitySSIM_compute,
+  threshold
+} from '@banou/opencv'
+
+using a = new Mat(), b = new Mat(), similarity = new Mat(), mask = new Mat()
+cvtColor(image, a, COLOR_BGR2GRAY)
+cvtColor(nextImage, b, COLOR_BGR2GRAY)
+const score = quality_QualitySSIM_compute(a, b, similarity)
+threshold(similarity, mask, 0.8, 255, THRESH_BINARY_INV)
+mask.convertTo(mask, CV_8U)
+using kernel = getStructuringElement(MORPH_ELLIPSE, { width: 3, height: 3 })
+morphologyEx(mask, mask, MORPH_CLOSE, kernel)
 console.log('Mean grayscale SSIM:', score[0])
 `,
-  'count-objects': `using gray = new cv.Mat(), mask = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.GaussianBlur(gray, gray, { width: 5, height: 5 }, 1)
-cv.threshold(gray, mask, 127, 255, cv.THRESH_BINARY)
-using kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, { width: 3, height: 3 })
-cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel)
-using labels = new cv.Mat(), stats = new cv.Mat(), centroids = new cv.Mat()
-const count = cv.connectedComponentsWithStats(mask, labels, stats, centroids)
+  'count-objects': `import {
+  CC_STAT_AREA,
+  COLOR_BGR2GRAY,
+  GaussianBlur,
+  MORPH_ELLIPSE,
+  MORPH_OPEN,
+  Mat,
+  THRESH_BINARY,
+  connectedComponentsWithStats,
+  cvtColor,
+  getStructuringElement,
+  morphologyEx,
+  threshold
+} from '@banou/opencv'
+
+using gray = new Mat(), mask = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+GaussianBlur(gray, gray, { width: 5, height: 5 }, 1)
+threshold(gray, mask, 127, 255, THRESH_BINARY)
+using kernel = getStructuringElement(MORPH_ELLIPSE, { width: 3, height: 3 })
+morphologyEx(mask, mask, MORPH_OPEN, kernel)
+using labels = new Mat(), stats = new Mat(), centroids = new Mat()
+const count = connectedComponentsWithStats(mask, labels, stats, centroids)
 let retained = 0
 for (let label = 1; label < count; label++) {
-  if (stats.data32S[label * 5 + cv.CC_STAT_AREA] >= 80) retained++
+  if (stats.data32S[label * 5 + CC_STAT_AREA] >= 80) retained++
 }
 console.log('Objects:', retained)
 `,
-  'segment-touching': `using gray = new cv.Mat(), mask = new cv.Mat(), distance = new cv.Mat()
-using seeds = new cv.Mat(), markers = new cv.Mat(), dilated = new cv.Mat(), peaks = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.threshold(gray, mask, 127, 255, cv.THRESH_BINARY)
-cv.distanceTransform(mask, distance, cv.DIST_L2, 5)
-cv.threshold(distance, seeds, cv.minMaxLoc(distance).maxVal * 0.35, 255, cv.THRESH_BINARY)
-seeds.convertTo(seeds, cv.CV_8U)
-using neighborhood = cv.getStructuringElement(cv.MORPH_ELLIPSE, { width: 31, height: 31 })
-cv.dilate(distance, dilated, neighborhood)
-cv.compare(distance, dilated, peaks, cv.CMP_GE)
-cv.bitwise_and(peaks, seeds, seeds)
-cv.connectedComponents(seeds, markers)
+  'segment-touching': `import {
+  CMP_GE,
+  COLOR_BGR2GRAY,
+  CV_8U,
+  DIST_L2,
+  MORPH_ELLIPSE,
+  Mat,
+  THRESH_BINARY,
+  bitwise_and,
+  compare,
+  connectedComponents,
+  cvtColor,
+  dilate,
+  distanceTransform,
+  getStructuringElement,
+  minMaxLoc,
+  threshold,
+  watershed
+} from '@banou/opencv'
+
+using gray = new Mat(), mask = new Mat(), distance = new Mat()
+using seeds = new Mat(), markers = new Mat(), dilated = new Mat(), peaks = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+threshold(gray, mask, 127, 255, THRESH_BINARY)
+distanceTransform(mask, distance, DIST_L2, 5)
+threshold(distance, seeds, minMaxLoc(distance).maxVal * 0.35, 255, THRESH_BINARY)
+seeds.convertTo(seeds, CV_8U)
+using neighborhood = getStructuringElement(MORPH_ELLIPSE, { width: 31, height: 31 })
+dilate(distance, dilated, neighborhood)
+compare(distance, dilated, peaks, CMP_GE)
+bitwise_and(peaks, seeds, seeds)
+connectedComponents(seeds, markers)
 for (let i = 0; i < markers.data32S.length; i++) {
   const label = markers.data32S[i]
   markers.data32S[i] = mask.data[i] === 0 ? 1 : label ? label + 1 : 0
 }
-cv.watershed(image, markers)
+watershed(image, markers)
 `,
-  'measure-shapes': `using gray = new cv.Mat(), mask = new cv.Mat(), hierarchy = new cv.Mat()
-using contours = new cv.MatVector()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.threshold(gray, mask, 127, 255, cv.THRESH_BINARY)
-cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+  'measure-shapes': `import {
+  CHAIN_APPROX_SIMPLE,
+  COLOR_BGR2GRAY,
+  Mat,
+  MatVector,
+  RETR_EXTERNAL,
+  THRESH_BINARY,
+  arcLength,
+  contourArea,
+  cvtColor,
+  findContours,
+  threshold
+} from '@banou/opencv'
+
+using gray = new Mat(), mask = new Mat(), hierarchy = new Mat()
+using contours = new MatVector()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+threshold(gray, mask, 127, 255, THRESH_BINARY)
+findContours(mask, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
 for (let i = 0; i < contours.size(); i++) {
   using contour = contours.get(i)!
-  const area = cv.contourArea(contour), perimeter = cv.arcLength(contour, true)
+  const area = contourArea(contour), perimeter = arcLength(contour, true)
   if (area >= 80) console.log({ area, perimeter, circularity: 4 * Math.PI * area / perimeter ** 2 })
 }
 `,
-  'colour-mask': `using hsv = new cv.Mat(), mask = new cv.Mat()
-cv.cvtColor(image, hsv, cv.COLOR_BGR2HSV)
-using low = new cv.Mat(image.rows, image.cols, cv.CV_8UC3, [25, 40, 0, 0])
-using high = new cv.Mat(image.rows, image.cols, cv.CV_8UC3, [95, 255, 255, 0])
-cv.inRange(hsv, low, high, mask)
-using kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, { width: 3, height: 3 })
-cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel)
-using labels = new cv.Mat(), stats = new cv.Mat(), centres = new cv.Mat()
-cv.connectedComponentsWithStats(mask, labels, stats, centres)
+  'colour-mask': `import {
+  COLOR_BGR2HSV,
+  CV_8UC3,
+  MORPH_CLOSE,
+  MORPH_ELLIPSE,
+  Mat,
+  connectedComponentsWithStats,
+  cvtColor,
+  getStructuringElement,
+  inRange,
+  morphologyEx
+} from '@banou/opencv'
+
+using hsv = new Mat(), mask = new Mat()
+cvtColor(image, hsv, COLOR_BGR2HSV)
+using low = new Mat(image.rows, image.cols, CV_8UC3, [25, 40, 0, 0])
+using high = new Mat(image.rows, image.cols, CV_8UC3, [95, 255, 255, 0])
+inRange(hsv, low, high, mask)
+using kernel = getStructuringElement(MORPH_ELLIPSE, { width: 3, height: 3 })
+morphologyEx(mask, mask, MORPH_CLOSE, kernel)
+using labels = new Mat(), stats = new Mat(), centres = new Mat()
+connectedComponentsWithStats(mask, labels, stats, centres)
 `,
-  'crop-object': `using gray = new cv.Mat(), mask = new cv.Mat(), hierarchy = new cv.Mat()
-using contours = new cv.MatVector(), output = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.threshold(gray, mask, 127, 255, cv.THRESH_BINARY)
-cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+  'crop-object': `import {
+  CHAIN_APPROX_SIMPLE,
+  COLOR_BGR2GRAY,
+  Mat,
+  MatVector,
+  RETR_EXTERNAL,
+  THRESH_BINARY,
+  boundingRect,
+  contourArea,
+  cvtColor,
+  findContours,
+  threshold
+} from '@banou/opencv'
+
+using gray = new Mat(), mask = new Mat(), hierarchy = new Mat()
+using contours = new MatVector(), output = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+threshold(gray, mask, 127, 255, THRESH_BINARY)
+findContours(mask, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
 let largest = 0, bounds = rect
 for (let i = 0; i < contours.size(); i++) {
   using contour = contours.get(i)!
-  const area = cv.contourArea(contour)
-  if (area > largest) { largest = area; bounds = cv.boundingRect(contour) }
+  const area = contourArea(contour)
+  if (area > largest) { largest = area; bounds = boundingRect(contour) }
 }
 if (!largest) throw new Error('No foreground found')
 using crop = image.roi(bounds)
 crop.copyTo(output)
 `,
-  'remove-background': `using mask = new cv.Mat(), background = new cv.Mat(), foreground = new cv.Mat()
-cv.grabCut(image, mask, rect, background, foreground, 3, cv.GC_INIT_WITH_RECT)
-using rgba = new cv.Mat()
-cv.cvtColor(image, rgba, cv.COLOR_BGR2RGBA)
+  'remove-background': `import {
+  COLOR_BGR2RGBA,
+  GC_FGD,
+  GC_INIT_WITH_RECT,
+  GC_PR_FGD,
+  Mat,
+  cvtColor,
+  grabCut
+} from '@banou/opencv'
+
+using mask = new Mat(), background = new Mat(), foreground = new Mat()
+grabCut(image, mask, rect, background, foreground, 3, GC_INIT_WITH_RECT)
+using rgba = new Mat()
+cvtColor(image, rgba, COLOR_BGR2RGBA)
 for (let i = 0; i < mask.data.length; i++) {
   const label = mask.data[i]
-  rgba.data[i * 4 + 3] = label === cv.GC_FGD || label === cv.GC_PR_FGD ? 255 : 0
+  rgba.data[i * 4 + 3] = label === GC_FGD || label === GC_PR_FGD ? 255 : 0
 }
 `,
-  'blur-background': `using mask = new cv.Mat(), background = new cv.Mat(), foreground = new cv.Mat()
-cv.grabCut(image, mask, rect, background, foreground, 3, cv.GC_INIT_WITH_RECT)
+  'blur-background': `import {
+  GC_FGD,
+  GC_INIT_WITH_RECT,
+  GC_PR_FGD,
+  GaussianBlur,
+  Mat,
+  grabCut
+} from '@banou/opencv'
+
+using mask = new Mat(), background = new Mat(), foreground = new Mat()
+grabCut(image, mask, rect, background, foreground, 3, GC_INIT_WITH_RECT)
 for (let i = 0; i < mask.data.length; i++) {
   const label = mask.data[i]
-  mask.data[i] = label === cv.GC_FGD || label === cv.GC_PR_FGD ? 255 : 0
+  mask.data[i] = label === GC_FGD || label === GC_PR_FGD ? 255 : 0
 }
-using output = new cv.Mat()
-cv.GaussianBlur(image, output, { width: 0, height: 0 }, 8)
+using output = new Mat()
+GaussianBlur(image, output, { width: 0, height: 0 }, 8)
 image.copyTo(output, mask)
 // The full recipe feathers the mask before blending the boundary.
 `,
-  'blur-region': `using mask = cv.Mat.zeros(image.rows, image.cols, cv.CV_8U)
-using blurred = new cv.Mat(), output = new cv.Mat()
-cv.rectangle(mask, { x: rect.x, y: rect.y },
+  'blur-region': `import {
+  CV_8U,
+  GaussianBlur,
+  Mat,
+  rectangle
+} from '@banou/opencv'
+
+using mask = Mat.zeros(image.rows, image.cols, CV_8U)
+using blurred = new Mat(), output = new Mat()
+rectangle(mask, { x: rect.x, y: rect.y },
   { x: rect.x + rect.width - 1, y: rect.y + rect.height - 1 }, [255, 0, 0, 0], -1)
-cv.GaussianBlur(image, blurred, { width: 0, height: 0 }, 8)
+GaussianBlur(image, blurred, { width: 0, height: 0 }, 8)
 image.copyTo(output)
 blurred.copyTo(output, mask)
 `,
-  'denoise-detail': `using denoised = new cv.Mat(), lab = new cv.Mat(), lightness = new cv.Mat(), output = new cv.Mat()
-cv.fastNlMeansDenoisingColored(image, denoised, 8, 8, 7, 21)
-cv.cvtColor(denoised, lab, cv.COLOR_BGR2Lab)
-cv.extractChannel(lab, lightness, 0)
-using clahe = cv.createCLAHE(2, { width: 8, height: 8 })
+  'denoise-detail': `import {
+  COLOR_BGR2Lab,
+  COLOR_Lab2BGR,
+  Mat,
+  createCLAHE,
+  cvtColor,
+  extractChannel,
+  fastNlMeansDenoisingColored,
+  insertChannel
+} from '@banou/opencv'
+
+using denoised = new Mat(), lab = new Mat(), lightness = new Mat(), output = new Mat()
+fastNlMeansDenoisingColored(image, denoised, 8, 8, 7, 21)
+cvtColor(denoised, lab, COLOR_BGR2Lab)
+extractChannel(lab, lightness, 0)
+using clahe = createCLAHE(2, { width: 8, height: 8 })
 if (!clahe) throw new Error('CLAHE factory failed')
 clahe.apply(lightness, lightness)
-cv.insertChannel(lightness, lab, 0)
-cv.cvtColor(lab, output, cv.COLOR_Lab2BGR)
+insertChannel(lightness, lab, 0)
+cvtColor(lab, output, COLOR_Lab2BGR)
 `,
-  'sharpen-details': `using blurred = new cv.Mat(), output = new cv.Mat()
-cv.GaussianBlur(image, blurred, { width: 0, height: 0 }, 2)
+  'sharpen-details': `import {
+  GaussianBlur,
+  Mat,
+  addWeighted
+} from '@banou/opencv'
+
+using blurred = new Mat(), output = new Mat()
+GaussianBlur(image, blurred, { width: 0, height: 0 }, 2)
 const amount = 1
-cv.addWeighted(image, 1 + amount, blurred, -amount, 0, output)
+addWeighted(image, 1 + amount, blurred, -amount, 0, output)
 `,
-  'focus-map': `using gray = new cv.Mat(), derivative = new cv.Mat(), energy = new cv.Mat(), display = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.Laplacian(gray, derivative, cv.CV_32F, 3)
-cv.multiply(derivative, derivative, energy)
-cv.blur(energy, energy, { width: 15, height: 15 })
-cv.normalize(energy, display, 0, 255, cv.NORM_MINMAX, cv.CV_8U)
-console.log('Mean squared Laplacian:', cv.mean(energy)[0])
+  'focus-map': `import {
+  COLOR_BGR2GRAY,
+  CV_32F,
+  CV_8U,
+  Laplacian,
+  Mat,
+  NORM_MINMAX,
+  blur,
+  cvtColor,
+  mean,
+  multiply,
+  normalize
+} from '@banou/opencv'
+
+using gray = new Mat(), derivative = new Mat(), energy = new Mat(), display = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+Laplacian(gray, derivative, CV_32F, 3)
+multiply(derivative, derivative, energy)
+blur(energy, energy, { width: 15, height: 15 })
+normalize(energy, display, 0, 255, NORM_MINMAX, CV_8U)
+console.log('Mean squared Laplacian:', mean(energy)[0])
 `,
-  'scan-document': `using gray = new cv.Mat(), edges = new cv.Mat(), hierarchy = new cv.Mat()
-using contours = new cv.MatVector()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.GaussianBlur(gray, gray, { width: 5, height: 5 }, 1)
-cv.Canny(gray, edges, 40, 120)
-cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+  'scan-document': `import {
+  CHAIN_APPROX_SIMPLE,
+  COLOR_BGR2GRAY,
+  Canny,
+  GaussianBlur,
+  Mat,
+  MatVector,
+  RETR_LIST,
+  approxPolyDP,
+  arcLength,
+  contourArea,
+  cvtColor,
+  findContours,
+  isContourConvex
+} from '@banou/opencv'
+
+using gray = new Mat(), edges = new Mat(), hierarchy = new Mat()
+using contours = new MatVector()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+GaussianBlur(gray, gray, { width: 5, height: 5 }, 1)
+Canny(gray, edges, 40, 120)
+findContours(edges, contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE)
 for (let i = 0; i < contours.size(); i++) {
-  using contour = contours.get(i)!, polygon = new cv.Mat()
-  cv.approxPolyDP(contour, polygon, 0.02 * cv.arcLength(contour, true), true)
-  if (polygon.rows === 4 && cv.isContourConvex(polygon)) console.log('Candidate area:', cv.contourArea(polygon))
+  using contour = contours.get(i)!, polygon = new Mat()
+  approxPolyDP(contour, polygon, 0.02 * arcLength(contour, true), true)
+  if (polygon.rows === 4 && isContourConvex(polygon)) console.log('Candidate area:', contourArea(polygon))
 }
 // Order the largest quadrilateral, fit getPerspectiveTransform, then warpPerspective.
 `,
-  'clean-document': `using gray = new cv.Mat(), illumination = new cv.Mat(), normalized = new cv.Mat(), output = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-gray.convertTo(gray, cv.CV_32F)
-cv.GaussianBlur(gray, illumination, { width: 0, height: 0 }, 20)
+  'clean-document': `import {
+  ADAPTIVE_THRESH_GAUSSIAN_C,
+  COLOR_BGR2GRAY,
+  CV_32F,
+  CV_8U,
+  GaussianBlur,
+  Mat,
+  THRESH_BINARY,
+  adaptiveThreshold,
+  cvtColor,
+  divide
+} from '@banou/opencv'
+
+using gray = new Mat(), illumination = new Mat(), normalized = new Mat(), output = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+gray.convertTo(gray, CV_32F)
+GaussianBlur(gray, illumination, { width: 0, height: 0 }, 20)
 for (let i = 0; i < illumination.data32F.length; i++) illumination.data32F[i] = Math.max(1, illumination.data32F[i])
-cv.divide(gray, illumination, normalized, 220)
-normalized.convertTo(normalized, cv.CV_8U)
-cv.adaptiveThreshold(normalized, output, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 31, 9)
+divide(gray, illumination, normalized, 220)
+normalized.convertTo(normalized, CV_8U)
+adaptiveThreshold(normalized, output, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY, 31, 9)
 `,
-  'deskew-text': `using gray = new cv.Mat(), edges = new cv.Mat(), lines = new cv.Mat()
-cv.cvtColor(image, gray, cv.COLOR_BGR2GRAY)
-cv.Canny(gray, edges, 50, 150)
-cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 25, 50, 15)
+  'deskew-text': `import {
+  COLOR_BGR2GRAY,
+  Canny,
+  HoughLinesP,
+  Mat,
+  cvtColor,
+  getRotationMatrix2D,
+  warpAffine
+} from '@banou/opencv'
+
+using gray = new Mat(), edges = new Mat(), lines = new Mat()
+cvtColor(image, gray, COLOR_BGR2GRAY)
+Canny(gray, edges, 50, 150)
+HoughLinesP(edges, lines, 1, Math.PI / 180, 25, 50, 15)
 const angles: number[] = []
 for (let i = 0; i < lines.data32S.length; i += 4) {
   const [x1, y1, x2, y2] = lines.data32S.slice(i, i + 4)
@@ -295,14 +562,21 @@ for (let i = 0; i < lines.data32S.length; i += 4) {
 }
 if (!angles.length) throw new Error('No near-horizontal lines found')
 angles.sort((a,b) => a-b)
-using rotation = cv.getRotationMatrix2D({ x: image.cols / 2, y: image.rows / 2 }, angles[Math.floor(angles.length / 2)], 1)
-using output = new cv.Mat()
-cv.warpAffine(image, output, rotation, { width: image.cols, height: image.rows })
+using rotation = getRotationMatrix2D({ x: image.cols / 2, y: image.rows / 2 }, angles[Math.floor(angles.length / 2)], 1)
+using output = new Mat()
+warpAffine(image, output, rotation, { width: image.cols, height: image.rows })
 `,
-  'stereo-depth': `using left = new cv.Mat(), right = new cv.Mat(), disparity = new cv.Mat()
-cv.cvtColor(image, left, cv.COLOR_BGR2GRAY)
-cv.cvtColor(nextImage, right, cv.COLOR_BGR2GRAY)
-using stereo = cv.StereoSGBM.create(0, 64, 9, 8 * 81, 32 * 81)
+  'stereo-depth': `import {
+  COLOR_BGR2GRAY,
+  Mat,
+  StereoSGBM_create,
+  cvtColor
+} from '@banou/opencv'
+
+using left = new Mat(), right = new Mat(), disparity = new Mat()
+cvtColor(image, left, COLOR_BGR2GRAY)
+cvtColor(nextImage, right, COLOR_BGR2GRAY)
+using stereo = StereoSGBM_create(0, 64, 9, 8 * 81, 32 * 81)
 if (!stereo) throw new Error('Stereo factory failed')
 stereo.compute(left, right, disparity)
 const focalPixels = 500, baselineMetres = 0.1
@@ -312,15 +586,25 @@ const depthMetres = Float32Array.from(disparity.data16S, fixed => {
 })
 console.log('Depth values; 0 means invalid:', depthMetres)
 `,
-  'colour-palette': `using smooth = new cv.Mat()
-cv.bilateralFilter(image, smooth, 7, 40, 5)
+  'colour-palette': `import {
+  CV_32F,
+  KMEANS_PP_CENTERS,
+  Mat,
+  TERM_CRITERIA_COUNT,
+  TERM_CRITERIA_EPS,
+  bilateralFilter,
+  kmeans
+} from '@banou/opencv'
+
+using smooth = new Mat()
+bilateralFilter(image, smooth, 7, 40, 5)
 // Flatten copied BGR samples into one row per pixel before clustering.
-using samples = new cv.Mat(smooth.rows * smooth.cols, 3, cv.CV_32F)
+using samples = new Mat(smooth.rows * smooth.cols, 3, CV_32F)
 samples.data32F.set(smooth.data)
-using labels = new cv.Mat(), centres = new cv.Mat()
-cv.kmeans(samples, 6, labels,
-  { type: cv.TERM_CRITERIA_COUNT | cv.TERM_CRITERIA_EPS, maxCount: 20, epsilon: 0.5 },
-  1, cv.KMEANS_PP_CENTERS, centres)
+using labels = new Mat(), centres = new Mat()
+kmeans(samples, 6, labels,
+  { type: TERM_CRITERIA_COUNT | TERM_CRITERIA_EPS, maxCount: 20, epsilon: 0.5 },
+  1, KMEANS_PP_CENTERS, centres)
 // labels.data32S chooses a BGR triplet from centres.data32F for each pixel.
 `
 }

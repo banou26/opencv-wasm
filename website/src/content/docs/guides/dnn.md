@@ -3,16 +3,19 @@ title: DNN models
 description: Load model assets, prepare typed tensors and run the CPU inference engine.
 ---
 
+Examples use named imports after one `await initOpenCV()` call. See the [initialization guide](/start/quickstart/#named-imports-and-initialization).
+
 This package uses OpenCV’s DNN engine on the CPU WASM backend. WebGPU, WebNN, CUDA and OpenCL acceleration are not enabled. A supported file format does not guarantee support for every operator inside a model.
 
 ## Load and execute
 
 ```ts
-cv.FS.writeFile('/model.onnx', modelBytes)
-using net = cv.dnn.readNetFromONNX('/model.onnx')
-cv.FS.unlink('/model.onnx')
+import { dnn_blobFromImage, dnn_readNetFromONNX, FS } from '@banou/opencv'
+FS.writeFile('/model.onnx', modelBytes)
+using net = dnn_readNetFromONNX('/model.onnx')
+FS.unlink('/model.onnx')
 
-using input = cv.dnn.blobFromImage(image, 1 / 255, { width: 224, height: 224 })
+using input = dnn_blobFromImage(image, 1 / 255, { width: 224, height: 224 })
 net.setInput(input)
 using predictions = net.forward()
 const values = predictions.data32F.slice()
@@ -31,6 +34,6 @@ A detection model can require confidence filtering, coordinate scaling, class in
 
 ## Custom layers
 
-`cv.dnn_registerLayer(name, factory)` registers a synchronous TypeScript implementation with shape and forward callbacks. Forward callbacks write into preallocated outputs and receive borrowed native handles. Integer layer parameters use `bigint`. Async native callbacks are not supported.
+`dnn_registerLayer(name, factory)` registers a synchronous TypeScript implementation with shape and forward callbacks. Forward callbacks write into preallocated outputs and receive borrowed native handles. Integer layer parameters use `bigint`. Async native callbacks are not supported.
 
-Use `cv.dnn_unregisterLayer(name)` to remove the factory for future layer creation. Dispose networks before releasing application state their callbacks use. The generated API reference describes the exact callback types.
+Use `dnn_unregisterLayer(name)` to remove the factory for future layer creation. Dispose networks before releasing application state their callbacks use. The generated API reference describes the exact callback types.

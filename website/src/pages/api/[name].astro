@@ -5,6 +5,7 @@ import Member from '../../components/Member.astro'
 import Dataflow from '../../components/Dataflow.astro'
 import { algorithms } from '../../data/algorithms'
 import AlgorithmDiagram from '../../components/AlgorithmDiagram.astro'
+import { Code } from 'astro:components'
 export function getStaticPaths() { return reference.entries.map(entry => ({ params: { name: entry.slug }, props: { entry } })) }
 const { entry } = Astro.props as { entry: APIEntry }
 const visual = algorithms.find(a => a.apis.includes(entry.name))
@@ -13,6 +14,8 @@ const headings = entry.members.map((m, i) => ({ depth: 3, slug: `member-${m.name
 ---
 <StarlightPage frontmatter={{ title: entry.display, description, tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 } }} headings={headings}>
   <div class="eyebrow"><a href={`/modules/${entry.module}/`}>{moduleTitle(entry.module)}</a><span>{entry.kind}</span><span>OpenCV 5.0.0</span></div>
+  {entry.importable && <Code code={`import ${entry.kind === 'type' ? 'type ' : ''}{ ${entry.name} } from '@banou/opencv'`} lang="ts" />}
+  {entry.importable && entry.kind !== 'type' && entry.kind !== 'helper' && <p>Use after <code>await initOpenCV()</code>. See the <a href="/start/quickstart/">initialization and named imports guide</a>.</p>}
   {visual ? <aside class="visual-reference"><a href={`/algorithms/${visual.id}/`}>Explore visually: {visual.title} →</a><p>{visual.summary}</p><AlgorithmDiagram algorithm={visual} compact /></aside> : entry.kind !== 'type' && <Dataflow entry={entry} />}
   {entry.kind === 'class' && <p class="callout">Native object: release it with <code>using</code> or <code>delete()</code>. Factories can return <code>null</code>; check before calling methods. {entry.bases.filter(b => b !== 'ClassHandle').map(b => <span>Inherits <a href={apiURL(b)}>{b}</a>. </span>)}</p>}
   <Member member={entry} />

@@ -200,3 +200,17 @@ cv.gapi.op('wrong-port', { inputs: ['opaque:object'], outputs: ['scalar'] })
 // @ts-expect-error Scalar metadata is null, not a matrix layout.
 cv.gapi.op('wrong-meta', { inputs: ['mat'], outputs: ['scalar'], outMeta: layouts => [layouts[0]] })
 void [mixedKernel, mixedMatrix, mixedRects, invalidMixedMatrix, scalarKernel]
+import { initOpenCV, Mat as NamedMat, GaussianBlur, CV_8UC3, dnn_readNetFromONNX, SIFT, ml_SVM } from '../lib/index.js'
+
+await initOpenCV()
+using namedSource: NamedMat = new NamedMat(3, 3, CV_8UC3)
+using namedTarget = new NamedMat()
+GaussianBlur(namedSource, namedTarget, { width: 3, height: 3 }, 1)
+using namedDetector = SIFT.create()
+using namedClassifier = ml_SVM.create()
+// @ts-expect-error Named constructors preserve concrete constructor overloads.
+new NamedMat('wrong shape')
+// @ts-expect-error Named functions retain exact argument types.
+GaussianBlur(namedSource, namedTarget, 3, 1)
+// @ts-expect-error Named contrib exports retain their signatures.
+dnn_readNetFromONNX(42)

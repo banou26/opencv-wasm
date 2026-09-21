@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
+const exportedProgram = ts.createProgram([path.join(root, 'lib/index.d.ts')], { moduleResolution: ts.ModuleResolutionKind.Bundler, module: ts.ModuleKind.ESNext, skipLibCheck: true })
+const exportedChecker = exportedProgram.getTypeChecker()
+const exportedSymbols = new Set(exportedChecker.getExportsOfModule(exportedChecker.getSymbolAtLocation(exportedProgram.getSourceFile(path.join(root, 'lib/index.d.ts')))).map(symbol => symbol.name))
 const destination = path.join(root, 'website/src/data')
 await fs.mkdir(destination, { recursive: true })
 const read = name => fs.readFile(path.join(root, 'lib', name), 'utf8')
@@ -43,11 +46,7 @@ const group = members => {
   }
   return [...groups.values()]
 }
-const namespaces = [...coverage.namespaces].sort((a, b) => b.length - a.length)
-const displayName = name => {
-  const namespace = namespaces.find(n => name.startsWith(n.replaceAll('.', '_') + '_'))
-  return namespace ? `cv.${namespace}.${name.slice(namespace.length + 1)}` : `cv.${name}`
-}
+const displayName = name => name
 const inferModule = (entry, fallback = 'core') => {
   const link = [...entry.sources, ...(entry.members ?? []).flatMap(m => m.sources)].find(s => /\/modules\/[^/]+\//.test(s))
   return link?.match(/\/modules\/([^/]+)\//)?.[1] ?? fallback
@@ -75,16 +74,18 @@ for (const [name, node] of declarations) {
   entry.module = inferModule(entry)
   entries.push(entry)
 }
-for (const file of ['index.d.ts', 'images.d.ts', 'values.d.ts', 'graph-types.d.ts', 'graph.d.ts', 'streaming.d.ts']) {
+for (const file of ['index.d.ts', 'default.d.ts', 'images.d.ts', 'values.d.ts', 'graph-types.d.ts', 'graph.d.ts', 'streaming.d.ts']) {
   const sf = ts.createSourceFile(file, await read(file), ts.ScriptTarget.Latest, true)
   for (const node of sf.statements) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) continue
+    if (!node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
     const name = node.name?.text ?? node.declarationList?.declarations[0]?.name?.getText()
-    if (!name || name === '_default' || entries.some(e => e.name === name)) continue
+    if (!name || ['_default', 'registerDefaultBindings', 'uninitializedExport', 'getDefaultOpenCV'].includes(name) || entries.some(e => e.name === name)) continue
     const entry = { name, slug: `ts-${name}`, display: name, kind: ts.isVariableStatement(node) || ts.isFunctionDeclaration(node) ? 'helper' : 'type', ...documentation(node), signatures: [signature(node)], members: [], bases: [], module: 'typescript' }
     entries.push(entry)
   }
 }
+for (const entry of entries) entry.importable = exportedSymbols.has(entry.name)
 entries.sort((a, b) => a.display.localeCompare(b.display))
 const slugs = new Set()
 for (const e of entries) { if (slugs.has(e.slug)) throw new Error(`Duplicate API path ${e.slug}`); slugs.add(e.slug) }

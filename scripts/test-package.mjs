@@ -20,6 +20,14 @@ if (version5Wide.data64S[0] !== 9_007_199_254_740_993n) throw new Error('Install
 using version5Shape = cv.MatShape.scalar()
 if (version5Shape.total() !== 1) throw new Error('Installed scalar shape is invalid')
 `
+const namedCheck = `
+await initOpenCV()
+using namedInput = new Mat(3, 3, CV_8UC1, [42, 0, 0, 0]), namedOutput = new Mat()
+GaussianBlur(namedInput, namedOutput, { width: 3, height: 3 }, 1)
+if (!(namedOutput instanceof Mat) || [...namedOutput.data].some(value => value !== 42)) throw new Error('Installed named imports returned wrong pixels')
+using namedDecoded = decodeImage(encodeImage('.png', namedOutput))
+if (namedDecoded.data[0] !== 42) throw new Error('Installed shared codec helpers returned wrong pixels')
+`
 const typedKernelCheck = `
 using typedOperation = cv.gapi.op('consumer.typed', { inputs: ['array:int'], outputs: ['opaque:string'] })
 using typedKernel = cv.gapi.kernel(typedOperation, (inputs, outputs) => { outputs[0] = inputs[0].join(':') })
@@ -35,10 +43,10 @@ try {
   await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
   execFileSync('npm', ['install', join(repo, archive), '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: consumer, stdio: 'pipe' })
   await writeFile(join(consumer, 'check.ts'), `
-import { createOpenCV, matFromArray } from '@banou/opencv'
-import type { Mat } from '@banou/opencv'
+import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv'
 const cv = await createOpenCV()
 ${version5Check}
+${namedCheck}
 using source = matFromArray(cv, 1, 2, cv.CV_8UC1, [0, 255])
 using target: Mat = new cv.Mat()
 cv.Canny(source, target, 10, 20)
@@ -85,14 +93,17 @@ typedOperation.on([placeholder])
   await writeFile(join(consumer, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ESNext', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ESNext', 'DOM'] }, files: ['check.ts'] }))
   execFileSync(process.execPath, [join(repo, 'node_modules/typescript/bin/tsc'), '-p', join(consumer, 'tsconfig.json')], { stdio: 'pipe' })
   checkEditorDocumentation(join(consumer, 'hover.ts'), '@banou/opencv')
-  execFileSync(process.execPath, ['--input-type=module', '-e', `import {createOpenCV, matFromArray} from '@banou/opencv'; const cv=await createOpenCV(); if (typeof cv.SIFT.create !== 'function') throw new Error('Missing installed native API'); ${version5Check} ${typedKernelCheck}`], { cwd: consumer, stdio: 'pipe' })
+  execFileSync(process.execPath, ['--input-type=module', '-e', `import {createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage} from '@banou/opencv'; const cv=await createOpenCV(); if (typeof cv.SIFT.create !== 'function') throw new Error('Missing installed native API'); ${version5Check}
+${namedCheck} ${typedKernelCheck}`], { cwd: consumer, stdio: 'pipe' })
   await writeFile(join(consumer, 'index.html'), '<!doctype html><html><head><title>Installed OpenCV</title></head><body><output id="result"></output><script type="module" src="/app.ts"></script></body></html>')
   const modelBytes = [...await readFile(join(repo, 'tests/fixtures/relu.onnx'))]
   await writeFile(join(consumer, 'app.ts'), `
-import { createOpenCV, matFromArray } from '@banou/opencv'
+import { createOpenCV, matFromArray, initOpenCV, Mat, GaussianBlur, CV_8UC1, decodeImage, encodeImage } from '@banou/opencv'
 import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
 const cv = await createOpenCV({ wasmUrl })
+await initOpenCV({ wasmUrl })
 ${version5Check}
+${namedCheck}
 ${typedKernelCheck}
 const mat = matFromArray(cv, 1, 1, cv.CV_8UC1, [127])
 const input = new cv.GMat()

@@ -15,10 +15,9 @@ An OpenCV `Mat` combines a shape, an element type and storage. A three-channel 1
 ## Construct and inspect
 
 ```ts
-import { createOpenCV, matFromArray } from '@banou/opencv'
-
-const cv = await createOpenCV()
-using image = matFromArray(cv, 2, 2, cv.CV_16UC3, new Uint16Array(12))
+import { CV_16UC3, initOpenCV, matFromArray } from '@banou/opencv'
+await initOpenCV()
+using image = matFromArray(2, 2, CV_16UC3, new Uint16Array(12))
 console.log(image.rows, image.cols, image.channels(), image.depth())
 ```
 
@@ -44,7 +43,8 @@ The inherited `clone()` retains the same object. Use `mat_clone()` when you inte
 - Ordinary JavaScript values, typed array copies, points, sizes and numbers are managed by JavaScript.
 
 ```ts
-using values = new cv.MatVector()
+import { MatVector } from '@banou/opencv'
+using values = new MatVector()
 values.push_back(image)
 using element = values.get(0)
 ```

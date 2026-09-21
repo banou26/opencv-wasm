@@ -14,7 +14,8 @@ export type OpenCV = AugmentedModule & Omit<NativeNamespaces, 'gapi' | 'xfeature
   },
   xfeatures2d: NativeNamespaces['xfeatures2d'] & { SIFT_create: MainModule['SIFT_create'] },
 }
-export type * from '../lib/opencv.js'
+export * from './named.js'
+export { initOpenCV } from './default.js'
 export type * from './graph-types.js'
 export { matFromArray, matFromImageData, toImageData, decodeImage, encodeImage } from './images.js'
 

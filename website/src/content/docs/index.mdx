@@ -21,12 +21,11 @@ import { algorithms } from '../../data/algorithms'
 `@banou/opencv` compiles OpenCV and its contrib modules directly from C++ to WebAssembly. The API includes image processing, features, calibration, tracking, machine learning, DNN inference and more. Your editor gets parameter descriptions, exact overloads and distinct native handle types.
 
 ```ts
-import { createOpenCV, matFromArray } from '@banou/opencv'
-
-const cv = await createOpenCV()
-using image = matFromArray(cv, 2, 3, cv.CV_8UC1, [0, 30, 90, 150, 220, 255])
-using binary = new cv.Mat()
-cv.threshold(image, binary, 127, 255, cv.THRESH_BINARY)
+import { CV_8UC1, initOpenCV, Mat, matFromArray, THRESH_BINARY, threshold } from '@banou/opencv'
+await initOpenCV()
+using image = matFromArray(2, 3, CV_8UC1, [0, 30, 90, 150, 220, 255])
+using binary = new Mat()
+threshold(image, binary, 127, 255, THRESH_BINARY)
 console.log(binary.data.slice()) // [0, 0, 0, 255, 255, 255]
 ```
 

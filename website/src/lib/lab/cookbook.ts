@@ -123,7 +123,7 @@ export const cook = (e: Experiment): boolean => {
       cv.goodFeaturesToTrack(gray, points, n('features'), 0.01, 5, roi)
       if (points.rows < 4) throw new Error('Select a textured region with at least four detectable corners.')
       const corners = Array.from(points.data32F),
-        preview = e.own(bgr.clone())
+        preview = e.own(bgr.mat_clone())
       for (let i = 0; i < corners.length; i += 2)
         cv.circle(preview, { x: Math.round(corners[i]), y: Math.round(corners[i + 1]) }, 3, mint, 1)
       e.stage('Selected corners', preview, 'Corners detected only inside the selected region.')
@@ -508,7 +508,7 @@ export const cook = (e: Experiment): boolean => {
       cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 25, n('length'), 15)
       const data = Array.from(lines.data32S),
         angles: number[] = [],
-        preview = e.own(bgr.clone())
+        preview = e.own(bgr.mat_clone())
       for (let i = 0; i < data.length; i += 4) {
         let angle = (Math.atan2(data[i + 3] - data[i + 1], data[i + 2] - data[i]) * 180) / Math.PI
         while (angle > 90) angle -= 180
@@ -564,7 +564,7 @@ export const cook = (e: Experiment): boolean => {
       corners.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx))
       const start = corners.reduce((best, p, i) => (p.x + p.y < corners[best].x + corners[best].y ? i : best), 0)
       corners = [...corners.slice(start), ...corners.slice(0, start)]
-      const preview = e.own(bgr.clone())
+      const preview = e.own(bgr.mat_clone())
       for (let i = 0; i < 4; i++) cv.line(preview, corners[i], corners[(i + 1) % 4], mint, 3)
       e.stage('Selected page', preview, 'The largest convex quadrilateral is ordered around its centre.')
       const distance = (a: number, b: number) => Math.hypot(corners[a].x - corners[b].x, corners[a].y - corners[b].y),

@@ -117,6 +117,10 @@ This does not infer correspondence through a geometric warp.
 before releasing native handles. Stage buttons switch the output, its pixel values
 and its PNG export without rerunning the pipeline. `cookbook-code.ts` contains the
 short core examples, which are compiled against the package during `npm run check`.
+`cookbook-explanations.ts` explains each algorithm choice, its input and output,
+parameter tradeoffs and result diagnosis. All 23 recipes have authored reasoning.
+Examples use named imports after one `initOpenCV()` call; the reference shows the
+corresponding direct import for each publicly exported symbol.
 `src/lib/lab/motion.ts` combines phase-correlation alignment, bidirectional dense
 flow, texture and consistency checks, and per-cell medians. It exposes signed
 pixel and regional measurements, a dominant-translation residual view, and a JSON

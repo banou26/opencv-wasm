@@ -4,10 +4,13 @@ import { Code } from 'astro:components'
 import ImageLab from '../../components/ImageLab.astro'
 import { cookbook, type CookbookRecipe } from '../../data/cookbook'
 import { cookbookCode } from '../../data/cookbook-code'
+import { cookbookExplanations } from '../../data/cookbook-explanations'
 export function getStaticPaths(){return cookbook.map(recipe=>({params:{id:recipe.id},props:{recipe}}))}
 const {recipe:r}=Astro.props as {recipe:CookbookRecipe}
 if(!cookbookCode[r.id])throw new Error(`Missing recipe code: ${r.id}`)
-const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'try',text:'Try it with your images'},{depth:2,slug:'limits',text:'Assumptions and limits'},{depth:2,slug:'code',text:'TypeScript core chain'}]
+const explanation=cookbookExplanations[r.id]
+if(!explanation || explanation.stages.length!==r.steps.length)throw new Error(`Missing recipe reasoning: ${r.id}`)
+const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'why',text:'Why this chain works'},{depth:2,slug:'tuning',text:'Tune and diagnose'},{depth:2,slug:'try',text:'Try it with your images'},{depth:2,slug:'limits',text:'Assumptions and limits'},{depth:2,slug:'code',text:'TypeScript core chain'}]
 ---
 <StarlightPage frontmatter={{title:r.title,description:r.summary}} headings={headings}>
   <div class="eyebrow"><a href="/cookbook/">Cookbook</a><span>{r.category}</span></div>
@@ -15,16 +18,27 @@ const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'try
   <p><a href="#try">Try the recipe ↓</a></p>
   <h2 id="pipeline">The pipeline</h2>
   <ol class="recipe-pipeline">{r.steps.map((step,i)=><li><span class="recipe-number">0{i+1}</span><strong>{step.title}</strong><p>{step.detail}</p><a href={`/algorithms/${step.algorithm}/`}>Explore the algorithm →</a></li>)}</ol>
+  <section class="recipe-reasoning" aria-labelledby="why">
+    <h2 id="why">Why this chain works</h2>
+    <p class="chain-intuition">{explanation.intuition}</p>
+    <ol class="reasoning-stages">{explanation.stages.map((stage,i)=><li>
+      <div class="stage-choice"><span class="recipe-number">0{i+1}</span><h3>{r.steps[i].title}</h3><div class="algorithm-names">{stage.algorithms.map(name=><code>{name}</code>)}</div></div>
+      <div class="stage-reasoning"><p>{stage.why}</p><dl><div><dt>Receives</dt><dd>{stage.input}</dd></div><div><dt>Passes on</dt><dd>{stage.output}</dd></div></dl></div>
+    </li>)}</ol>
+    <h2 id="tuning">Tune and diagnose</h2>
+    <div class="recipe-advice"><div><h3>Choose the parameters</h3><p>{explanation.tuning}</p></div><div><h3>Read the result</h3><p>{explanation.check}</p></div></div>
+  </section>
   <h2 id="try">Try it with your images</h2>
   <p>{r.lab.second?'Choose an input image and a second image. Without uploads, the lab uses a labelled synthetic pair.':'Choose your own image or start with the built-in sample.'} {'x' in Object.fromEntries(r.lab.controls.map(c=>[c.key,c.value]))?'Use “Draw a region” and drag a rectangle on the input, or enter its coordinates.':''} Run the recipe, then use the stage buttons to inspect intermediate results without rerunning it.</p>
   <ImageLab recipe={r.id}/>
   {r.id==='motion-vectors' && <p>In the final grid, hover or pin a pixel to read its region’s vector and accepted fraction. Switch to the dense stage for per-pixel displacement. “Subtract dominant translation” shows local motion remaining after the image-wide median is removed. “Save vectors JSON” exports every grid cell, including bounds, total and displayed vectors, support counts and null values for unknown regions. The arrow multiplier changes the drawing only.</p>}
   <h2 id="limits">Assumptions and limits</h2><p class="callout">{r.caveat}</p>
   <h2 id="code">TypeScript core chain</h2>
-  <p>These core calls assume <code>cv</code> is a loaded <code>OpenCV</code> instance, <code>image</code> is an 8-bit BGR <code>Mat</code>, and paired recipes receive an equally sized <code>nextImage</code>. Region recipes use an in-bounds pixel <code>rect</code>. Read outputs before the <code>using</code> scope ends. See <a href="/start/quickstart/">loading OpenCV</a> and <a href="/start/matrices/">matrix ownership</a>.</p>
+  <p>Initialize the shared engine once with <code>await initOpenCV()</code>, then use these named imports. In a bundled browser app, pass the WASM URL as shown in the <a href="/start/quickstart/">quickstart</a>. <code>image</code> is an 8-bit BGR <code>Mat</code> from that same engine; paired recipes receive an equally sized <code>nextImage</code>. Region recipes use an in-bounds pixel <code>rect</code>. Read outputs before the <code>using</code> scope ends. See <a href="/start/matrices/">matrix ownership</a>.</p>
   <Code code={cookbookCode[r.id].trim()} lang="ts"/>
   <p>The snippets isolate the core operations. The <a href={`https://github.com/banou26/opencv-wasm/blob/main/website/src/lib/lab/${r.id === 'motion-vectors' ? 'motion' : 'cookbook'}.ts`}>complete runnable recipes</a> also include validation, filtering, overlays, intermediate previews and resource cleanup.</p>
 </StarlightPage>
 <style>
 .recipe-pipeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;list-style:none;padding:0!important;margin:1.5rem 0!important}.recipe-pipeline li{min-width:0;margin:0!important;border:1px solid var(--line);border-radius:10px;padding:1rem;background:var(--panel)}.recipe-number{display:block;font:500 .75rem var(--sl-font-mono);color:var(--mint);margin-bottom:.7rem}.recipe-pipeline strong{font-size:.9rem}.recipe-pipeline p{font-size:.8rem;color:var(--muted);line-height:1.7}.recipe-pipeline a{font-size:.73rem}@media(max-width:650px){.recipe-pipeline{grid-template-columns:1fr}}
+.chain-intuition{max-width:90ch;font-size:1.05rem}.reasoning-stages{padding:0!important;list-style:none}.reasoning-stages>li{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2.5fr);gap:2rem;padding:1.6rem 0;border-bottom:1px solid var(--line);margin:0!important}.stage-choice h3{margin:0 0 .8rem;font-size:1.05rem}.algorithm-names{display:flex;flex-wrap:wrap;gap:.4rem}.algorithm-names code{font-size:.7rem;overflow-wrap:anywhere}.stage-reasoning>p{margin-top:0;max-width:90ch}.stage-reasoning dl{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0}.stage-reasoning dl>div{border-left:2px solid var(--violet);padding-left:1rem}.stage-reasoning dt{font-size:.75rem;font-weight:650;color:var(--violet)}.stage-reasoning dd{margin:.35rem 0 0;font-size:.85rem;line-height:1.7;color:var(--muted)}.recipe-advice{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}.recipe-advice>div{margin:0;border:1px solid var(--line);border-radius:10px;padding:1.2rem;background:var(--panel)}.recipe-advice h3{margin:0;font-size:1rem}.recipe-advice p{font-size:.9rem;margin-bottom:0}@media(max-width:800px){.reasoning-stages>li,.stage-reasoning dl,.recipe-advice{grid-template-columns:1fr}.reasoning-stages>li{gap:1rem}}
 </style>

@@ -4,7 +4,13 @@ import ts from 'typescript'
 /** Verify actual editor hovers against a local or freshly installed package. */
 export const checkEditorDocumentation = (path, specifier) => {
   const consumer = `
-import { createOpenCV, decodeImage } from '${specifier}'
+import { createOpenCV, decodeImage, initOpenCV, Mat, GaussianBlur, threshold, ml_SVM } from '${specifier}'
+await initOpenCV()
+const named: Mat = new Mat()
+GaussianBlur
+threshold
+ml_SVM.create
+named.data
 const cv = await createOpenCV()
 const mat = new cv.Mat()
 cv.threshold
@@ -46,6 +52,8 @@ decodeImage
     const diagnostics = service.getSemanticDiagnostics(path)
     assert.deepEqual(diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
     const cases = [
+      ['GaussianBlur\n', /Gaussian/i], ['threshold\n', /threshold/i],
+      ['ml_SVM.create', /support vector|SVM/i], ['named.data', /WASM memory/i],
       ['cv.threshold', /threshold/i], ['cv.GaussianBlur', /Gaussian/i],
       ['cv.ml.SVM.create', /support vector|SVM/i], ['cv.fisheye.projectPoints', /fisheye/i],
       ['cv.merge', /multi-channel/i], ['mat.rows', /rows/i],

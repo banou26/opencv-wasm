@@ -23,6 +23,6 @@ Record the exact function, overload, input shape, matrix type and smallest data 
 
 ## Result fields and overloads
 
-Scalar output arguments become named result fields. For example, `cv.getTextSize(...)` returns a record whose `.value` is a size and whose `.baseLine` is a number. A returned native matrix inside a record still needs disposal.
+Scalar output arguments become named result fields. For example, `getTextSize(...)` returns a record whose `.value` is a size and whose `.baseLine` is a number. A returned native matrix inside a record still needs disposal.
 
 The generated reference includes upstream comments. Some mention optional native backends that are not linked in this package; the [compatibility page](/reference/compatibility/) defines this build’s actual boundary.

@@ -35,28 +35,45 @@ Use TypeScript 5.9 or later and Node 22 or later for the application tooling:
 Vite’s `?url` import supplies the actual emitted asset URL. Keep one initialized instance for a pipeline instead of loading a new engine for every image.
 
 ```ts title="main.ts"
-import { createOpenCV, matFromImageData, toImageData } from '@banou/opencv'
+import { Canny, COLOR_RGBA2GRAY, cvtColor, initOpenCV, Mat, matFromImageData, toImageData } from '@banou/opencv'
 import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
 
-const cv = await createOpenCV({ wasmUrl })
+await initOpenCV({ wasmUrl })
 const canvas = document.querySelector<HTMLCanvasElement>('#image')!
 const context = canvas.getContext('2d')!
 
-using source = matFromImageData(cv, context.getImageData(0, 0, canvas.width, canvas.height))
-using gray = new cv.Mat()
-using edges = new cv.Mat()
-cv.cvtColor(source, gray, cv.COLOR_RGBA2GRAY)
-cv.Canny(gray, edges, 50, 150)
-context.putImageData(toImageData(cv, edges), 0, 0)
+using source = matFromImageData(context.getImageData(0, 0, canvas.width, canvas.height))
+using gray = new Mat()
+using edges = new Mat()
+cvtColor(source, gray, COLOR_RGBA2GRAY)
+Canny(gray, edges, 50, 150)
+context.putImageData(toImageData(edges), 0, 0)
 ```
 
 Draw an image onto the canvas before running the pipeline. A canvas created without content contains transparent black pixels, so it produces no useful edges. The [image lab](/lab/) provides a complete working example.
+
+## Named imports and initialization
+
+Classes, functions, constants and module APIs are named exports. For example, import `Mat`, `GaussianBlur`, `CV_8UC3`, `dnn_readNetFromONNX` or `ml_SVM` directly. Module-specific APIs keep their flat prefixes so similarly named operations remain unambiguous. Class factories and instance methods still belong to their classes, such as `Mat.zeros(...)`, `ORB.create(...)` and `image.copyTo(...)`.
+
+Importing the package does not fetch WASM. Call and await `initOpenCV` once before using native exports, including reading constants. Concurrent calls share the same promise, subsequent calls reuse the instance, and a failed load can be retried. The first successful call determines asset and logging options; later calls do not replace the engine. Each worker initializes its own shared instance.
+
+`Mat` works as both a constructor and a TypeScript instance type:
+
+```ts
+import { initOpenCV, Mat, CV_8UC3 } from '@banou/opencv'
+
+await initOpenCV()
+using image: Mat = new Mat(480, 640, CV_8UC3)
+```
+
+For applications that need multiple independent engines, `createOpenCV(options)` remains available. Use the constructors, functions and explicit-instance helper overloads from that returned instance. Creating an isolated instance never changes named imports. Keep native handles with the engine that created them. Advanced code can obtain the shared engine from `await initOpenCV()` to access its current heap views; heap views are not named exports because memory growth replaces them.
 
 ## Serve the assets
 
 Serve WASM with `Content-Type: application/wasm`. A current browser with WebAssembly SIMD is required. This single-threaded build does not require SharedArrayBuffer or cross-origin isolation.
 
-For an unbundled application, serve the built `lib/` directory intact and import `index.js`. The loader then finds the adjacent `opencv_js.wasm`. If your application already has the bytes, pass `wasmBinary` to `createOpenCV` instead.
+For an unbundled application, serve the built `lib/` directory intact and import `index.js`. The loader then finds the adjacent `opencv_js.wasm`. If your application already has the bytes, pass `wasmBinary` to `initOpenCV` instead.
 
 ## Release resources
 

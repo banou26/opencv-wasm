@@ -6,15 +6,15 @@ description: Keep expensive vision processing off the UI thread and transfer pix
 Native OpenCV operations are synchronous. A promise around the call does not move its computation off the UI thread. Create the OpenCV instance inside an ES module worker when processing frames interactively.
 
 ```ts title="vision.worker.ts"
-import { createOpenCV, matFromArray, toImageData } from '@banou/opencv'
+import { COLOR_RGBA2GRAY, CV_8UC4, cvtColor, initOpenCV, Mat, matFromArray, toImageData } from '@banou/opencv'
 import wasmUrl from '@banou/opencv/opencv_js.wasm?url'
 
-const cv = await createOpenCV({ wasmUrl })
+await initOpenCV({ wasmUrl })
 self.onmessage = ({ data }) => {
-  using rgba = matFromArray(cv, data.height, data.width, cv.CV_8UC4, data.pixels)
-  using gray = new cv.Mat()
-  cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY)
-  const result = toImageData(cv, gray)
+  using rgba = matFromArray(data.height, data.width, CV_8UC4, data.pixels)
+  using gray = new Mat()
+  cvtColor(rgba, gray, COLOR_RGBA2GRAY)
+  const result = toImageData(gray)
   self.postMessage({ pixels: result.data, width: result.width, height: result.height }, {
     transfer: [result.data.buffer],
   })

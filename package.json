@@ -35,8 +35,8 @@
   },
   "scripts": {
     "build:wasm": "bash scripts/build-wasm.sh",
-    "build:js": "npm run docs && vite build && tsc -p tsconfig.build.json",
-    "docs": "python3 scripts/extract-docs.py && node scripts/finalize-types.mjs && node scripts/namespace-types.mjs",
+    "build:js": "npm run docs && node scripts/prepare-loader.mjs && vite build && tsc -p tsconfig.build.json",
+    "docs": "python3 scripts/extract-docs.py && node scripts/finalize-types.mjs && node scripts/namespace-types.mjs && node scripts/named-exports.mjs",
     "build": "npm run build:wasm && npm run build:js",
     "typecheck": "tsc --noEmit",
     "test:node": "node scripts/prepare-test-data.mjs && node --test tests/*.test.mjs",

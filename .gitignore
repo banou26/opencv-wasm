@@ -3,6 +3,7 @@ vendor/
 .cache/
 build/
 /lib/
+/src/named.ts
 *.tgz
 test-results/
 *.log

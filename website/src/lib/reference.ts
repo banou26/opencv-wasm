@@ -5,7 +5,7 @@ export type Parameter = { name: string; description: string }
 /** An overload family collapsed into one reference entry without losing signatures. */
 export type Member = { name: string; signatures: string[]; description: string; parameters: Parameter[]; returns: string; sources: string[]; static?: boolean }
 /** A public native symbol or TypeScript helper extracted from the built declarations. */
-export type APIEntry = Member & { slug: string; display: string; kind: string; module: string; members: Member[]; bases: string[] }
+export type APIEntry = Member & { slug: string; display: string; kind: string; module: string; members: Member[]; bases: string[]; importable: boolean }
 /** The generated declaration inventory and measured Python compatibility report. */
 export const reference = generated as unknown as { entries: APIEntry[]; constants: APIEntry[]; modules: string[]; coverage: { version: string; modules: string[]; unavailable: string[] }; parity: { reference: { packageVersion: string }; counts: Record<string, number>; missing: { path: string; reason?: string }[]; missingMembers: unknown[] }; documentation: { declarations: number; upstream: number; fallback: number } }
 const lookup = new Map(reference.entries.map(e => [e.name, e]))

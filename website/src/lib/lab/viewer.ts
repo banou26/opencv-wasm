@@ -269,6 +269,13 @@ export class PixelViewer {
       field.value = String(this.point[key as 'x' | 'y'])
       field.max = String((key === 'x' ? selected.width : selected.height) - 1)
     }
+    // Anchor both neighbourhoods to the output pixel grid, then preserve the same
+    // image scale as the linked viewers. Native pixels can occupy different sizes.
+    const referenceIndex = this.images[1] ? 1 : 0,
+      reference = this.images[referenceIndex]!,
+      referencePoint = this.pixelIn(referenceIndex),
+      centerX = (referencePoint.x + 0.5) / reference.width,
+      centerY = (referencePoint.y + 0.5) / reference.height
     for (let i = 0; i < 2; i++) {
       const image = this.images[i],
         cross = this.panes[i].querySelector<HTMLElement>('.pixel-crosshair')!,
@@ -319,27 +326,35 @@ export class PixelViewer {
         ctx = canvas.getContext('2d')!
       ctx.clearRect(0, 0, 99, 99)
       ctx.imageSmoothingEnabled = false
-      const left = Math.max(0, x - 4),
-        top = Math.max(0, y - 4),
-        right = Math.min(image.width, x + 5),
-        bottom = Math.min(image.height, y + 5)
+      const magnification = (11 * this.scales[i]) / this.scales[referenceIndex],
+        cx = centerX * image.width,
+        cy = centerY * image.height,
+        radius = 49.5 / magnification,
+        left = Math.max(0, Math.floor(cx - radius)),
+        top = Math.max(0, Math.floor(cy - radius)),
+        right = Math.min(image.width, Math.ceil(cx + radius)),
+        bottom = Math.min(image.height, Math.ceil(cy + radius))
       ctx.drawImage(
         this.canvases[i],
         left,
         top,
         right - left,
         bottom - top,
-        (left - x + 4) * 11,
-        (top - y + 4) * 11,
-        (right - left) * 11,
-        (bottom - top) * 11
+        49.5 + (left - cx) * magnification,
+        49.5 + (top - cy) * magnification,
+        (right - left) * magnification,
+        (bottom - top) * magnification
       )
+      const inset = Math.min(0.5, magnification / 4),
+        pixelLeft = 49.5 + (x - cx) * magnification + inset,
+        pixelTop = 49.5 + (y - cy) * magnification + inset,
+        pixelSize = magnification - inset * 2
       ctx.strokeStyle = '#000'
-      ctx.lineWidth = 3
-      ctx.strokeRect(44.5, 44.5, 10, 10)
+      ctx.lineWidth = Math.min(3, magnification / 3)
+      ctx.strokeRect(pixelLeft, pixelTop, pixelSize, pixelSize)
       ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(44.5, 44.5, 10, 10)
+      ctx.lineWidth = Math.min(1, magnification / 6)
+      ctx.strokeRect(pixelLeft, pixelTop, pixelSize, pixelSize)
     }
   }
   /** Remove resize observers and event listeners when navigating away from a lab. */

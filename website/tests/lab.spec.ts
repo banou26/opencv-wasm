@@ -34,6 +34,10 @@ const png = async (page: Page, width: number, height: number, scene = 'gradient'
               data.data[i + 1] = scene === 'step' ? data.data[i] : (y * 255) / height
               data.data[i + 2] = scene === 'step' ? data.data[i] : 90
               data.data[i + 3] = 255
+              if (scene === 'blocks') {
+                data.data[i] = 60 + (Math.floor(x / 8) % 2) * 120
+                data.data[i + 1] = 80 + (Math.floor(y / 8) % 2) * 100
+              }
             }
           ctx.putImageData(data, 0, 0)
         }
@@ -425,4 +429,72 @@ test('zoom, pan and pixel inspection follow the same area across output resoluti
   expect(Math.abs(input.width - output.width)).toBeLessThan(1)
   await expect(page.locator('canvas.input')).toHaveAttribute('width', '448')
   await expect(page.locator('canvas.output')).toHaveAttribute('width', '224')
+})
+
+test('pixel magnifiers keep features at output scale across resolutions and image edges', async ({ page }) => {
+  await page.goto('/lab/?algorithm=resize')
+  await upload(page, await png(page, 96, 64, 'blocks'))
+  await page.locator('[name=interpolation]').selectOption('nearest')
+  await page.locator('.load-runtime').click()
+  await ready(page)
+  const magnifiers = () =>
+    page.locator('.pixel-card canvas').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const canvas = node as HTMLCanvasElement
+        return Array.from(canvas.getContext('2d')!.getImageData(0, 0, 99, 99).data)
+      })
+    )
+  for (const scale of [0.5, 1, 2]) {
+    if (scale !== 0.5) await change(page, () => page.locator('.lab-parameters [name=scale]').fill(String(scale)))
+    for (const source of [0, 1]) {
+      await page.locator('[name=pixel-source]').selectOption(String(source))
+      const width = source ? 96 * scale : 96,
+        height = source ? 64 * scale : 64
+      for (const [x, y] of [
+        [Math.floor(width * 0.4), Math.floor(height * 0.4)],
+        [0, 0],
+        [width - 1, height - 1]
+      ]) {
+        await page.locator('[name=pixel-x]').fill(String(x))
+        await page.locator('[name=pixel-x]').press('Tab')
+        await page.locator('[name=pixel-y]').fill(String(y))
+        await page.locator('[name=pixel-y]').press('Tab')
+        const [input, output] = await magnifiers()
+        // The native-pixel outlines intentionally differ in size. Every surrounding
+        // feature and transparent edge must occupy the same magnifier coordinates.
+        let different = 0
+        for (let y = 0; y < 99; y++)
+          for (let x = 0; x < 99; x++) {
+            if (x > 23 && x < 75 && y > 23 && y < 75) continue
+            for (let c = 0; c < 4; c++) {
+              const offset = (y * 99 + x) * 4 + c
+              if (input[offset] !== output[offset]) different++
+            }
+          }
+        expect(different, `${scale}x output, source ${source}, pixel ${x},${y}`).toBe(0)
+        const actual = await page
+          .locator('.lab-main-canvas')
+          .nth(source)
+          .evaluate(
+            (canvas: HTMLCanvasElement, point) =>
+              Array.from(canvas.getContext('2d')!.getImageData(point.x, point.y, 1, 1).data),
+            { x, y }
+          )
+        await expect(page.locator('.pixel-values').nth(source)).toContainText(`RGBA ${actual.join(', ')}`)
+      }
+    }
+  }
+  const before = await magnifiers(),
+    result = await page.locator('image-lab').getAttribute('data-result')
+  for (const zoom of ['1', '8', 'fit']) {
+    await page.locator('[name=zoom]').selectOption(zoom)
+    expect(await magnifiers()).toEqual(before)
+    await expect(page.locator('image-lab')).toHaveAttribute('data-result', result!)
+  }
+  await change(page, () => page.locator('.lab-parameters [name=scale]').fill('0.5'))
+  await page.locator('[name=pixel-x]').fill('19')
+  await page.locator('[name=pixel-x]').press('Tab')
+  await page.locator('[name=pixel-y]').fill('12')
+  await page.locator('[name=pixel-y]').press('Tab')
+  await page.locator('.pixel-inspector').screenshot({ path: 'test-results/pixel-inspector-shared-scale.png' })
 })

@@ -104,8 +104,11 @@ changes its pixel buffer. Scrolling over either image zooms at the pointer witho
 modifier keys; scrollbars pan both views. Views follow the same relative image position and display
 area across resolutions with matching aspect ratios. Other aspect ratios are
 contained without stretching, with panning limited by each image's edges.
-The inspector maps that position to each image’s own pixel coordinates; this does
-not infer correspondence through a geometric warp.
+The inspector maps that position to each image’s own pixel coordinates. Its
+magnifiers share the output's scale: nine output pixels span each view, and input
+pixels are drawn at their corresponding size with nearest-neighbour sampling.
+Pixel outlines and numeric values still identify the original native samples.
+This does not infer correspondence through a geometric warp.
 
 `src/data/cookbook.ts` describes practical pipelines and their assumptions;
 `src/lib/lab/cookbook.ts` executes them. The worker snapshots intermediate matrices

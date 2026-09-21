@@ -7,6 +7,8 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 - 94 visual guides with persistent input comparisons, distinct intermediate/result
   drawings, keyboard-accessible stages and optional step playback.
 - 94 focused OpenCV experiments, embedded in every algorithm guide and available in `/lab/`.
+- 22 runnable cookbook workflows with custom images, draggable regions, intermediate
+  previews and typed code examples. Browse `/cookbook/` or its grouped sidebar.
 - Image and model uploads, algorithm-specific parameters, synchronized zoom, exact
   RGBA sampling, native numeric fields and a keyboard-accessible pixel magnifier.
 - Browser, Node, Python migration, memory ownership, DNN and graph guides.
@@ -45,9 +47,12 @@ npm test
 
 Checks include strict compilation of documentation examples, every generated
 internal link and fragment, native abstract-class reference coverage, search,
-keyboard interaction, playback, mobile layout and all 94 native lab recipes, including default OCR and super-resolution models.
+keyboard interaction, playback, mobile layout and all 94 native algorithm labs plus
+22 cookbook workflows, including default OCR and super-resolution models.
 Lab checks also cover image uploads, signed native values, zoom/pan, stale-result
-handling, parameter changes, model uploads and error recovery.
+handling, parameter changes, model uploads and error recovery. Cookbook checks use
+known frame translations, verify alignment, count and split objects, preserve
+unselected pixels and confirm exported cutout alpha.
 Every atlas example is checked for distinct stages, finite SVG coordinates and
 unclipped labels. Representative stages are also compared as rendered images.
 Playwright uses `CHROMIUM_EXECUTABLE`, the local system Chrome when available, or
@@ -95,8 +100,20 @@ Worker responses copy native values before releasing matrices.
 `image-lab.ts` owns uploads, processed resolution and revision tracking. Obsolete
 worker results are discarded, and changing an input clears its previous result.
 `PixelViewer` only scales canvas presentation: zoom never reruns an algorithm or
-changes its pixel buffer. Both views inspect equal coordinates, not inferred
-scene correspondence.
+changes its pixel buffer. Views follow the same relative image position and display
+area across resolutions with matching aspect ratios. Other aspect ratios are
+contained without stretching, with panning limited by each image's edges.
+The inspector maps that position to each image’s own pixel coordinates; this does
+not infer correspondence through a geometric warp.
+
+`src/data/cookbook.ts` describes practical pipelines and their assumptions;
+`src/lib/lab/cookbook.ts` executes them. The worker snapshots intermediate matrices
+before releasing native handles. Stage buttons switch the output, its pixel values
+and its PNG export without rerunning the pipeline. `cookbook-code.ts` contains the
+short core examples, which are compiled against the package during `npm run check`.
+Region drawing uses processed-image percentages and remains independent of viewer
+zoom. Numeric coordinates provide a keyboard alternative. Paired recipes resize
+the second image to the first image's processed dimensions and label that behavior.
 
 Some recipes deliberately isolate one part of a larger workflow: checkerboard
 corner detection for calibration, Gray-code generation for structured light,

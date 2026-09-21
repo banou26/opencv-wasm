@@ -1,6 +1,7 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import { algorithmGroups } from './src/data/algorithms.ts'
+import { cookbookGroups } from './src/data/cookbook.ts'
 
 export default defineConfig({
   integrations: [starlight({
@@ -18,8 +19,9 @@ export default defineConfig({
           items: algorithms.map(({ id, title }) => ({ label: title, link: `/algorithms/${id}/` })),
         })),
       ] },
+      { label: 'Cookbook', collapsed: true, items: [{label:'All recipes',link:'/cookbook/'}, ...cookbookGroups.map(({category,recipes})=>({label:category,collapsed:true,items:recipes.map(({id,title})=>({label:title,link:`/cookbook/${id}/`}))}))] },
       { label: 'Learn by seeing', items: [{ label: 'Image laboratory', link: '/lab/' }, 'guides/choose', 'guides/detect-and-track'] },
-      { label: 'Build with OpenCV', items: ['guides/workers', 'guides/dnn', 'guides/graphs', 'guides/files', 'guides/cadence'] },
+      { label: 'Build with OpenCV', items: ['guides/workers', 'guides/dnn', 'guides/graphs', 'guides/files'] },
       { label: 'Reference', items: [{ label: 'API browser', link: '/api/' }, { label: 'Modules and features', link: '/modules/' }, 'reference/compatibility', 'reference/troubleshooting', 'reference/build'] },
     ],
   })],

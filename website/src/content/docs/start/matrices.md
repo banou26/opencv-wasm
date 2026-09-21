@@ -55,4 +55,4 @@ using element = values.get(0)
 
 OpenCV filters each channel according to the operation; it does not automatically premultiply straight-alpha RGB. Before interpolating transparent imagery, multiply RGB by alpha, resample colour and alpha with the same maps, and unpremultiply only when required. Hidden RGB under zero alpha must not leak into visible edges.
 
-An alpha channel can also represent missing observations. Preserve that meaning instead of replacing unobserved pixels with apparently valid black pixels. The [Cadence migration](/guides/cadence/) exercises this distinction.
+An alpha channel can also represent missing observations. Preserve that meaning instead of replacing unobserved pixels with apparently valid black pixels.

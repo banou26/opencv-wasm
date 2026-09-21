@@ -1,18 +1,21 @@
 ---
 import { algorithms, algorithmGroups } from '../data/algorithms'
 import '../styles/lab.css'
+import { cookbook, cookbookGroups } from '../data/cookbook'
 import { labRecipes } from '../data/labs'
-interface Props { algorithm?: string }
-const { algorithm } = Astro.props
+interface Props { algorithm?: string; recipe?: string }
+const { algorithm, recipe } = Astro.props
 for (const entry of algorithms) if (!labRecipes[entry.id]) throw new Error(`Missing lab recipe: ${entry.id}`)
-const initial = algorithm ?? 'canny'
-const entries = algorithm ? algorithms.filter(a => a.id === algorithm) : algorithms
-const catalog = entries.map(a => ({ id: a.id, title: a.title, ...labRecipes[a.id] }))
+const initial = recipe ? `cookbook-${recipe}` : algorithm ?? 'canny'
+const entries = algorithms.map(a => ({ id: a.id, title: a.title, ...labRecipes[a.id] })).concat(cookbook.map(r => ({ id: `cookbook-${r.id}`, title: r.title, ...r.lab })))
+const catalog = algorithm || recipe ? entries.filter(entry => entry.id === initial) : entries
+const selected = catalog.find(entry => entry.id === initial)!
+
 ---
 <image-lab data-algorithm={initial}>
   <div class="lab-heading"><div><span class="lab-kicker">YOUR IMAGE · REAL OPENCV</span><p class="lab-title">Experiment at pixel level</p></div><a class="standalone-link" href={`/lab/?algorithm=${initial}`}>Open full lab ↗</a></div>
-  {!algorithm && <label class="algorithm-picker">Algorithm<select name="algorithm">{algorithmGroups.map(group => <optgroup label={group.category}>{group.algorithms.map(a => <option value={a.id} selected={a.id === initial}>{a.title}</option>)}</optgroup>)}</select></label>}
-  <p class="operation-note">{labRecipes[initial].note}</p>
+  {!algorithm && !recipe && <label class="algorithm-picker">Algorithm<select name="algorithm">{algorithmGroups.map(group => <optgroup label={group.category}>{group.algorithms.map(a => <option value={a.id} selected={a.id === initial}>{a.title}</option>)}</optgroup>)}{cookbookGroups.map(group => <optgroup label={`Cookbook · ${group.category}`}>{group.recipes.map(r => <option value={`cookbook-${r.id}`}>{r.title}</option>)}</optgroup>)}</select></label>}
+  <p class="operation-note">{selected.note}</p>
   <div class="lab-parameters"></div>
   <div class="lab-source-controls">
     <label class="file-button">Choose input image<input name="image" type="file" accept="image/*" /></label>
@@ -25,18 +28,20 @@ const catalog = entries.map(a => ({ id: a.id, title: a.title, ...labRecipes[a.id
   <div class="lab-actions"><button type="button" class="load-runtime">Load OpenCV and run</button><button type="button" class="cancel-run" disabled>Stop</button><label class="auto-run"><input type="checkbox" name="auto" checked/> Run when settings change</label><button type="button" class="download" disabled>Save PNG</button></div>
   <p class="lab-status" role="status" aria-live="polite">The engine loads on your first run. Your images stay in this browser.</p>
   <p class="result-note" role="status"></p>
+  <div class="region-tools" hidden><button type="button" class="select-region" aria-pressed="false">Draw a region</button><span>Drag a rectangle on the input. You can also use the region coordinates above.</span></div>
+  <div class="lab-stages" role="group" aria-label="Pipeline stages"></div><p class="stage-note"></p>
   <div class="viewer-toolbar"><div class="zoom-controls"><button type="button" class="zoom-out" aria-label="Zoom out">−</button><label>Zoom<select name="zoom"><option value="fit">Fit both</option>{[12.5,25,50,100,200,400,800,1600,3200].map(value=><option value={value/100}>{value}%</option>)}</select></label><button type="button" class="zoom-in" aria-label="Zoom in">+</button></div><span class="zoom-readout"></span></div>
   <div class="lab-canvases">{['Input','Output'].map((name,i)=><figure>
     <figcaption><strong>{name}</strong><span class="image-dimensions">{i ? 'Waiting for a result' : '448 × 320'}</span></figcaption>
     {i===0 && <label class="inspect-source" hidden>Inspect<select name="inspect-input"><option value="first">First image</option><option value="second">Second image</option></select></label>}
     <div class="pixel-viewport" tabindex="0" role="group" aria-label={`${name} image viewer. Click a pixel to pin, then use arrow keys.`}><div class="pixel-surface"><canvas class:list={['lab-main-canvas',i?'output':'input']} width="448" height="320" role="img" aria-label={`${name} image`}/>{i===0 && <span class="selection-rectangle" hidden aria-hidden="true"></span>}<span class="pixel-crosshair" hidden></span></div></div>
   </figure>)}</div>
-  <p class="viewer-help">Scroll to pan; Ctrl / ⌘ + wheel to zoom. Both views use the same zoom and pixel coordinate. A warp or resize changes scene correspondence.</p>
+  <p class="viewer-help">Pan either view to compare the same relative area. Ctrl / ⌘ + wheel zooms at the pointer. Zoom is relative to the input; pixel coordinates belong to each image. Warps can change scene correspondence.</p>
   <details class="pixel-inspector" open><summary>Pixel inspector <span>RGBA · native values · 9 × 9 neighbourhood</span></summary>
     <div class="pixel-navigation"><label>Coordinates in <select name="pixel-source"><option value="0">Input</option><option value="1">Output</option></select></label><label>x <input name="pixel-x" type="number" min="0" value="0" step="1"/></label><label>y <input name="pixel-y" type="number" min="0" value="0" step="1"/></label><button type="button" class="unpin-pixel" disabled>Unpin</button><span class="pixel-state">Hover to inspect. Click to pin a pixel.</span></div>
     <div class="pixel-cards">{['Input','Output'].map(name=><div class="pixel-card"><canvas width="99" height="99" role="img" aria-label={`${name} pixel neighbourhood`}/><div><strong>{name} <span class="pixel-swatch"></span></strong><pre class="pixel-values">Select a pixel</pre><p class="native-values"></p></div></div>)}</div>
   </details>
-  {!algorithm && <p><a class="guide-link" href={`/algorithms/${initial}/`}>Read the visual explanation →</a></p>}
+  {!algorithm && !recipe && <p><a class="guide-link" href={`/algorithms/${initial}/`}>Read the visual explanation →</a></p>}
   <p class="asset-provenance"><a href="/lab-assets/README.md">Sample models and licenses</a></p>
   <script type="application/json" class="lab-catalog" set:html={JSON.stringify(catalog).replaceAll('<','\\u003c')} />
 </image-lab>

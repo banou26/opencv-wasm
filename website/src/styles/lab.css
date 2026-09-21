@@ -473,3 +473,36 @@ image-lab .guide-link {
     margin-left: 0;
   }
 }
+image-lab .region-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.8rem 0;
+}
+image-lab .region-tools span,
+image-lab .stage-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+image-lab .select-region[aria-pressed='true'],
+image-lab .lab-stages button[aria-pressed='true'] {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+image-lab[data-selecting='true'] canvas.input {
+  touch-action: none;
+  cursor: crosshair;
+}
+image-lab .lab-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.8rem 0;
+}
+image-lab .lab-stages:empty,
+image-lab .stage-note:empty {
+  display: none;
+}
+image-lab .stage-note {
+  margin: 0.5rem 0;
+}

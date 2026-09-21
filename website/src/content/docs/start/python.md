@@ -38,4 +38,4 @@ JavaScript arithmetic uses double precision. Assigning to a `Float32Array` round
 
 For a faithful port, compare masks, shapes, coverage and numeric outputs with native fixtures. Small floating-point differences can cross a discrete threshold and alter a connected region or crop boundary. A name-coverage percentage cannot establish this behavior.
 
-See [compatibility](/reference/compatibility/) for the measured Python inventory and [Cadence](/guides/cadence/) for a migration tested on actual footage.
+See [compatibility](/reference/compatibility/) for the measured Python inventory.

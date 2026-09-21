@@ -1,6 +1,6 @@
 import type { Mat, OpenCV, Scalar } from '../../../../lib/index.js'
 import type * as Runtime from '../../../../lib/index.js'
-import type { LabRequest, NativePixels } from './types'
+import type { LabRequest, LabStage, NativePixels } from './types'
 /** Native resources belong to one experiment and are released together, including on errors. */
 export class Experiment {
   private handles: { delete(): void }[] = []
@@ -10,6 +10,7 @@ export class Experiment {
   readonly out: Mat
   note = ''
   native?: NativePixels
+  stages: LabStage[] = []
   constructor(
     readonly cv: OpenCV,
     readonly runtime: typeof Runtime,
@@ -95,15 +96,15 @@ export class Experiment {
   size() {
     return { width: this.gray.cols, height: this.gray.rows }
   }
-  /** Clamp a percentage rectangle to the actual image, leaving at least a one-pixel border. */
-  rect() {
-    const x = Math.max(1, Math.floor((this.gray.cols * this.n('x')) / 100)),
-      y = Math.max(1, Math.floor((this.gray.rows * this.n('y')) / 100))
+  /** Clamp a percentage rectangle to the image. The default one-pixel border supplies background for GrabCut; pass 0 to include image edges. */
+  rect(border = 1) {
+    const x = Math.max(border, Math.min(this.gray.cols - border - 1, Math.floor((this.gray.cols * this.n('x')) / 100))),
+      y = Math.max(border, Math.min(this.gray.rows - border - 1, Math.floor((this.gray.rows * this.n('y')) / 100)))
     return {
       x,
       y,
-      width: Math.max(1, Math.min(this.gray.cols - x - 1, Math.floor((this.gray.cols * this.n('width')) / 100))),
-      height: Math.max(1, Math.min(this.gray.rows - y - 1, Math.floor((this.gray.rows * this.n('height')) / 100)))
+      width: Math.max(1, Math.min(this.gray.cols - x - border, Math.floor((this.gray.cols * this.n('width')) / 100))),
+      height: Math.max(1, Math.min(this.gray.rows - y - border, Math.floor((this.gray.rows * this.n('height')) / 100)))
     }
   }
   /** Produce a binary mask from the grayscale threshold control. */
@@ -122,6 +123,20 @@ export class Experiment {
   field(mat: Mat, labels = ['value']) {
     this.raw(mat, labels)
     this.cv.normalize(mat, this.out, 0, 255, this.cv.NORM_MINMAX, this.cv.CV_8U)
+  }
+  /** Copy an intermediate image for the pipeline viewer; floating fields retain native values beside a normalized preview. */
+  stage(title: string, mat: Mat, description: string) {
+    let display = mat,
+      native: NativePixels | undefined
+    if (mat.depth() !== this.cv.CV_8U) {
+      const numeric = this.mat()
+      mat.convertTo(numeric, this.cv.CV_32F)
+      native = { values: Float32Array.from(numeric.data32F), channels: mat.channels(), labels: ['value'] }
+      display = this.mat()
+      this.cv.normalize(mat, display, 0, 255, this.cv.NORM_MINMAX, this.cv.CV_8U)
+    }
+    const image = this.runtime.toImageData(this.cv, display)
+    this.stages.push({ title, description, pixels: image.data, width: image.width, height: image.height, native })
   }
   /** Release all native allocations in reverse construction order. */
   dispose() {

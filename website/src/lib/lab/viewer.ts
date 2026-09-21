@@ -1,9 +1,11 @@
 import type { LabImage, NativePixels } from './types'
-/** Two synchronized, unresampled canvas views with exact pixel sampling, keyboard navigation and a local magnifier. */
+/** Canvas views linked by relative image position, with native pixel sampling and resolution-aware magnification. */
 export class PixelViewer {
   private images: (LabImage | undefined)[] = []
   private native?: NativePixels
   private scale = 1
+  private scales = [1, 1]
+  private center = { x: 0.5, y: 0.5 }
   private pinned = false
   private point = { x: 0, y: 0, source: 0 }
   private abort = new AbortController()
@@ -44,13 +46,14 @@ export class PixelViewer {
       canvas.addEventListener(
         'pointermove',
         (event) => {
-          if (!this.pinned) position(event)
+          if (!this.pinned && !(source === 0 && this.root.dataset.selecting === 'true')) position(event)
         },
         options
       )
       canvas.addEventListener(
         'click',
         (event) => {
+          if (source === 0 && this.root.dataset.selecting === 'true') return
           this.pinned = true
           position(event)
           this.panes[source].focus({ preventScroll: true })
@@ -74,7 +77,7 @@ export class PixelViewer {
           if (!delta[event.key]) return
           event.preventDefault()
           this.pinned = true
-          this.point.source = source
+          this.selectSource(source)
           this.point.x += delta[event.key][0]
           this.point.y += delta[event.key][1]
           this.inspect()
@@ -98,14 +101,14 @@ export class PixelViewer {
           if (!event.ctrlKey && !event.metaKey) return
           event.preventDefault()
           const rect = canvas.getBoundingClientRect(),
-            x = (event.clientX - rect.left) / this.scale,
-            y = (event.clientY - rect.top) / this.scale
+            x = (event.clientX - rect.left) / rect.width,
+            y = (event.clientY - rect.top) / rect.height
           this.stepZoom(event.deltaY < 0 ? 1 : -1)
           const pane = this.panes[source],
             bounds = pane.getBoundingClientRect()
           this.pan(() => {
-            pane.scrollLeft = x * this.scale - (event.clientX - bounds.left)
-            pane.scrollTop = y * this.scale - (event.clientY - bounds.top)
+            pane.scrollLeft = x * canvas.clientWidth - (event.clientX - bounds.left - pane.clientLeft)
+            pane.scrollTop = y * canvas.clientHeight - (event.clientY - bounds.top - pane.clientTop)
             this.syncScroll(source)
           })
         },
@@ -113,13 +116,13 @@ export class PixelViewer {
       )
     })
     this.observer = new ResizeObserver(() => {
-      if (this.zoom.value === 'fit') this.resize()
+      this.resize()
     })
     this.panes.forEach((pane) => this.observer.observe(pane))
     root.querySelector<HTMLSelectElement>('[name=pixel-source]')!.addEventListener(
       'change',
       (event) => {
-        this.point.source = Number((event.target as HTMLSelectElement).value)
+        this.selectSource(Number((event.target as HTMLSelectElement).value))
         this.pinned = true
         this.inspect()
       },
@@ -143,6 +146,11 @@ export class PixelViewer {
   }
   /** Replace a view with copied worker pixels; output native values must have the same dimensions. */
   setImage(index: number, image: LabImage, native?: NativePixels) {
+    const previous = this.images[index]
+    if (previous && this.point.source === index) {
+      this.point.x = Math.floor(((this.point.x + 0.5) / previous.width) * image.width)
+      this.point.y = Math.floor(((this.point.y + 0.5) / previous.height) * image.height)
+    }
     this.images[index] = image
     const canvas = this.canvases[index]
     canvas.width = image.width
@@ -173,39 +181,39 @@ export class PixelViewer {
     this.resize()
   }
   private resize() {
-    const old = this.scale
+    const reference = this.images[0] ?? this.canvases[0]
     this.scale =
       this.zoom.value === 'fit'
         ? Math.min(
-            ...this.canvases.map((canvas, i) =>
+            ...this.panes.map((pane) =>
               Math.min(
                 1,
-                Math.max(1, this.panes[i].clientWidth - 2) / canvas.width,
-                Math.max(1, this.panes[i].clientHeight - 2) / canvas.height
+                Math.max(1, pane.clientWidth - 2) / reference.width,
+                Math.max(1, pane.clientHeight - 2) / reference.height
               )
             )
           )
         : Number(this.zoom.value)
     this.pan(() => {
       for (let i = 0; i < 2; i++) {
-        const pane = this.panes[i],
-          x = (pane.scrollLeft + pane.clientWidth / 2) / old,
-          y = (pane.scrollTop + pane.clientHeight / 2) / old,
-          canvas = this.canvases[i]
-        canvas.style.width = `${canvas.width * this.scale}px`
-        canvas.style.height = `${canvas.height * this.scale}px`
-        pane.scrollLeft = x * this.scale - pane.clientWidth / 2
-        pane.scrollTop = y * this.scale - pane.clientHeight / 2
+        const canvas = this.canvases[i]
+        // Equal-resolution fractions occupy the same display area. Contain differing
+        // aspect ratios inside the input frame rather than stretching their pixels.
+        this.scales[i] = this.scale * Math.min(reference.width / canvas.width, reference.height / canvas.height)
+        canvas.style.width = `${canvas.width * this.scales[i]}px`
+        canvas.style.height = `${canvas.height * this.scales[i]}px`
       }
-      this.syncScroll(this.point.source)
+      this.placeCenter(0)
+      this.placeCenter(1)
     })
-    this.root.querySelector('.zoom-readout')!.textContent = `${Math.round(this.scale * 100)}% · nearest pixel`
+    this.root.querySelector('.zoom-readout')!.textContent =
+      `Input ${Math.round(this.scales[0] * 100)}% · output ${Math.round(this.scales[1] * 100)}%`
     this.inspect()
   }
   private reveal(source: number) {
     const pane = this.panes[source],
-      x = (this.point.x + 0.5) * this.scale,
-      y = (this.point.y + 0.5) * this.scale
+      x = (this.point.x + 0.5) * this.scales[source],
+      y = (this.point.y + 0.5) * this.scales[source]
     this.pan(() => {
       if (x < pane.scrollLeft || x > pane.scrollLeft + pane.clientWidth) pane.scrollLeft = x - pane.clientWidth / 2
       if (y < pane.scrollTop || y > pane.scrollTop + pane.clientHeight) pane.scrollTop = y - pane.clientHeight / 2
@@ -214,9 +222,30 @@ export class PixelViewer {
   }
   private syncScroll(source: number) {
     const from = this.panes[source],
-      to = this.panes[1 - source]
-    to.scrollLeft = from.scrollLeft
-    to.scrollTop = from.scrollTop
+      canvas = this.canvases[source]
+    this.center = {
+      x: canvas.clientWidth > from.clientWidth ? (from.scrollLeft + from.clientWidth / 2) / canvas.clientWidth : 0.5,
+      y: canvas.clientHeight > from.clientHeight ? (from.scrollTop + from.clientHeight / 2) / canvas.clientHeight : 0.5
+    }
+    this.placeCenter(1 - source)
+  }
+  private placeCenter(index: number) {
+    const pane = this.panes[index],
+      canvas = this.canvases[index]
+    pane.scrollLeft = this.center.x * canvas.clientWidth - pane.clientWidth / 2
+    pane.scrollTop = this.center.y * canvas.clientHeight - pane.clientHeight / 2
+  }
+  private pixelIn(index: number) {
+    const selected = this.images[this.point.source] ?? this.images[0],
+      target = this.images[index]
+    if (!selected || !target || index === this.point.source) return { x: this.point.x, y: this.point.y }
+    return {
+      x: Math.min(target.width - 1, Math.floor(((this.point.x + 0.5) / selected.width) * target.width)),
+      y: Math.min(target.height - 1, Math.floor(((this.point.y + 0.5) / selected.height) * target.height))
+    }
+  }
+  private selectSource(source: number) {
+    this.point = { ...this.pixelIn(source), source }
   }
   private pan(update: () => void) {
     update()
@@ -251,9 +280,7 @@ export class PixelViewer {
         card.querySelector('canvas')!.getContext('2d')!.clearRect(0, 0, 99, 99)
         continue
       }
-      // Equal coordinates are intentional. A resize/warp does not preserve scene correspondence.
-      const x = this.point.x,
-        y = this.point.y
+      const { x, y } = this.pixelIn(i)
       if (x >= image.width || y >= image.height) {
         cross.hidden = true
         card.querySelector('.pixel-values')!.textContent = `(${x}, ${y}) is outside this image.`
@@ -262,10 +289,10 @@ export class PixelViewer {
         continue
       }
       cross.hidden = false
-      cross.style.left = `${x * this.scale}px`
-      cross.style.top = `${y * this.scale}px`
-      cross.style.width = `${this.scale}px`
-      cross.style.height = `${this.scale}px`
+      cross.style.left = `${x * this.scales[i]}px`
+      cross.style.top = `${y * this.scales[i]}px`
+      cross.style.width = `${this.scales[i]}px`
+      cross.style.height = `${this.scales[i]}px`
       const offset = (y * image.width + x) * 4,
         rgba = Array.from(image.pixels.slice(offset, offset + 4)),
         hex =

@@ -52,9 +52,12 @@ test('all 94 recipes execute native WASM, including alternate selection modes', 
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/lab/')
   expect(
-    await page
-      .locator('[name=algorithm] option')
-      .evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value).sort())
+    await page.locator('[name=algorithm] option').evaluateAll((nodes) =>
+      nodes
+        .map((node) => (node as HTMLOptionElement).value)
+        .filter((id) => !id.startsWith('cookbook-'))
+        .sort()
+    )
   ).toEqual(algorithms.map((a) => a.id).sort())
   await page.locator('.load-runtime').click()
   await ready(page)
@@ -73,6 +76,8 @@ test('all 94 recipes execute native WASM, including alternate selection modes', 
       expect(pixels.width, algorithm.id).toBeGreaterThan(0)
       expect(pixels.height).toBeGreaterThan(0)
       expect(pixels.opaque, algorithm.id).toBe(pixels.width * pixels.height)
+      if (algorithm.id === 'icp')
+        await change(page, () => page.locator('.lab-parameters [name=height]').fill('0.05'))
       for (const control of labRecipes[algorithm.id].controls.filter((control) => control.options)) {
         if (algorithm.id === 'dnn-super-resolution' || algorithm.id === 'stitching') continue
         const last = control.options!.at(-1)![0]
@@ -313,4 +318,102 @@ test('a pending model file cannot run against the previous model', async ({ page
   await expect(page.locator('canvas.output')).toHaveAttribute('width', '80')
   await change(page, () => page.getByRole('button', { name: 'Use bundled model' }).click())
   await expect(page.locator('.result-note')).toContainText('Built-in ReLU demo')
+})
+
+test('zoom, pan and pixel inspection follow the same area across output resolutions', async ({ page }) => {
+  await page.goto('/lab/?algorithm=resize')
+  await page.locator('.load-runtime').click()
+  await ready(page)
+  const view = () =>
+    page.locator('.pixel-viewport').evaluateAll((panes) =>
+      panes.map((pane) => {
+        const canvas = pane.querySelector('canvas')!,
+          box = canvas.getBoundingClientRect()
+        return {
+          x: (pane.scrollLeft + pane.clientWidth / 2) / box.width,
+          y: (pane.scrollTop + pane.clientHeight / 2) / box.height,
+          width: box.width,
+          height: box.height,
+          visibleX: pane.clientWidth / box.width,
+          visibleY: pane.clientHeight / box.height
+        }
+      })
+    )
+  const aligned = async () => {
+    await expect
+      .poll(async () => {
+        const [a, b] = await view()
+        return Math.max(
+          Math.abs(a.x - b.x),
+          Math.abs(a.y - b.y),
+          Math.abs(a.visibleX - b.visibleX),
+          Math.abs(a.visibleY - b.visibleY)
+        )
+      })
+      .toBeLessThan(0.002)
+  }
+  await page.locator('[name=zoom]').selectOption('4')
+  for (const scale of ['0.5', '2', '0.2']) {
+    if (scale !== '0.5') await change(page, () => page.locator('.lab-parameters [name=scale]').fill(scale))
+    await aligned()
+    for (const index of [0, 1]) {
+      await page
+        .locator('.pixel-viewport')
+        .nth(index)
+        .evaluate((pane) => {
+          const canvas = pane.querySelector('canvas')!
+          pane.scrollLeft = canvas.clientWidth * 0.65 - pane.clientWidth / 2
+          pane.scrollTop = canvas.clientHeight * 0.4 - pane.clientHeight / 2
+        })
+      await aligned()
+      const before = (await view())[index]
+      await page.locator('.zoom-in').click()
+      await aligned()
+      const after = (await view())[index]
+      expect(Math.abs(after.x - before.x)).toBeLessThan(0.002)
+      expect(Math.abs(after.y - before.y)).toBeLessThan(0.002)
+      await page.locator('.zoom-out').click()
+      await aligned()
+    }
+  }
+  await change(page, () => page.locator('.lab-parameters [name=scale]').fill('0.5'))
+  await page.locator('[name=pixel-x]').fill('301')
+  await page.locator('[name=pixel-x]').press('Tab')
+  await page.locator('[name=pixel-y]').fill('201')
+  await page.locator('[name=pixel-y]').press('Tab')
+  await expect(page.locator('.pixel-values').first()).toContainText('(301, 201)')
+  await expect(page.locator('.pixel-values').last()).toContainText('(150, 100)')
+  await page.locator('[name=pixel-source]').selectOption('1')
+  await expect(page.locator('[name=pixel-x]')).toHaveValue('150')
+  for (const index of [0, 1]) {
+    const pane = page.locator('.pixel-viewport').nth(index)
+    const anchor = await pane.evaluate((element) => {
+      const canvas = element.querySelector('canvas')!,
+        x = element.clientWidth * 0.35,
+        y = element.clientHeight * 0.4,
+        box = element.getBoundingClientRect()
+      return {
+        u: (element.scrollLeft + x) / canvas.clientWidth,
+        v: (element.scrollTop + y) / canvas.clientHeight,
+        clientX: box.left + element.clientLeft + x,
+        clientY: box.top + element.clientTop + y
+      }
+    })
+    await pane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: anchor.clientX, clientY: anchor.clientY })
+    const after = await pane.evaluate((element) => {
+      const canvas = element.querySelector('canvas')!
+      return {
+        u: (element.scrollLeft + element.clientWidth * 0.35) / canvas.clientWidth,
+        v: (element.scrollTop + element.clientHeight * 0.4) / canvas.clientHeight
+      }
+    })
+    expect(Math.abs(after.u - anchor.u)).toBeLessThan(0.002)
+    expect(Math.abs(after.v - anchor.v)).toBeLessThan(0.002)
+    await aligned()
+  }
+  await page.locator('[name=zoom]').selectOption('fit')
+  const [input, output] = await view()
+  expect(Math.abs(input.width - output.width)).toBeLessThan(1)
+  await expect(page.locator('canvas.input')).toHaveAttribute('width', '448')
+  await expect(page.locator('canvas.output')).toHaveAttribute('width', '224')
 })

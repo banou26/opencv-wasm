@@ -12,6 +12,8 @@ export type LabRequest = LabImage & {
 }
 /** Optional unscaled matrix values, in row-major interleaved channel order, independent of display colours. */
 export type NativePixels = { values: Float32Array; channels: number; labels: string[] }
+/** A copied intermediate image and its explanation, available without rerunning the pipeline. */
+export type LabStage = LabImage & { title: string; description: string; native?: NativePixels }
 /** A completed experiment or an actionable error. Revisions let the UI discard obsolete results. */
 export type LabResponse =
   | { id: number; error: string }
@@ -22,6 +24,7 @@ export type LabResponse =
       version: string
       note: string
       native?: NativePixels
+      stages?: LabStage[]
     })
 /** A labelled numeric, selection or JSON control with a documented starting value. */
 export type LabControl = {
@@ -40,5 +43,6 @@ export type LabRecipe = {
   controls: LabControl[]
   second?: boolean
   assets?: { key: string; label: string; accept: string; required?: boolean }[]
+  sample?: 'objects' | 'document'
   maxSide?: number
 }

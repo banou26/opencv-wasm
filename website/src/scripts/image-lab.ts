@@ -40,7 +40,8 @@ class ImageLab extends HTMLElement {
       uploadEpoch = 0,
       secondEpoch = 0,
       filename = 'Built-in sample',
-      secondFilename = ''
+      secondFilename = '',
+      drag: { id: number; x: number; y: number } | undefined
     const loadingInputs = new Set<HTMLInputElement>()
     this.viewer = new PixelViewer(this)
     const message = (text: string, state = 'idle') => {
@@ -82,7 +83,8 @@ class ImageLab extends HTMLElement {
           for (let y = 0; y < h; y++)
             for (let x = 0; x < w; x++) {
               let sx = entry.id === 'hdr' || entry.id === 'template-matching' ? x : x + 12
-              while (sx >= w || sx < 0) sx = sx >= w ? 2 * w - sx - 2 : -sx
+              if (w === 1) sx = 0
+              else while (sx >= w || sx < 0) sx = sx >= w ? 2 * w - sx - 2 : -sx
               for (let c = 0; c < 4; c++)
                 data[(y * w + x) * 4 + c] =
                   primary.pixels[(y * w + sx) * 4 + c] * (entry.id === 'hdr' && c < 3 ? 0.45 : 1)
@@ -125,6 +127,9 @@ class ImageLab extends HTMLElement {
       save.disabled = true
       this.viewer!.clearOutput()
       q('.result-note').textContent = ''
+      q('.lab-stages').replaceChildren()
+      q('.stage-note').textContent = ''
+      delete this.dataset.stage
       if (busy) {
         message('Settings changed. Waiting for the current worker operation…', 'running')
         pending = auto.checked
@@ -159,6 +164,10 @@ class ImageLab extends HTMLElement {
     }
     const process = () => {
       clearTimeout(this.timer)
+      if (drag) {
+        message('Release the selection to update the result.')
+        return
+      }
       if (loadingInputs.size) {
         message('Reading the selected file…', 'loading-input')
         return
@@ -205,6 +214,32 @@ class ImageLab extends HTMLElement {
               this.dataset.result = String(data.id)
               save.disabled = false
               this.dataset.completedAlgorithm = data.algorithm
+              const stages = data.stages ?? [],
+                buttons = q('.lab-stages')
+              buttons.replaceChildren()
+              q('.stage-note').textContent = stages.length ? 'Final output of the complete recipe.' : ''
+              if (stages.length) {
+                const choices = [
+                  ...stages,
+                  { ...data, title: 'Result', description: 'Final output of the complete recipe.' }
+                ]
+                choices.forEach((stage, index) => {
+                  const button = document.createElement('button')
+                  button.type = 'button'
+                  button.textContent = index === stages.length ? 'Result' : `${index + 1} · ${stage.title}`
+                  button.setAttribute('aria-pressed', String(index === stages.length))
+                  button.addEventListener('click', () => {
+                    this.viewer!.setImage(1, stage, stage.native)
+                    this.dataset.stage = String(index)
+                    q('.stage-note').textContent = stage.description
+                    buttons
+                      .querySelectorAll('button')
+                      .forEach((other) => other.setAttribute('aria-pressed', String(other === button)))
+                  })
+                  buttons.append(button)
+                })
+                this.dataset.stage = String(stages.length)
+              }
             }
           } else if (!pending) message('Settings changed. Run to update the output.')
           if (pending) {
@@ -248,6 +283,10 @@ class ImageLab extends HTMLElement {
       this.worker.postMessage(request, transfer)
     }
     const render = () => {
+      drag = undefined
+      this.dataset.selecting = 'false'
+      q('.select-region').setAttribute('aria-pressed', 'false')
+      if (original instanceof HTMLCanvasElement) original = drawSample(entry.sample)
       params = Object.fromEntries(entry.controls.map((control) => [control.key, control.value]))
       assets = {}
       q('.lab-parameters').replaceChildren()
@@ -310,6 +349,14 @@ class ImageLab extends HTMLElement {
             params[control.key] = number.value === '' ? NaN : Number(number.value)
             change()
           })
+          if ('x' in params && 'width' in params && ['x', 'y', 'width', 'height'].includes(control.key)) {
+            for (const input of [slider, number]) {
+              input.min = control.key === 'x' || control.key === 'y' ? '0' : '0.1'
+              input.max = control.key === 'x' || control.key === 'y' ? '99' : '100'
+            }
+            slider.step = '0.1'
+            number.step = 'any'
+          }
           number.required = true
           wrap.append(slider, number)
           label.append(wrap)
@@ -373,12 +420,16 @@ class ImageLab extends HTMLElement {
         })
         q('.lab-assets').append(label, name, reset)
       }
+      q('.region-tools').hidden = !('x' in params && 'width' in params)
       q('.operation-note').textContent = entry.note
       q('.second-input').hidden = !entry.second
       q('.inspect-source').hidden = !entry.second
       if (!entry.second) q<HTMLSelectElement>('[name=inspect-input]').value = 'first'
       const guide = q<HTMLAnchorElement>('.guide-link')
-      if (guide) guide.href = `/algorithms/${entry.id}/`
+      if (guide) {
+        guide.href = entry.id.startsWith('cookbook-') ? `/cookbook/${entry.id.slice(9)}/` : `/algorithms/${entry.id}/`
+        guide.textContent = entry.id.startsWith('cookbook-') ? 'Read the recipe →' : 'Read the visual explanation →'
+      }
       q<HTMLAnchorElement>('.standalone-link').href = `/lab/?algorithm=${entry.id}`
       this.dataset.algorithm = entry.id
       prepare()
@@ -495,7 +546,7 @@ class ImageLab extends HTMLElement {
         uploadEpoch++
         loadingInputs.delete(q<HTMLInputElement>('[name=image]'))
         if (original instanceof ImageBitmap) original.close()
-        original = drawSample()
+        original = drawSample(entry.sample)
         filename = 'Built-in sample'
         q<HTMLInputElement>('[name=image]').value = ''
         prepare()
@@ -517,11 +568,97 @@ class ImageLab extends HTMLElement {
       },
       events
     )
+    const selectionCanvas = q<HTMLCanvasElement>('canvas.input')
+    q('.select-region').addEventListener(
+      'click',
+      () => {
+        const enabled = this.dataset.selecting !== 'true'
+        this.dataset.selecting = String(enabled)
+        q('.select-region').setAttribute('aria-pressed', String(enabled))
+        q<HTMLSelectElement>('[name=inspect-input]').value = ['template-matching', 'seamless-cloning'].includes(
+          entry.id
+        )
+          ? 'second'
+          : 'first'
+        inspectInput()
+        rectangle()
+      },
+      events
+    )
+    const locationInImage = (event: PointerEvent) => {
+      const box = selectionCanvas.getBoundingClientRect()
+      return {
+        x: Math.max(0, Math.min(100, ((event.clientX - box.left) / box.width) * 100)),
+        y: Math.max(0, Math.min(100, ((event.clientY - box.top) / box.height) * 100))
+      }
+    }
+    const updateSelection = (event: PointerEvent) => {
+      if (!drag || drag.id !== event.pointerId) return
+      const end = locationInImage(event),
+        x = Math.min(99, Math.min(drag.x, end.x)),
+        y = Math.min(99, Math.min(drag.y, end.y))
+      const values = {
+        x,
+        y,
+        width: Math.min(100 - x, Math.max(0.1, 200 / primary.width, Math.abs(end.x - drag.x))),
+        height: Math.min(100 - y, Math.max(0.1, 200 / primary.height, Math.abs(end.y - drag.y)))
+      }
+      for (const [key, value] of Object.entries(values)) {
+        params[key] = Math.round(value * 100) / 100
+        const number = q<HTMLInputElement>(`.lab-parameters [name="${key}"]`)
+        number.value = String(params[key])
+        number.parentElement!.querySelector<HTMLInputElement>('[type=range]')!.value = number.value
+      }
+      rectangle()
+    }
+    selectionCanvas.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (this.dataset.selecting !== 'true' || event.button !== 0) return
+        event.preventDefault()
+        drag = { id: event.pointerId, ...locationInImage(event) }
+        selectionCanvas.setPointerCapture(event.pointerId)
+        invalidate()
+        updateSelection(event)
+      },
+      events
+    )
+    selectionCanvas.addEventListener(
+      'pointermove',
+      (event) => {
+        if (drag) {
+          event.preventDefault()
+          updateSelection(event)
+        }
+      },
+      events
+    )
+    selectionCanvas.addEventListener(
+      'pointerup',
+      (event) => {
+        if (!drag || drag.id !== event.pointerId) return
+        updateSelection(event)
+        drag = undefined
+        selectionCanvas.releasePointerCapture(event.pointerId)
+        change()
+      },
+      events
+    )
+    selectionCanvas.addEventListener(
+      'pointercancel',
+      () => {
+        if (drag) {
+          drag = undefined
+          change()
+        }
+      },
+      events
+    )
     save.addEventListener(
       'click',
       () => {
         const link = document.createElement('a')
-        link.download = `opencv-${this.dataset.completedAlgorithm}.png`
+        link.download = `opencv-${this.dataset.completedAlgorithm}${this.dataset.stage ? `-stage-${this.dataset.stage}` : ''}.png`
         link.href = q<HTMLCanvasElement>('canvas.output').toDataURL('image/png')
         link.click()
       },

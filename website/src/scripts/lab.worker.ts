@@ -8,6 +8,7 @@ import { learning } from '../lib/lab/learning'
 import { pairs } from '../lib/lab/pairs'
 import { geometry } from '../lib/lab/geometry'
 import { models } from '../lib/lab/models'
+import { cook } from '../lib/lab/cookbook'
 let diagnostics: string[] = []
 let instance: Promise<{ cv: OpenCV; runtime: typeof Runtime }> | undefined
 const load = () =>
@@ -35,6 +36,7 @@ self.onmessage = async ({ data }: MessageEvent<LabRequest>) => {
     cv.setRNGSeed(42)
     experiment = new Experiment(cv, runtime, data)
     if (
+      !cook(experiment) &&
       !filters(experiment) &&
       !regions(experiment) &&
       !learning(experiment) &&
@@ -55,10 +57,15 @@ self.onmessage = async ({ data }: MessageEvent<LabRequest>) => {
       elapsed,
       version: cv.getVersionString(),
       note: experiment.note,
-      native: experiment.native
+      native: experiment.native,
+      stages: experiment.stages
     }
     const transfer: Transferable[] = [result.data.buffer]
     if (response.native) transfer.push(response.native.values.buffer)
+    for (const stage of experiment.stages) {
+      transfer.push(stage.pixels.buffer)
+      if (stage.native) transfer.push(stage.native.values.buffer)
+    }
     self.postMessage(response, { transfer })
   } catch (error) {
     self.postMessage({

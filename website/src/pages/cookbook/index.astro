@@ -1,0 +1,13 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
+import FilterList from '../../components/FilterList.astro'
+import { cookbook, cookbookGroups } from '../../data/cookbook'
+---
+<StarlightPage frontmatter={{title:'Computer vision cookbook',description:'Practical OpenCV pipelines with custom images, selectable regions and inspectable intermediate results.'}}>
+  <div class="eyebrow"><span>From problem to pixels</span><span>{cookbook.length} runnable recipes</span></div>
+  <p class="lead">Combine a few algorithms into something useful. Bring your images, select a region, tune the controls and inspect every step.</p>
+  <p>Start with <a href="/cookbook/track-region/">tracking a region between two frames</a>, <a href="/cookbook/count-objects/">counting objects</a> or <a href="/cookbook/scan-document/">flattening a document</a>. Each recipe explains its assumptions and links to the algorithms behind it.</p>
+  <FilterList label="Find a recipe or a use case" placeholder="Try tracking, document, background, colour…" itemLabel="recipes" categories={cookbookGroups.map(g=>({name:g.category,count:g.recipes.length}))} choices={cookbook.map(r=>({id:r.id,label:r.title,category:r.category}))}>
+    <div class="atlas-grid">{cookbook.map(r=><a class="atlas-card" href={`/cookbook/${r.id}/`} data-filter-id={r.id} data-category={r.category} data-search={`${r.title} ${r.category} ${r.summary} ${r.caveat} ${r.steps.map(s=>`${s.title} ${s.detail}`).join(' ')}`}><small>{r.category}</small><h2>{r.title}</h2><p>{r.summary}</p><span>{r.steps.map(s=>s.title).join(' → ')}</span></a>)}</div>
+  </FilterList>
+</StarlightPage>

@@ -1,9 +1,56 @@
 /** Draw the deterministic geometric sample used by the image experiments. */
-export const drawSample = (): HTMLCanvasElement => {
+export const drawSample = (kind?: 'objects' | 'document'): HTMLCanvasElement => {
   const canvas = document.createElement('canvas')
   canvas.width = 448
   canvas.height = 320
   const ctx = canvas.getContext('2d')!
+  if (kind === 'objects') {
+    ctx.fillStyle = '#202632'
+    ctx.fillRect(0, 0, 448, 320)
+    ctx.fillStyle = '#ece9de'
+    for (const [x, y, r] of [
+      [80, 80, 32],
+      [175, 70, 24],
+      [300, 80, 37],
+      [72, 219, 36],
+      [213, 207, 40],
+      [266, 207, 40],
+      [369, 243, 25]
+    ]) {
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    for (let i = 0; i < 60; i++) ctx.fillRect((i * 83) % 448, (i * 71) % 320, 1, 1)
+    return canvas
+  }
+  if (kind === 'document') {
+    ctx.fillStyle = '#354154'
+    ctx.fillRect(0, 0, 448, 320)
+    ctx.save()
+    ctx.translate(224, 160)
+    ctx.rotate(-0.12)
+    const light = ctx.createLinearGradient(-160, 0, 160, 0)
+    light.addColorStop(0, '#a3a7aa')
+    light.addColorStop(1, '#ffffff')
+    ctx.fillStyle = light
+    ctx.fillRect(-160, -126, 320, 252)
+    ctx.fillStyle = '#1c2631'
+    ctx.font = 'bold 20px sans-serif'
+    ctx.fillText('OPENCV FIELD NOTES', -137, -87)
+    ctx.font = '12px sans-serif'
+    const lines = [
+      'Make the image useful.',
+      'Start with the original pixels.',
+      'Reduce noise before finding edges.',
+      'Measure which structures survive.',
+      'Keep intermediate results visible.',
+      'Check the result on your own image.'
+    ]
+    lines.forEach((text, i) => ctx.fillText(text, -137, -47 + i * 24))
+    ctx.restore()
+    return canvas
+  }
   const g = ctx.createLinearGradient(0, 0, 448, 320)
   g.addColorStop(0, '#222637')
   g.addColorStop(1, '#afb7cc')

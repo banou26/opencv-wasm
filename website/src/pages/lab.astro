@@ -5,6 +5,7 @@ import ImageLab from '../components/ImageLab.astro'
 <StarlightPage frontmatter={{ title: 'Image laboratory', description: 'Run real OpenCV algorithms in a browser worker and explore the effect of their parameters.' }}>
   <div class="eyebrow"><span>Live experiment</span><span>CPU · WebAssembly · Worker</span></div>
   <p class="lead">Your image, your parameters, down to the pixel. Explore every algorithm in the atlas with real OpenCV results, synchronized zoom and native numeric values.</p>
+  <p>Looking for a complete workflow? The <a href="/cookbook/">cookbook</a> combines algorithms into tracking, segmentation, document and photography recipes.</p>
   <ImageLab />
   <h2 id="what-runs">What runs here</h2>
   <p>The first run downloads the packaged WASM engine. Each experiment explains its preprocessing and required inputs. Work runs inside a browser worker, and native objects are disposed after each run. Stop terminates the worker if a model or iterative operation takes too long. Uploads are processed locally.</p>

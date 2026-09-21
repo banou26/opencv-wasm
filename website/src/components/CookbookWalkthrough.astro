@@ -1,0 +1,84 @@
+---
+import type { CookbookRecipe } from '../data/cookbook'
+import { cookbookExplanations } from '../data/cookbook-explanations'
+import type { CookbookVisualManifest } from '../data/cookbook-visuals'
+import snapshots from '../data/cookbook-visuals.generated.json'
+const { recipe } = Astro.props as { recipe: CookbookRecipe }
+const manifest = snapshots as CookbookVisualManifest
+const visual = manifest.recipes[recipe.id]
+const reasoning = cookbookExplanations[recipe.id]
+if (!visual || visual.stages.length !== recipe.steps.length) throw new Error(`Missing cookbook walkthrough: ${recipe.id}`)
+const number = (n: number) => String(n + 1).padStart(2, '0')
+---
+<cookbook-walkthrough data-recipe={recipe.id} data-stage="0" data-frame="0">
+  <div class="walkthrough-top"><span><i></i> VISUAL WALKTHROUGH</span><span>{recipe.category}</span></div>
+  <div class="walkthrough-steps" role="group" aria-label={`${recipe.title} visual steps`}>
+    {recipe.steps.map((step, i) => <button type="button" data-step={i} aria-pressed={i === 0} aria-controls={`walkthrough-${recipe.id}-${i}`}>
+      <span class="step-number">{number(i)}</span><span><b>{step.title}</b><small>{reasoning.stages[i].algorithms.join(' · ')}</small></span>
+    </button>)}
+  </div>
+  <div class="comparison-choice">
+    <label>Compare with <select name="walkthrough-reference"><option value="previous">Previous step</option><option value="original">Original input</option>{visual.second && <option value="second">Second image</option>}</select></label>
+    <span>Follow the images, then read what passes to the next algorithm.</span>
+  </div>
+  <div class="walkthrough-comparison">
+    <figure class="walkthrough-reference">
+      <figcaption><span class="panel-label" data-reference-label>STARTING IMAGE</span><strong data-reference-title>{visual.input.title}</strong><span class="dimensions" data-reference-size>{visual.input.width} × {visual.input.height}</span></figcaption>
+      <div class="image-frame"><img data-reference-image src={visual.input.src} width={visual.input.width} height={visual.input.height} alt={visual.input.description} loading="lazy" decoding="async"/></div>
+      <p class="image-description" data-reference-description>{visual.input.description}</p>
+    </figure>
+    <div class="comparison-arrow" aria-hidden="true">→</div>
+    <div class="walkthrough-outputs">
+      {visual.stages.map((frames, i) => <div data-output-step={i} hidden={i !== 0}>
+        {frames.map((frame, j) => <figure data-output-frame={j} hidden={j !== 0}>
+          <figcaption><span class="panel-label">STEP {number(i)} · {j + 1} / {frames.length}</span><strong>{frame.title === 'Result' ? recipe.steps[i].title : frame.title}</strong><span class="dimensions">{frame.width} × {frame.height}</span></figcaption>
+          <div class="image-frame"><img src={frame.src} width={frame.width} height={frame.height} alt={`${frame.title}: ${frame.description}`} loading="lazy" decoding="async"/></div>
+          <p class="image-description">{frame.description}</p>
+        </figure>)}
+        {frames.length > 1 && <div class="frame-choices" role="group" aria-label={`Previews for ${recipe.steps[i].title}`}>
+          {frames.map((frame, j) => <button type="button" data-frame-button={j} aria-pressed={j === 0}>{frame.title}</button>)}
+        </div>}
+      </div>)}
+    </div>
+  </div>
+  <div class="walkthrough-explanation">
+    <div class="playback-controls"><span data-step-counter>STEP 01 / {String(recipe.steps.length).padStart(2, '0')}</span><div>
+      <button type="button" data-previous aria-label="Previous walkthrough image" disabled>← Previous</button>
+      <button type="button" data-next aria-label="Next walkthrough image">Next →</button>
+      <button type="button" data-play aria-label="Play cookbook steps" aria-pressed="false">▷ Play steps</button>
+    </div></div>
+    {recipe.steps.map((step, i) => <section id={`walkthrough-${recipe.id}-${i}`} data-explanation={i} hidden={i !== 0} aria-label={step.title}>
+      <div class="algorithm-heading"><h3>{step.title}</h3><a href={`/algorithms/${step.algorithm}/`}>Explore the algorithm →</a></div>
+      <div class="algorithm-chips">{reasoning.stages[i].algorithms.map(name => <code>{name}</code>)}</div>
+      <p class="step-action">{step.detail}</p>
+      <dl><div><dt>Receives</dt><dd>{reasoning.stages[i].input}</dd></div><div><dt>{i === recipe.steps.length - 1 ? 'Produces' : 'Passes to the next step'}</dt><dd>{reasoning.stages[i].output}</dd></div></dl>
+      <p class="step-why"><strong>Why this step?</strong> {reasoning.stages[i].why}</p>
+    </section>)}
+    <div class="walkthrough-progress" aria-hidden="true"><span></span></div>
+  </div>
+  <p class="walkthrough-note">Actual OpenCV {manifest.version} results on the illustrated sample, using the lab’s default algorithm settings. Masks, overlays and normalized fields are labelled previews; the data contracts above describe what the algorithms really exchange. <a href="#try">Try this chain with your images ↓</a></p>
+  <span class="sr-only" role="status" aria-live="polite" data-announcement></span>
+  <script type="application/json" data-walkthrough-data set:html={JSON.stringify(visual).replaceAll('<', '\\u003c')} />
+</cookbook-walkthrough>
+<script>import '../scripts/cookbook-walkthrough'</script>
+<style>
+  cookbook-walkthrough{display:block;container-type:inline-size;margin:1.5rem 0 2rem;border:1px solid #303c50;border-radius:14px;background:#101722;color:#e4e8f0;overflow:hidden;--step-progress:33.333%}
+  .walkthrough-top{display:flex;justify-content:space-between;gap:1rem;padding:1rem 1.2rem;background:#151e2c;border-bottom:1px solid #263244;color:#a1aec3;font:400 .65rem var(--sl-font-mono);letter-spacing:.08em}
+  .walkthrough-top span{display:flex;align-items:center;gap:.6rem}.walkthrough-top span:last-child{color:#b5a0ff;letter-spacing:0}.walkthrough-top i{width:6px;height:6px;border-radius:50%;background:#63e2bd}
+  .walkthrough-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;padding:1rem;margin:0!important}
+  button{cursor:pointer;font:inherit;color:inherit;margin:0!important}button:focus-visible,select:focus-visible{outline:2px solid #63e2bd;outline-offset:3px}
+  .walkthrough-steps button{display:flex;gap:.7rem;align-items:flex-start;min-width:0;text-align:left;border:1px solid #303c50;border-radius:8px;background:#172030;color:#b5bfd1;padding:.9rem;font-size:.84rem;line-height:1.4}
+  .walkthrough-steps button[aria-pressed=true]{border-color:#b5a0ff;box-shadow:inset 0 2px #b5a0ff;background:#b5a0ff16;color:#ece5ff}.walkthrough-steps b{display:block;font-weight:550}.walkthrough-steps small{display:block;font:400 .63rem/1.7 var(--sl-font-mono);color:#aebbd0;margin-top:.4rem;overflow-wrap:anywhere}.step-number{font:400 .75rem/1.5 var(--sl-font-mono);color:#b5a0ff}
+  .comparison-choice{display:flex;align-items:center;flex-wrap:wrap;gap:.7rem 1.5rem;padding:0 1.2rem .8rem;margin:0!important;font-size:.75rem;color:#b0bbcf}.comparison-choice label{display:flex;align-items:center;gap:.6rem}.comparison-choice select{background:#172030;color:#e4e8f0;border:1px solid #516078;border-radius:5px;padding:.4rem;font:inherit}
+  .walkthrough-comparison{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);padding:.5rem 1rem 1.2rem;align-items:start;margin:0!important}
+  figure,.walkthrough-outputs,.walkthrough-outputs>div{margin:0!important;min-width:0}figcaption{display:flex;flex-direction:column;gap:.3rem;min-height:5.4rem;padding:0 .3rem .8rem;font-size:.87rem;line-height:1.4;margin:0!important}figcaption strong{color:#e4e8f0;font-weight:550}.panel-label{font:400 .6rem var(--sl-font-mono);letter-spacing:.08em;color:#a1aec3}.walkthrough-outputs .panel-label{color:#63e2bd}.dimensions{font:400 .6rem var(--sl-font-mono);color:#a1aec3}
+  .image-frame{aspect-ratio:7/5;display:flex;align-items:center;justify-content:center;border:1px solid #303c50;border-radius:8px;overflow:hidden;background-color:#162030;background-image:linear-gradient(45deg,#202c3b 25%,transparent 25%,transparent 75%,#202c3b 75%),linear-gradient(45deg,#202c3b 25%,transparent 25%,transparent 75%,#202c3b 75%);background-size:20px 20px;background-position:0 0,10px 10px;margin:0!important}
+  .image-frame img{display:block;width:100%;height:100%;object-fit:contain;margin:0!important}.comparison-arrow{color:#63e2bd;text-align:center;margin-top:11rem}.image-description{font-size:.77rem!important;line-height:1.65;margin:.75rem .3rem 0!important;color:#b7c3d8;white-space:pre-line}
+  .frame-choices{display:flex;flex-wrap:wrap;gap:.4rem;margin:.8rem .3rem 0!important}.frame-choices button,.playback-controls button{border:1px solid #516078;border-radius:5px;background:transparent;color:#cbd6e6;padding:.35rem .65rem;font-size:.74rem}.frame-choices button[aria-pressed=true]{border-color:#63e2bd;background:#63e2bd15;color:#8bf0d1}
+  .walkthrough-explanation{position:relative;padding:1.1rem 1.2rem 1.4rem;background:#192438;border-block:1px solid #303c50;margin:0!important}.playback-controls{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;margin:0!important}.playback-controls>span{color:#b5a0ff;font:400 .63rem var(--sl-font-mono);letter-spacing:.07em}.playback-controls>div{display:flex;gap:.4rem;flex-wrap:wrap}.playback-controls button:disabled{opacity:.4;cursor:default}
+  .algorithm-heading{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-top:1rem}.algorithm-heading h3{font-size:1rem;margin:0;color:#e4e8f0}.algorithm-heading a,.walkthrough-note a{margin:0!important;color:#8bf0d1;font-size:.75rem}.algorithm-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.7rem 0!important}.algorithm-chips code{font-size:.7rem;background:#101722;color:#d6c9ff;border:1px solid #3a4760;padding:.15rem .4rem;border-radius:4px;overflow-wrap:anywhere}
+  .step-action{font-size:.87rem!important;color:#e4e8f0;margin:.8rem 0!important}.walkthrough-explanation dl{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin:1rem 0!important}.walkthrough-explanation dl>div{margin:0!important;border-left:2px solid #63e2bd;padding-left:.8rem}.walkthrough-explanation dl>div:last-child{border-color:#b5a0ff}.walkthrough-explanation dt{font-size:.73rem;font-weight:600;color:#e4e8f0}.walkthrough-explanation dd{font-size:.8rem;line-height:1.7;color:#b7c3d8;margin:.3rem 0 0}.step-why{font-size:.81rem!important;line-height:1.75;color:#c7d1e3;margin:1rem 0 0!important}.step-why strong{color:#e4e8f0}
+  .walkthrough-progress{position:absolute;left:0;right:0;bottom:0;height:2px;background:#303c50}.walkthrough-progress span{display:block;width:var(--step-progress);height:100%;background:#b5a0ff;transition:width .2s ease}.walkthrough-note{font-size:.69rem!important;line-height:1.7;color:#aab8ce;padding:.9rem 1.2rem;margin:0!important}.walkthrough-note a{white-space:normal}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}[hidden]{display:none!important}
+  @container(max-width:650px){.walkthrough-steps{grid-template-columns:1fr;padding:.8rem;gap:.4rem}.walkthrough-steps button{padding:.65rem .75rem}.walkthrough-steps small{display:none}.walkthrough-comparison{grid-template-columns:1fr;gap:.8rem;padding:.8rem}.comparison-arrow{margin:0;transform:rotate(90deg);line-height:1}.walkthrough-explanation dl{grid-template-columns:1fr}.walkthrough-top{font-size:.57rem;padding:.85rem}figcaption{min-height:0}.comparison-choice>span{display:none}.walkthrough-explanation{padding:1rem}.playback-controls button{font-size:.68rem}}
+  @media(prefers-reduced-motion:reduce){.walkthrough-progress span{transition:none}}
+</style>

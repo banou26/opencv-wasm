@@ -5,10 +5,11 @@
   "engines": { "node": ">=22.12.0" },
   "scripts": {
     "generate": "node scripts/generate.mjs",
+    "visuals:cookbook": "node scripts/generate-cookbook-visuals.mjs",
     "dev": "npm run generate && astro dev --host 0.0.0.0",
     "build": "npm run generate && astro build",
     "preview": "astro preview --host 0.0.0.0",
-    "check": "npm run generate && astro check && node scripts/check-examples.mjs",
+    "check": "npm run generate && astro check && node scripts/check-examples.mjs && node scripts/generate-cookbook-visuals.mjs --check",
     "test": "node scripts/check-site.mjs && playwright test"
   },
   "dependencies": {

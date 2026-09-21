@@ -61,6 +61,24 @@ export const motionVectors = (e: Experiment): void => {
     reverse[i * 2] -= seedX
     reverse[i * 2 + 1] -= seedY
   }
+  // Show the actual estimator output before the validity filter, including ambiguous areas.
+  const unfilteredHSV = new Uint8Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    const dx = flow[i * 2],
+      dy = flow[i * 2 + 1]
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue
+    unfilteredHSV[i * 3] = (((Math.atan2(dy, dx) + 2 * Math.PI) % (2 * Math.PI)) * 90) / Math.PI
+    unfilteredHSV[i * 3 + 1] = 255
+    unfilteredHSV[i * 3 + 2] = Math.min(255, (Math.hypot(dx, dy) * 255) / e.n('range'))
+  }
+  const unfilteredColour = e.mat()
+  cv.cvtColor(e.array(height, width, cv.CV_8UC3, unfilteredHSV), unfilteredColour, cv.COLOR_HSV2BGR)
+  e.stage(
+    'Raw flow before validation',
+    unfilteredColour,
+    `Full displacement before texture and round-trip rejection. Hue: right red, down yellow-green, left cyan, up violet. Brightness saturates at ${e.n('range')} px. These estimates include unsupported guesses in flat areas; the next step checks them.`,
+    { values: flow, channels: 2, labels: ['unfiltered dx (px)', 'unfiltered dy (px)'] }
+  )
   const accepted = new Uint8Array(count),
     errors = new Float32Array(count).fill(NaN),
     xs: number[] = [],

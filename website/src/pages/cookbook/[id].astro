@@ -2,6 +2,7 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
 import { Code } from 'astro:components'
 import ImageLab from '../../components/ImageLab.astro'
+import CookbookWalkthrough from '../../components/CookbookWalkthrough.astro'
 import { cookbook, type CookbookRecipe } from '../../data/cookbook'
 import { cookbookCode } from '../../data/cookbook-code'
 import { cookbookExplanations } from '../../data/cookbook-explanations'
@@ -17,7 +18,7 @@ const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'why
   <p class="lead">{r.summary}</p>
   <p><a href="#try">Try the recipe ↓</a></p>
   <h2 id="pipeline">The pipeline</h2>
-  <ol class="recipe-pipeline">{r.steps.map((step,i)=><li><span class="recipe-number">0{i+1}</span><strong>{step.title}</strong><p>{step.detail}</p><a href={`/algorithms/${step.algorithm}/`}>Explore the algorithm →</a></li>)}</ol>
+  <CookbookWalkthrough recipe={r}/>
   <section class="recipe-reasoning" aria-labelledby="why">
     <h2 id="why">Why this chain works</h2>
     <p class="chain-intuition">{explanation.intuition}</p>
@@ -39,6 +40,6 @@ const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'why
   <p>The snippets isolate the core operations. The <a href={`https://github.com/banou26/opencv-wasm/blob/main/website/src/lib/lab/${r.id === 'motion-vectors' ? 'motion' : 'cookbook'}.ts`}>complete runnable recipes</a> also include validation, filtering, overlays, intermediate previews and resource cleanup.</p>
 </StarlightPage>
 <style>
-.recipe-pipeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;list-style:none;padding:0!important;margin:1.5rem 0!important}.recipe-pipeline li{min-width:0;margin:0!important;border:1px solid var(--line);border-radius:10px;padding:1rem;background:var(--panel)}.recipe-number{display:block;font:500 .75rem var(--sl-font-mono);color:var(--mint);margin-bottom:.7rem}.recipe-pipeline strong{font-size:.9rem}.recipe-pipeline p{font-size:.8rem;color:var(--muted);line-height:1.7}.recipe-pipeline a{font-size:.73rem}@media(max-width:650px){.recipe-pipeline{grid-template-columns:1fr}}
+.recipe-number{display:block;font:500 .75rem var(--sl-font-mono);color:var(--mint);margin-bottom:.7rem}
 .chain-intuition{max-width:90ch;font-size:1.05rem}.reasoning-stages{padding:0!important;list-style:none}.reasoning-stages>li{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2.5fr);gap:2rem;padding:1.6rem 0;border-bottom:1px solid var(--line);margin:0!important}.stage-choice h3{margin:0 0 .8rem;font-size:1.05rem}.algorithm-names{display:flex;flex-wrap:wrap;gap:.4rem}.algorithm-names code{font-size:.7rem;overflow-wrap:anywhere}.stage-reasoning>p{margin-top:0;max-width:90ch}.stage-reasoning dl{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0 0}.stage-reasoning dl>div{border-left:2px solid var(--violet);padding-left:1rem}.stage-reasoning dt{font-size:.75rem;font-weight:650;color:var(--violet)}.stage-reasoning dd{margin:.35rem 0 0;font-size:.85rem;line-height:1.7;color:var(--muted)}.recipe-advice{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}.recipe-advice>div{margin:0;border:1px solid var(--line);border-radius:10px;padding:1.2rem;background:var(--panel)}.recipe-advice h3{margin:0;font-size:1rem}.recipe-advice p{font-size:.9rem;margin-bottom:0}@media(max-width:800px){.reasoning-stages>li,.stage-reasoning dl,.recipe-advice{grid-template-columns:1fr}.reasoning-stages>li{gap:1rem}}
 </style>

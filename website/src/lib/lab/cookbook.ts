@@ -2,6 +2,16 @@ import type { Mat } from '../../../../lib/index.js'
 import { Experiment, mint, orange } from './context'
 import { motionVectors } from './motion'
 
+/** Join two native views for a diagnostic preview without changing either input. */
+const pairPreview = (e: Experiment, left: Mat, right: Mat) => {
+  const images = e.own(new e.cv.MatVector()),
+    output = e.mat()
+  images.push_back(left)
+  images.push_back(right)
+  e.cv.hconcat(images, output)
+  return output
+}
+
 const regionMask = (e: Experiment) => {
   const mask = e.own(e.cv.Mat.zeros(e.gray.rows, e.gray.cols, e.cv.CV_8U)),
     r = e.rect(0)
@@ -38,6 +48,14 @@ const foreground = (e: Experiment) => {
     mask = e.mat(),
     bg = e.mat(),
     fg = e.mat()
+  const selection = e.own(e.bgr.mat_clone()),
+    r = e.rect()
+  e.cv.rectangle(selection, { x: r.x, y: r.y }, { x: r.x + r.width - 1, y: r.y + r.height - 1 }, orange, 2)
+  e.stage(
+    'Initial region',
+    selection,
+    'Inside the orange rectangle is possible foreground. Outside supplies known background to initialize GrabCut.'
+  )
   cv.grabCut(e.bgr, mask, e.rect(), bg, fg, e.n('iterations'), cv.GC_INIT_WITH_RECT)
   const values = Uint8Array.from(mask.data, (value) => (value === cv.GC_FGD || value === cv.GC_PR_FGD ? 255 : 0))
   return e.array(mask.rows, mask.cols, cv.CV_8U, values)
@@ -53,6 +71,16 @@ const correspondences = (e: Experiment) => {
     after = e.second()
   detector.detectAndCompute(e.gray, empty, first, a)
   detector.detectAndCompute(e.second(true), empty, second, b)
+  const firstFeatures = e.mat(),
+    secondFeatures = e.mat()
+  cv.drawKeypoints(e.bgr, first, firstFeatures, mint)
+  cv.drawKeypoints(after, second, secondFeatures, mint)
+  const featurePair = pairPreview(e, firstFeatures, secondFeatures)
+  e.stage(
+    'Detected ORB features',
+    featurePair,
+    'Circles mark detected features in each frame. Each feature also has a binary descriptor; correspondence has not been established yet.'
+  )
   if (a.empty() || b.empty()) throw new Error('Both images need textured features. Try a sharper, overlapping pair.')
   const matcher = e.own(new cv.BFMatcher(cv.NORM_HAMMING, true)),
     matches = e.own(new cv.DMatchVector())
@@ -238,6 +266,12 @@ export const cook = (e: Experiment): boolean => {
       if (id === 'detect-motion') {
         cv.GaussianBlur(gray, a, { width: 5, height: 5 }, 1)
         cv.GaussianBlur(e.second(true), b, { width: 5, height: 5 }, 1)
+        const pair = pairPreview(e, a, b)
+        e.stage(
+          'Smoothed frame pair',
+          pair,
+          'Both grayscale frames receive the same Gaussian blur before comparison. The second frame is on the right.'
+        )
         cv.absdiff(a, b, difference)
         e.stage('Absolute difference', difference, 'Differences after smoothing; unchanged areas are dark.')
         cv.threshold(difference, mask, n('threshold'), 255, cv.THRESH_BINARY)
@@ -252,6 +286,11 @@ export const cook = (e: Experiment): boolean => {
         mask.convertTo(mask, cv.CV_8U)
         e.note = `Mean SSIM ${score[0].toFixed(5)}. `
       }
+      e.stage(
+        'Thresholded differences',
+        mask,
+        'White marks pixels that pass the difference cutoff, before gaps are closed or small regions are discarded.'
+      )
       const clean = cleaned(e, mask, cv.MORPH_CLOSE)
       e.stage(
         'Clean difference mask',
@@ -297,7 +336,37 @@ export const cook = (e: Experiment): boolean => {
         'Local distance maxima above the minimum peak height initialize separate watershed labels.'
       )
       const count = cv.connectedComponents(sure, markers),
-        labels = markers.data32S,
+        seedLabels = Int32Array.from(markers.data32S),
+        locations = Array.from({ length: count }, () => ({ x: 0, y: 0, count: 0 })),
+        seedPreview = e.mat()
+      for (let i = 0; i < seedLabels.length; i++) {
+        const label = seedLabels[i]
+        if (!label) continue
+        locations[label].x += i % gray.cols
+        locations[label].y += Math.floor(i / gray.cols)
+        locations[label].count++
+      }
+      bgr.convertTo(seedPreview, -1, 0.4)
+      locations.slice(1).forEach((point, index) => {
+        const centre = { x: Math.round(point.x / point.count), y: Math.round(point.y / point.count) }
+        cv.circle(seedPreview, centre, 6, orange, 2)
+        cv.putText(
+          seedPreview,
+          String(index + 1),
+          { x: centre.x + 9, y: centre.y + 4 },
+          cv.FONT_HERSHEY_SIMPLEX,
+          0.45,
+          mint,
+          1
+        )
+      })
+      e.stage(
+        'Labelled seed locations',
+        seedPreview,
+        `${count - 1} connected seed regions. Enlarged circles and numbers show their locations on a dimmed source; these annotations do not enlarge the actual watershed seeds.`,
+        { values: Float32Array.from(seedLabels), channels: 1, labels: ['seed ID; 0 means no seed'] }
+      )
+      const labels = markers.data32S,
         binary = mask.data
       for (let i = 0; i < labels.length; i++) labels[i] = binary[i] === 0 ? 1 : labels[i] ? labels[i] + 1 : 0
       cv.watershed(bgr, markers)
@@ -325,6 +394,7 @@ export const cook = (e: Experiment): boolean => {
       let largest = 0,
         largestIndex = -1
       const measured: string[] = []
+      const outlines = e.own(bgr.mat_clone())
       for (let i = 0; i < contours.size(); i++) {
         const contour = e.own(contours.get(i)),
           area = cv.contourArea(contour)
@@ -339,6 +409,7 @@ export const cook = (e: Experiment): boolean => {
           cv.approxPolyDP(contour, polygon, (perimeter * n('epsilon')) / 100, true)
           vector.push_back(polygon)
           cv.drawContours(out, vector, 0, mint, 2)
+          cv.drawContours(outlines, vector, 0, mint, 2)
           const m = cv.moments(contour),
             cx = m.m10 / m.m00,
             cy = m.m01 / m.m00
@@ -348,8 +419,14 @@ export const cook = (e: Experiment): boolean => {
           )
         }
       }
-      if (id === 'measure-shapes') e.note = `${measured.length} shapes.\n${measured.slice(0, 20).join('\n')}`
-      else {
+      if (id === 'measure-shapes') {
+        e.stage(
+          'Simplified contours',
+          outlines,
+          'Green polygons approximate the retained external outlines. The next step measures the original contours and marks their centroids.'
+        )
+        e.note = `${measured.length} shapes.\n${measured.slice(0, 20).join('\n')}`
+      } else {
         if (largestIndex < 0) throw new Error('No foreground object was found at this threshold.')
         const contour = e.own(contours.get(largestIndex)),
           r = cv.boundingRect(contour),
@@ -370,6 +447,20 @@ export const cook = (e: Experiment): boolean => {
       const hsv = e.mat(),
         mask = e.mat()
       cv.cvtColor(bgr, hsv, cv.COLOR_BGR2HSV)
+      const hue = e.mat(),
+        saturation = e.mat()
+      cv.extractChannel(hsv, hue, 0)
+      cv.extractChannel(hsv, saturation, 1)
+      e.stage(
+        'Hue channel',
+        hue,
+        'Grayscale displays the numeric hue code, 0 to 179. Brightness here represents hue, not scene brightness; low-saturation pixels have unreliable hue.'
+      )
+      e.stage(
+        'Saturation channel',
+        saturation,
+        'Bright pixels have stronger colour saturation. The saturation floor prevents gray pixels from entering the hue selection.'
+      )
       const low = e.own(new cv.Mat(gray.rows, gray.cols, cv.CV_8UC3, [n('hueMin'), n('saturation'), 0, 0])),
         high = e.own(new cv.Mat(gray.rows, gray.cols, cv.CV_8UC3, [n('hueMax'), 255, 255, 0]))
       cv.inRange(hsv, low, high, mask)
@@ -466,7 +557,11 @@ export const cook = (e: Experiment): boolean => {
       e.stage('Signed Laplacian', derivative, 'Second derivatives emphasize high-frequency structure.')
       cv.multiply(derivative, derivative, energy)
       cv.blur(energy, average, { width: n('window'), height: n('window') })
-      e.stage('Local energy', average, 'Mean squared Laplacian response in each window.')
+      e.stage(
+        'Local energy',
+        average,
+        'Mean squared Laplacian response in each window, normalized here for display. The final preview uses this same image; numeric energy remains available in the lab inspector.'
+      )
       e.field(average, ['Laplacian energy'])
       e.note = `Mean local energy ${cv.mean(average)[0].toFixed(3)} intensity². Texture and noise also increase this value.`
       break
@@ -591,6 +686,12 @@ export const cook = (e: Experiment): boolean => {
       const raw = e.mat(),
         disparity = e.mat(),
         matcher = e.own(cv.StereoSGBM.create(0, n('disparities'), 9, 8 * 81, 32 * 81))
+      const pair = pairPreview(e, gray, e.second(true))
+      e.stage(
+        'Rectified grayscale pair',
+        pair,
+        'Left and right grayscale views must already have corresponding points on the same rows. This recipe assumes rectification; it does not calibrate cameras.'
+      )
       matcher.compute(gray, e.second(true), raw)
       raw.convertTo(disparity, cv.CV_32F, 1 / 16)
       e.stage(
@@ -600,6 +701,16 @@ export const cook = (e: Experiment): boolean => {
       )
       const values = Float32Array.from(disparity.data32F, (d) => (d > 0 ? (n('focal') * n('baseline')) / d : 0)),
         depth = e.array(gray.rows, gray.cols, cv.CV_32F, values)
+      e.stage(
+        'Valid disparities',
+        e.array(
+          gray.rows,
+          gray.cols,
+          cv.CV_8U,
+          Uint8Array.from(values, (d) => (d > 0 ? 255 : 0))
+        ),
+        'White marks positive disparities eligible for depth conversion. Black is invalid or nonpositive, not a measured zero distance.'
+      )
       e.field(depth, ['depth (m; 0 invalid)'])
       e.note = `${values.filter((value) => value > 0).length} positive-depth samples. Calibration assumptions determine the units and accuracy.`
       break
@@ -619,6 +730,21 @@ export const cook = (e: Experiment): boolean => {
         1,
         cv.KMEANS_PP_CENTERS,
         centres
+      )
+      const palettePreview = e.own(new cv.Mat(64, n('clusters') * 64, cv.CV_8UC3))
+      const centreValues = Array.from(centres.data32F)
+      for (let i = 0; i < n('clusters'); i++)
+        cv.rectangle(
+          palettePreview,
+          { x: i * 64, y: 0 },
+          { x: (i + 1) * 64 - 1, y: 63 },
+          [centreValues[i * 3], centreValues[i * 3 + 1], centreValues[i * 3 + 2], 255],
+          -1
+        )
+      e.stage(
+        'Learned palette',
+        palettePreview,
+        'Each swatch is one learned BGR cluster centre. Cluster IDs assign every image pixel to one of these colours.'
       )
       out.create(gray.rows, gray.cols, cv.CV_8UC3)
       const ids = labels.data32S,

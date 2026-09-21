@@ -1,0 +1,1071 @@
+{
+  "sourceHash": "68615514da6129059beb9dddc879bd93f9d74e3da401d3b766d9120644adce82",
+  "version": "5.0.0",
+  "recipes": {
+    "motion-vectors": {
+      "input": {
+        "src": "/cookbook-visuals/motion-vectors/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/motion-vectors/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/motion-vectors/step-1-1.png",
+            "title": "Pan-compensated second frame",
+            "description": "The phase-correlation estimate (-11.993, -0.006) px is removed before local flow estimation. Full displacement is restored in the reported vectors.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/motion-vectors/step-2-1.png",
+            "title": "Raw flow before validation",
+            "description": "Full displacement before texture and round-trip rejection. Hue: right red, down yellow-green, left cyan, up violet. Brightness saturates at 24 px. These estimates include unsupported guesses in flat areas; the next step checks them.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/motion-vectors/step-3-1.png",
+            "title": "Accepted samples",
+            "description": "White pixels have enough local texture and pass the forward/backward check. This is a validity filter, not a calibrated confidence score.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/motion-vectors/step-3-2.png",
+            "title": "Dense displacement",
+            "description": "Dense map hue: right red, down yellow-green, left cyan, up violet. Brightness saturates at 24 px. Black can mean zero motion or rejected data; inspect the validity mask.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/motion-vectors/step-3-3.png",
+            "title": "Result",
+            "description": "Dominant image translation: dx -11.998, dy -0.005 px.\n53 / 70 grid regions measured; 9.2% of pixels pass checks. Vectors describe total input-to-second displacement.\nArrows start on the first image. Labels are rounded dx,dy; inspect for precise values. Arrow display multiplier 1× does not change measured values. Dots mark near-zero motion; grey crosses mean insufficient evidence.\nDense map hue: right red, down yellow-green, left cyan, up violet. Brightness saturates at 24 px. Black can mean zero motion or rejected data; inspect the validity mask.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Dominant image translation: dx -11.998, dy -0.005 px.\n53 / 70 grid regions measured; 9.2% of pixels pass checks. Vectors describe total input-to-second displacement.\nArrows start on the first image. Labels are rounded dx,dy; inspect for precise values. Arrow display multiplier 1× does not change measured values. Dots mark near-zero motion; grey crosses mean insufficient evidence.\nDense map hue: right red, down yellow-green, left cyan, up violet. Brightness saturates at 24 px. Black can mean zero motion or rejected data; inspect the validity mask."
+    },
+    "track-region": {
+      "input": {
+        "src": "/cookbook-visuals/track-region/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/track-region/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/track-region/step-1-1.png",
+            "title": "Selected corners",
+            "description": "Corners detected only inside the selected region.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/track-region/step-2-1.png",
+            "title": "Consistent tracks",
+            "description": "Forward/backward checking removes points that do not return close to their original position.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/track-region/step-3-1.png",
+            "title": "Result",
+            "description": "Tracked region: 88 inliers / 88 consistent tracks / 88 initial corners. Translation dx -12.000, dy -0.000 px. Scale 1.0000; rotation 0.00°.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Tracked region: 88 inliers / 88 consistent tracks / 88 initial corners. Translation dx -12.000, dy -0.000 px. Scale 1.0000; rotation 0.00°."
+    },
+    "locate-template": {
+      "input": {
+        "src": "/cookbook-visuals/locate-template/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/locate-template/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/locate-template/step-1-1.png",
+            "title": "Selected patch",
+            "description": "The first-image selection is the template searched for in the second frame.",
+            "width": 170,
+            "height": 240
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/locate-template/step-2-1.png",
+            "title": "Correlation map",
+            "description": "Each score belongs to a possible top-left placement of the template. Higher is more similar.",
+            "width": 279,
+            "height": 81
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/locate-template/step-3-1.png",
+            "title": "Result",
+            "description": "Best score 1.00000 at (41, 25). Match accepted.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Best score 1.00000 at (41, 25). Match accepted."
+    },
+    "align-images": {
+      "input": {
+        "src": "/cookbook-visuals/align-images/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/align-images/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/align-images/step-1-1.png",
+            "title": "Detected ORB features",
+            "description": "Circles mark detected features in each frame. Each feature also has a binary descriptor; correspondence has not been established yet.",
+            "width": 896,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/align-images/step-2-1.png",
+            "title": "Candidate matches",
+            "description": "Cross-checked ORB descriptors before geometric rejection.",
+            "width": 896,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/align-images/step-2-2.png",
+            "title": "RANSAC inliers",
+            "description": "Only matches consistent with the fitted homography remain.",
+            "width": 896,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/align-images/step-3-1.png",
+            "title": "Alignment overlay",
+            "description": "Equal blend of the reference and aligned frame. Double edges reveal disagreement.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/align-images/step-3-2.png",
+            "title": "Result",
+            "description": "200 RANSAC inliers from 200 candidate matches. Output is the second image warped to the first image’s coordinates.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "200 RANSAC inliers from 200 candidate matches. Output is the second image warped to the first image’s coordinates."
+    },
+    "match-features": {
+      "input": {
+        "src": "/cookbook-visuals/match-features/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/match-features/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/match-features/step-1-1.png",
+            "title": "Detected ORB features",
+            "description": "Circles mark detected features in each frame. Each feature also has a binary descriptor; correspondence has not been established yet.",
+            "width": 896,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/match-features/step-2-1.png",
+            "title": "Candidate matches",
+            "description": "Cross-checked ORB descriptors before geometric rejection.",
+            "width": 896,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/match-features/step-3-1.png",
+            "title": "RANSAC inliers",
+            "description": "Only matches consistent with the fitted homography remain.",
+            "width": 896,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "200 RANSAC inliers from 200 candidate matches."
+    },
+    "detect-motion": {
+      "input": {
+        "src": "/cookbook-visuals/detect-motion/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/detect-motion/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/detect-motion/step-1-1.png",
+            "title": "Smoothed frame pair",
+            "description": "Both grayscale frames receive the same Gaussian blur before comparison. The second frame is on the right.",
+            "width": 896,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/detect-motion/step-2-1.png",
+            "title": "Absolute difference",
+            "description": "Differences after smoothing; unchanged areas are dark.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/detect-motion/step-2-2.png",
+            "title": "Thresholded differences",
+            "description": "White marks pixels that pass the difference cutoff, before gaps are closed or small regions are discarded.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/detect-motion/step-3-1.png",
+            "title": "Clean difference mask",
+            "description": "Morphological closing joins nearby differences before component filtering.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/detect-motion/step-3-2.png",
+            "title": "Result",
+            "description": "22 regions retained from 24 foreground components.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "22 regions retained from 24 foreground components."
+    },
+    "compare-images": {
+      "input": {
+        "src": "/cookbook-visuals/compare-images/input.png",
+        "title": "First frame",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/compare-images/second.png",
+        "title": "Second frame",
+        "description": "Synthetic second view: the scene shifts 12 pixels left with reflected border fill. This is a controlled demonstration, not a real camera capture.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/compare-images/step-1-1.png",
+            "title": "Local SSIM",
+            "description": "Native values measure local structural similarity; the preview is normalized.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/compare-images/step-2-1.png",
+            "title": "Thresholded differences",
+            "description": "White marks pixels that pass the difference cutoff, before gaps are closed or small regions are discarded.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/compare-images/step-3-1.png",
+            "title": "Clean difference mask",
+            "description": "Morphological closing joins nearby differences before component filtering.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/compare-images/step-3-2.png",
+            "title": "Result",
+            "description": "Mean SSIM 0.76105. 24 regions retained from 295 foreground components.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Mean SSIM 0.76105. 24 regions retained from 295 foreground components."
+    },
+    "count-objects": {
+      "input": {
+        "src": "/cookbook-visuals/count-objects/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/count-objects/step-1-1.png",
+            "title": "Threshold mask",
+            "description": "Bright foreground after smoothing and thresholding.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/count-objects/step-2-1.png",
+            "title": "Opened mask",
+            "description": "Opening removes specks smaller than the structuring element.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/count-objects/step-3-1.png",
+            "title": "Result",
+            "description": "6 regions retained from 6 foreground components.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "6 regions retained from 6 foreground components."
+    },
+    "segment-touching": {
+      "input": {
+        "src": "/cookbook-visuals/segment-touching/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/segment-touching/step-1-1.png",
+            "title": "Foreground mask",
+            "description": "The white foreground contains the objects to separate.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/segment-touching/step-2-1.png",
+            "title": "Interior distance",
+            "description": "Distance in pixels to the mask boundary.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/segment-touching/step-2-2.png",
+            "title": "Foreground seeds",
+            "description": "Local distance maxima above the minimum peak height initialize separate watershed labels.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/segment-touching/step-2-3.png",
+            "title": "Labelled seed locations",
+            "description": "7 connected seed regions. Enlarged circles and numbers show their locations on a dimmed source; these annotations do not enlarge the actual watershed seeds.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/segment-touching/step-3-1.png",
+            "title": "Result",
+            "description": "7 foreground seeds. Red boundaries separate watershed regions; label -1 marks a boundary.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "7 foreground seeds. Red boundaries separate watershed regions; label -1 marks a boundary."
+    },
+    "measure-shapes": {
+      "input": {
+        "src": "/cookbook-visuals/measure-shapes/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/measure-shapes/step-1-1.png",
+            "title": "Foreground mask",
+            "description": "Foreground pixels used for external contour extraction.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/measure-shapes/step-2-1.png",
+            "title": "Simplified contours",
+            "description": "Green polygons approximate the retained external outlines. The next step measures the original contours and marks their centroids.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/measure-shapes/step-3-1.png",
+            "title": "Result",
+            "description": "6 shapes.\nArea 1893.0 px², perimeter 163.2 px, circularity 0.893, centroid (368.5, 242.5)\nArea 3954.0 px², perimeter 236.0 px, circularity 0.892, centroid (71.5, 218.5)\nArea 8739.0 px², perimeter 384.7 px, circularity 0.742, centroid (239.0, 206.5)\nArea 3117.0 px², perimeter 209.8 px, circularity 0.890, centroid (79.5, 79.5)\nArea 1741.0 px², perimeter 155.2 px, circularity 0.908, centroid (174.5, 69.5)\nArea 4185.0 px², perimeter 242.8 px, circularity 0.892, centroid (299.5, 79.5)",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "6 shapes.\nArea 1893.0 px², perimeter 163.2 px, circularity 0.893, centroid (368.5, 242.5)\nArea 3954.0 px², perimeter 236.0 px, circularity 0.892, centroid (71.5, 218.5)\nArea 8739.0 px², perimeter 384.7 px, circularity 0.742, centroid (239.0, 206.5)\nArea 3117.0 px², perimeter 209.8 px, circularity 0.890, centroid (79.5, 79.5)\nArea 1741.0 px², perimeter 155.2 px, circularity 0.908, centroid (174.5, 69.5)\nArea 4185.0 px², perimeter 242.8 px, circularity 0.892, centroid (299.5, 79.5)"
+    },
+    "colour-mask": {
+      "input": {
+        "src": "/cookbook-visuals/colour-mask/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/colour-mask/step-1-1.png",
+            "title": "Hue channel",
+            "description": "Grayscale displays the numeric hue code, 0 to 179. Brightness here represents hue, not scene brightness; low-saturation pixels have unreliable hue.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/colour-mask/step-1-2.png",
+            "title": "Saturation channel",
+            "description": "Bright pixels have stronger colour saturation. The saturation floor prevents gray pixels from entering the hue selection.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/colour-mask/step-2-1.png",
+            "title": "HSV selection",
+            "description": "White pixels satisfy the hue, saturation and brightness interval.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/colour-mask/step-3-1.png",
+            "title": "Closed selection",
+            "description": "Closing fills small holes in the colour selection.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/colour-mask/step-3-2.png",
+            "title": "Result",
+            "description": "1 regions retained from 1 foreground components.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "1 regions retained from 1 foreground components."
+    },
+    "crop-object": {
+      "input": {
+        "src": "/cookbook-visuals/crop-object/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/crop-object/step-1-1.png",
+            "title": "Foreground mask",
+            "description": "Foreground pixels used for external contour extraction.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/crop-object/step-2-1.png",
+            "title": "Selected bounds",
+            "description": "Bounding rectangle of the largest external contour plus padding.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/crop-object/step-3-1.png",
+            "title": "Result",
+            "description": "Crop (161, 155), 157 × 106; contour area 8741.5 px².",
+            "width": 157,
+            "height": 106
+          }
+        ]
+      ],
+      "note": "Crop (161, 155), 157 × 106; contour area 8741.5 px²."
+    },
+    "remove-background": {
+      "input": {
+        "src": "/cookbook-visuals/remove-background/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/remove-background/step-1-1.png",
+            "title": "Initial region",
+            "description": "Inside the orange rectangle is possible foreground. Outside supplies known background to initialize GrabCut.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/remove-background/step-2-1.png",
+            "title": "GrabCut foreground",
+            "description": "Definite and probable foreground become white.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/remove-background/step-3-1.png",
+            "title": "Soft mask",
+            "description": "This feathered boundary controls compositing; it does not recover mixed foreground colours.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/remove-background/step-3-2.png",
+            "title": "Result",
+            "description": "RGBA cutout. Save PNG preserves the alpha channel.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "RGBA cutout. Save PNG preserves the alpha channel."
+    },
+    "blur-background": {
+      "input": {
+        "src": "/cookbook-visuals/blur-background/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/blur-background/step-1-1.png",
+            "title": "Initial region",
+            "description": "Inside the orange rectangle is possible foreground. Outside supplies known background to initialize GrabCut.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/blur-background/step-1-2.png",
+            "title": "GrabCut foreground",
+            "description": "Definite and probable foreground become white.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/blur-background/step-2-1.png",
+            "title": "Blurred background",
+            "description": "A smoothed layer is used only outside the foreground mask.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/blur-background/step-3-1.png",
+            "title": "Soft mask",
+            "description": "This feathered boundary controls compositing; it does not recover mixed foreground colours.",
+            "width": 448,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/blur-background/step-3-2.png",
+            "title": "Result",
+            "description": "Foreground is blended over the blurred background using the soft mask.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Foreground is blended over the blurred background using the soft mask."
+    },
+    "blur-region": {
+      "input": {
+        "src": "/cookbook-visuals/blur-region/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/blur-region/step-1-1.png",
+            "title": "Selected mask",
+            "description": "Only this rectangle will receive blurred pixels.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/blur-region/step-2-1.png",
+            "title": "Blurred layer",
+            "description": "The smoothed replacement image.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/blur-region/step-3-1.png",
+            "title": "Result",
+            "description": "Pixels outside the selected region are unchanged.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Pixels outside the selected region are unchanged."
+    },
+    "denoise-detail": {
+      "input": {
+        "src": "/cookbook-visuals/denoise-detail/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/denoise-detail/step-1-1.png",
+            "title": "Denoised colour",
+            "description": "Nonlocal means reduces small colour fluctuations.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/denoise-detail/step-2-1.png",
+            "title": "Lab lightness",
+            "description": "Contrast is adjusted in lightness while colour channels are retained.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/denoise-detail/step-3-1.png",
+            "title": "Result",
+            "description": "Final output of the complete chain.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": ""
+    },
+    "sharpen-details": {
+      "input": {
+        "src": "/cookbook-visuals/sharpen-details/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/sharpen-details/step-1-1.png",
+            "title": "Smooth image",
+            "description": "The low-frequency layer used by the unsharp mask.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/sharpen-details/step-2-1.png",
+            "title": "Signed detail",
+            "description": "Original minus smooth image, normalized for display; inspect signed native values.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/sharpen-details/step-3-1.png",
+            "title": "Result",
+            "description": "Final output of the complete chain.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": ""
+    },
+    "focus-map": {
+      "input": {
+        "src": "/cookbook-visuals/focus-map/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/focus-map/step-1-1.png",
+            "title": "Signed Laplacian",
+            "description": "Second derivatives emphasize high-frequency structure.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/focus-map/step-2-1.png",
+            "title": "Local energy",
+            "description": "Mean squared Laplacian response in each window, normalized here for display. The final preview uses this same image; numeric energy remains available in the lab inspector.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/focus-map/step-3-1.png",
+            "title": "Result",
+            "description": "Mean local energy 5676.557 intensity². Texture and noise also increase this value.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Mean local energy 5676.557 intensity². Texture and noise also increase this value."
+    },
+    "scan-document": {
+      "input": {
+        "src": "/cookbook-visuals/scan-document/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/scan-document/step-1-1.png",
+            "title": "Page edges",
+            "description": "Candidate page boundaries after smoothing and edge detection.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/scan-document/step-2-1.png",
+            "title": "Selected page",
+            "description": "The largest convex quadrilateral is ordered around its centre.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/scan-document/step-3-1.png",
+            "title": "Flattened page",
+            "description": "Perspective-corrected grayscale page before binarization.",
+            "width": 319,
+            "height": 251
+          },
+          {
+            "src": "/cookbook-visuals/scan-document/step-3-2.png",
+            "title": "Result",
+            "description": "Page area 80073 px²; rectified size 319 × 251.",
+            "width": 319,
+            "height": 251
+          }
+        ]
+      ],
+      "note": "Page area 80073 px²; rectified size 319 × 251."
+    },
+    "clean-document": {
+      "input": {
+        "src": "/cookbook-visuals/clean-document/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/clean-document/step-1-1.png",
+            "title": "Illumination estimate",
+            "description": "A broad blur approximates slowly varying page illumination.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/clean-document/step-2-1.png",
+            "title": "Normalized page",
+            "description": "Dividing by the illumination estimate reduces broad brightness variations.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/clean-document/step-3-1.png",
+            "title": "Result",
+            "description": "Final output of the complete chain.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": ""
+    },
+    "deskew-text": {
+      "input": {
+        "src": "/cookbook-visuals/deskew-text/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/deskew-text/step-1-1.png",
+            "title": "Page edges",
+            "description": "Edges used to estimate the dominant line orientation.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/deskew-text/step-2-1.png",
+            "title": "Accepted lines",
+            "description": "The median angle of these lines determines the correction.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/deskew-text/step-3-1.png",
+            "title": "Result",
+            "description": "Corrected -6.895° using 65 line segments.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Corrected -6.895° using 65 line segments."
+    },
+    "stereo-depth": {
+      "input": {
+        "src": "/cookbook-visuals/stereo-depth/input.png",
+        "title": "First frame",
+        "description": "Synthetic rectified left view with three textured planes. Their disparities are 8, 16 and 24 px; larger disparity means nearer depth.",
+        "width": 448,
+        "height": 320
+      },
+      "second": {
+        "src": "/cookbook-visuals/stereo-depth/second.png",
+        "title": "Second frame",
+        "description": "Synthetic right view. The three planes shift left by 8, 16 and 24 px, while staying on the same rows. Occlusion and unmatched borders can produce invalid disparities.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/stereo-depth/step-1-1.png",
+            "title": "Rectified grayscale pair",
+            "description": "Left and right grayscale views must already have corresponding points on the same rows. This recipe assumes rectification; it does not calibrate cameras.",
+            "width": 896,
+            "height": 320
+          },
+          {
+            "src": "/cookbook-visuals/stereo-depth/step-1-2.png",
+            "title": "Disparity",
+            "description": "Positive disparity is horizontal displacement in pixels. Negative values are invalid.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/stereo-depth/step-2-1.png",
+            "title": "Valid disparities",
+            "description": "White marks positive disparities eligible for depth conversion. Black is invalid or nonpositive, not a measured zero distance.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/stereo-depth/step-3-1.png",
+            "title": "Result",
+            "description": "118381 positive-depth samples. Calibration assumptions determine the units and accuracy. Synthetic plane depth medians (far to near): 6.250, 3.125, 2.083 m with the example calibration. Bright means farther in this normalized depth preview; black is invalid.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "118381 positive-depth samples. Calibration assumptions determine the units and accuracy. Synthetic plane depth medians (far to near): 6.250, 3.125, 2.083 m with the example calibration. Bright means farther in this normalized depth preview; black is invalid."
+    },
+    "colour-palette": {
+      "input": {
+        "src": "/cookbook-visuals/colour-palette/input.png",
+        "title": "Original sample",
+        "description": "The unchanged source image. All steps use this same example.",
+        "width": 448,
+        "height": 320
+      },
+      "stages": [
+        [
+          {
+            "src": "/cookbook-visuals/colour-palette/step-1-1.png",
+            "title": "Smoothed colours",
+            "description": "Bilateral filtering reduces within-region variation before clustering.",
+            "width": 448,
+            "height": 320
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/colour-palette/step-2-1.png",
+            "title": "Learned palette",
+            "description": "Each swatch is one learned BGR cluster centre. Cluster IDs assign every image pixel to one of these colours.",
+            "width": 384,
+            "height": 64
+          }
+        ],
+        [
+          {
+            "src": "/cookbook-visuals/colour-palette/step-3-1.png",
+            "title": "Result",
+            "description": "Reduced to 6 learned BGR colours.",
+            "width": 448,
+            "height": 320
+          }
+        ]
+      ],
+      "note": "Reduced to 6 learned BGR colours."
+    }
+  }
+}

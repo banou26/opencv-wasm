@@ -35,7 +35,7 @@ const headings=[{depth:2,slug:'pipeline',text:'The pipeline'},{depth:2,slug:'why
   <h2 id="limits">Assumptions and limits</h2><p class="callout">{r.caveat}</p>
   <h2 id="code">TypeScript core chain</h2>
   <p>Initialize the shared engine once with <code>await initOpenCV()</code>, then use these named imports. In a bundled browser app, pass the WASM URL as shown in the <a href="/start/quickstart/">quickstart</a>. <code>image</code> is an 8-bit BGR <code>Mat</code> from that same engine; paired recipes receive an equally sized <code>nextImage</code>. Region recipes use an in-bounds pixel <code>rect</code>. Read outputs before the <code>using</code> scope ends. See <a href="/start/matrices/">matrix ownership</a>.</p>
-  <Code code={cookbookCode[r.id].trim()} lang="ts"/>
+  <Code code={cookbookCode[r.id].trim()} lang="ts" theme="github-dark-high-contrast" wrap/>
   <p>The snippets isolate the core operations. The <a href={`https://github.com/banou26/opencv-wasm/blob/main/website/src/lib/lab/${r.id === 'motion-vectors' ? 'motion' : 'cookbook'}.ts`}>complete runnable recipes</a> also include validation, filtering, overlays, intermediate previews and resource cleanup.</p>
 </StarlightPage>
 <style>

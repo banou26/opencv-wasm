@@ -2,17 +2,21 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro'
 import { algorithms, type Algorithm } from '../../data/algorithms'
 import AlgorithmDiagram from '../../components/AlgorithmDiagram.astro'
+import ImageLab from '../../components/ImageLab.astro'
 import { apiURL } from '../../lib/reference'
 export function getStaticPaths() { return algorithms.map(algorithm => ({ params: { id: algorithm.id }, props: { algorithm } })) }
 const { algorithm: a } = Astro.props as { algorithm: Algorithm }
 const apis = a.apis.map(name => { const href = apiURL(name); if (!href) throw new Error(`Unknown native API ${name} in ${a.id}`); return { name, href } })
 const related = algorithms.filter(other => other.category === a.category && other !== a).slice(0, 4)
-const headings = [{ depth: 2, slug: 'use', text: 'When to use it' }, { depth: 2, slug: 'how', text: 'How it works' }, { depth: 2, slug: 'tune', text: 'What to tune' }, { depth: 2, slug: 'limits', text: 'Where it breaks down' }, { depth: 2, slug: 'api', text: 'TypeScript API' }]
+const headings = [{ depth: 2, slug: 'lab', text: 'Try it on an image' }, { depth: 2, slug: 'use', text: 'When to use it' }, { depth: 2, slug: 'how', text: 'How it works' }, { depth: 2, slug: 'tune', text: 'What to tune' }, { depth: 2, slug: 'limits', text: 'Where it breaks down' }, { depth: 2, slug: 'api', text: 'TypeScript API' }]
 ---
 <StarlightPage frontmatter={{ title: a.title, description: a.summary }} headings={headings}>
   <div class="eyebrow"><a href="/algorithms/">Algorithm atlas</a><span>{a.category}</span></div>
   <p class="lead">{a.summary}</p>
+  <p><a href="#lab">Try it on your image ↓</a></p>
   <AlgorithmDiagram algorithm={a} />
+  <h2 id="lab">Try it on an image</h2>
+  <ImageLab algorithm={a.id} />
   <h2 id="use">When to use it</h2><p>{a.use}</p>
   <h2 id="how">How it works</h2><ol class="steps">{a.steps.map((step, i) => <li><b>0{i + 1}</b>{step}</li>)}</ol>
   {a.formula && <p class="formula">{a.formula}</p>}

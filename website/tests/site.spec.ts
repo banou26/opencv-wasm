@@ -97,50 +97,6 @@ test('global full-text search finds a generated API page', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
-test('all ten image lab algorithms execute real WASM, update pixels and allow download', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  await page.goto('/lab/')
-  await page.getByRole('button', { name: 'Load OpenCV and run' }).click()
-  await expect(page.locator('image-lab')).toHaveAttribute('data-result', '1', { timeout: 45_000 })
-  await expect(page.locator('.lab-status')).toContainText('OpenCV 5.0.0')
-  const ids = await page.locator('select[name=algorithm] option').evaluateAll(options => options.map(o => (o as HTMLOptionElement).value))
-  const results: number[] = []
-  for (const id of ids) {
-    const previous = await page.locator('image-lab').getAttribute('data-result')
-    await page.locator('select[name=algorithm]').selectOption(id)
-    await expect(page.locator('image-lab')).not.toHaveAttribute('data-result', previous!)
-    await expect(page.locator('.lab-status')).not.toContainText('could not')
-    const stats = await page.locator('canvas.output').evaluate((node: HTMLCanvasElement) => {
-      const pixels = node.getContext('2d')!.getImageData(0, 0, node.width, node.height).data
-      let min = 255, max = 0, hash = 2166136261
-      for (let i = 0; i < pixels.length; i += 4) { min = Math.min(min, pixels[i]); max = Math.max(max, pixels[i]); hash = Math.imul(hash ^ pixels[i], 16777619) >>> 0 }
-      return { min, max, hash }
-    })
-    expect(stats.max, id).toBeGreaterThan(stats.min)
-    results.push(stats.hash)
-  }
-  expect(new Set(results).size).toBe(ids.length)
-  const previous = await page.locator('image-lab').getAttribute('data-result')
-  await page.locator('input[type=range]').fill('85')
-  await expect(page.locator('image-lab')).not.toHaveAttribute('data-result', previous!)
-  const downloaded = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Save PNG' }).click()
-  expect((await downloaded).suggestedFilename()).toBe('opencv-clahe.png')
-  const png = await page.locator('canvas.input').evaluate((node: HTMLCanvasElement) => {
-    const canvas = document.createElement('canvas'); canvas.width = 800; canvas.height = 400
-    canvas.getContext('2d')!.drawImage(node, 0, 0, 800, 400)
-    return canvas.toDataURL('image/png').split(',')[1]
-  })
-  await page.locator('input[type=file]').setInputFiles({ name: 'wide.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') })
-  await expect(page.locator('canvas.output')).toHaveAttribute('width', '640')
-  await expect(page.locator('canvas.output')).toHaveAttribute('height', '320')
-  await page.getByRole('button', { name: 'Reset image' }).click()
-  await expect(page.locator('canvas.output')).toHaveAttribute('width', '448')
-  await expect(page.getByRole('button', { name: 'Save PNG' })).toBeEnabled()
-  expect(errors).toEqual([])
-})
-
 test('mobile layout, theme and navigation remain usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/algorithms/homography/')

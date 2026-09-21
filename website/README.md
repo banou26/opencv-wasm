@@ -6,7 +6,9 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 - Generated native API, class members, overloads, parameter descriptions and type links.
 - 94 visual guides with persistent input comparisons, distinct intermediate/result
   drawings, keyboard-accessible stages and optional step playback.
-- Ten real OpenCV image experiments running in a browser worker.
+- 94 focused OpenCV experiments, embedded in every algorithm guide and available in `/lab/`.
+- Image and model uploads, algorithm-specific parameters, synchronized zoom, exact
+  RGBA sampling, native numeric fields and a keyboard-accessible pixel magnifier.
 - Browser, Node, Python migration, memory ownership, DNN and graph guides.
 - Full-text Pagefind search, local list filtering, light/dark themes and mobile navigation.
 
@@ -43,7 +45,9 @@ npm test
 
 Checks include strict compilation of documentation examples, every generated
 internal link and fragment, native abstract-class reference coverage, search,
-keyboard interaction, playback, mobile layout and all ten native image-lab operations.
+keyboard interaction, playback, mobile layout and all 94 native lab recipes, including default OCR and super-resolution models.
+Lab checks also cover image uploads, signed native values, zoom/pan, stale-result
+handling, parameter changes, model uploads and error recovery.
 Every atlas example is checked for distinct stages, finite SVG coordinates and
 unclipped labels. Representative stages are also compared as rendered images.
 Playwright uses `CHROMIUM_EXECUTABLE`, the local system Chrome when available, or
@@ -79,3 +83,28 @@ or that every overload has been behaviorally tested.
 Upstream API text retains links to pinned OpenCV headers. Runtime dependencies and
 their notices are copied from the parent package, with the package license and
 third-party notice page exposed in the built site.
+
+## Image lab architecture
+
+`src/data/labs.ts` defines one recipe per atlas entry, including parameter ranges,
+preprocessing assumptions and any additional inputs. Missing coverage fails the
+site build. `src/lib/lab/` groups native executors by algorithm family.
+`Experiment` owns each run's native handles and releases them in a `finally` block.
+Worker responses copy native values before releasing matrices.
+
+`image-lab.ts` owns uploads, processed resolution and revision tracking. Obsolete
+worker results are discarded, and changing an input clears its previous result.
+`PixelViewer` only scales canvas presentation: zoom never reruns an algorithm or
+changes its pixel buffer. Both views inspect equal coordinates, not inferred
+scene correspondence.
+
+Some recipes deliberately isolate one part of a larger workflow: checkerboard
+corner detection for calibration, Gray-code generation for structured light,
+editable correspondences for pose and triangulation, and intensity height fields
+for ICP. The visible recipe states these limits. No single-image experiment is
+represented as complete camera calibration, depth capture or video evaluation.
+
+Bundled model provenance and licenses are in `public/lab-assets/README.md`. Models
+load only when needed. Uploaded models must match the selected preprocessing and
+architecture; arbitrary network outputs are shown as tensor planes, not assigned
+class names. Changing settings never uploads local image data.

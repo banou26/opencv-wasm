@@ -1,228 +1,123 @@
 ---
 import type { Algorithm } from '../data/algorithms'
+import { algorithmVisual } from '../lib/visuals'
 const { algorithm: a, compact = false } = Astro.props as { algorithm: Algorithm; compact?: boolean }
-const kind = a.diagram
-const points = [[66, 100], [117, 147], [91, 220], [188, 184], [178, 91]]
-const project = ([x, y]: number[]) => { const u = x - 35, v = y - 60, w = 1 + .0009 * u; return [(425 + 1.35 * u - .15 * v) / w, (70 + .3 * u + .7 * v) / w] }
-const targets = points.map(project)
-const mappedBoundary = [[35, 60], [242, 60], [242, 263], [35, 263]].map(project).map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + 'Z'
-const colours = ['#ae9aff', '#52d4b0', '#ef9b70', '#82b8ec']
-const uid = `arrow-${a.id}-${compact ? 'mini' : 'full'}`
-const grid = Array.from({ length: 49 }, (_, i) => ({ x: i % 7, y: Math.floor(i / 7), value: ((i * 17 + Math.floor(i / 7) * 29) % 90) + 45 }))
-const kernel = a.id === 'sobel' ? [-1, 0, 1, -2, 0, 2, -1, 0, 1]
-  : a.id === 'scharr' ? [-3, 0, 3, -10, 0, 10, -3, 0, 3]
-  : a.id === 'laplacian' ? [0, 1, 0, 1, -4, 1, 0, 1, 0]
-  : a.id === 'median-filter' ? [9, 2, 5, 3, 8, 1, 4, 7, 6]
-  : a.id === 'box-filter' ? Array(9).fill(1)
-  : a.id === 'gaussian-blur' || kind === 'edges' ? [1, 2, 1, 2, 4, 2, 1, 2, 1] : Array(9).fill('w')
-const region = (x: number, y: number): boolean => x >= 2 && x <= 6 && y >= 1 && y <= 7 && !(x >= 5 && y <= 3) || x === 8 && y === 2
-const offsets = Array.from({ length: 9 }, (_, i) => [i % 3 - 1, Math.floor(i / 3) - 1])
-const eroded = (x: number, y: number) => offsets.every(([dx, dy]) => region(x + dx, y + dy))
-const dilated = (x: number, y: number) => offsets.some(([dx, dy]) => region(x + dx, y + dy))
-const opened = (x: number, y: number) => offsets.some(([dx, dy]) => eroded(x + dx, y + dy))
-const regionDistance = (x: number, y: number) => Math.min(...Array.from({ length: 121 }, (_, i) => [i % 11 - 1, Math.floor(i / 11) - 1]).filter(([u, v]) => !region(u, v)).map(([u, v]) => Math.hypot(u - x, v - y)))
+const example = algorithmVisual(a)
+const names = ['Input', 'Operation', 'Result']
 ---
-<algorithm-diagram class:list={{ compact }} data-kind={kind} data-stage="2" data-algorithm={a.id}>
-  <div class="diagram-top"><span>VISUAL FIELD NOTES</span><span>{a.category}</span></div>
-  <div class="diagram-viewport" tabindex="0" role="region" aria-label={`${a.title} illustration; scroll horizontally on small screens`}>
-  <svg viewBox="0 0 680 330" role="img" aria-label={`${a.title}: ${a.steps.join(' ')}`}>
-    <defs><marker id={uid} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 7 4 1 7" fill="none" stroke="context-stroke" stroke-width="1.2" /></marker></defs>
-    {(kind === 'matching' || kind === 'features') && <>
-      <text x="45" y="37">{kind === 'features' ? 'Local appearance' : 'Template'}</text><text x="373" y="37">{kind === 'features' ? 'Descriptor representation' : 'Scene'}</text>
-      <rect x="35" y="59" width="207" height="204" rx="5" class="frame" />
-      {kind === 'matching' ? <>
-        <rect x="366" y="59" width="279" height="204" rx="5" class="frame dashed" />
-        <path d={mappedBoundary} class="region" />
-        {points.map(([x, y], i) => <g><circle cx={x} cy={y} r={9 + i * 2} class="keypoint" /><path d={`M${x} ${y}l12 -7`} class="purple"/><circle cx={targets[i][0]} cy={targets[i][1]} r={11 + i * 2} class="keypoint"/><path d={`M${x} ${y}L${targets[i][0]} ${targets[i][1]}`} class="green" data-layer="1" /></g>)}
-        <path d="m66 100 543 151M188 184l194-97" class="orange dashed" data-layer="2" />
-        <circle cx="609" cy="251" r="4" class="noise"/><circle cx="382" cy="87" r="4" class="noise"/>
-        <text x="340" y="301" text-anchor="middle" class="caption">{a.id === 'homography' ? 'Solid: agreeing matches. Dashed: rejected correspondences.' : 'Candidate matches need a separate geometric consistency check.'}</text>
-      </> : <>
-        <path d="M75 225V103h116v41h-64v81Z" class="region"/>
-        <circle cx="127" cy="145" r="57" class="keypoint"/><path d="M127 145l45-28" class="purple" marker-end={`url(#${uid})`}/>
-        <path d="M258 160h71" class="muted" marker-end={`url(#${uid})`}/>
-        {Array.from({ length: 48 }, (_, i) => <rect x={371 + i % 8 * 31} y={89 + Math.floor(i / 8) * 26} width="24" height="19" rx="3" fill={i % 3 ? '#ae9aff' : '#30303b'} opacity={i % 3 ? '.7' : '1'} data-layer="1" />)}
-        <text x="139" y="289" text-anchor="middle" class="caption">Scale and orientation normalize the patch</text><text x="494" y="289" text-anchor="middle" class="caption">Compare descriptions of local structure</text>
-      </>}
-    </>}
-    {['convolution', 'gradient', 'edges', 'denoise'].includes(kind) && <>
-      <text x="49" y="36">Neighbourhood</text><text x="402" y="36">{kind === 'edges' ? 'Keep a connected boundary' : kind === 'gradient' ? 'Signed change' : 'One output sample'}</text>
-      {grid.map(({ x, y, value }) => <rect x={48 + x * 29} y={58 + y * 29} width="27" height="27" rx="2" fill={`rgb(${value},${value + 4},${value + 11})`} />)}
-      <rect x="104" y="114" width="89" height="89" rx="3" class="kernel"/><circle cx="148" cy="158" r="5" class="white"/>
-      <g data-layer="1">{kernel.map((value, i) => <text x={118 + i % 3 * 29} y={133 + Math.floor(i / 3) * 29} text-anchor="middle" class="tiny">{value}</text>)}</g>
-      <path d="M273 158h78" class="muted" marker-end={`url(#${uid})`}/>
-      {kind === 'edges' || kind === 'gradient' ? <g data-layer="2"><path d="M393 225V95h152v54h-88v76Z" class="purple" stroke-width="4"/>{kind === 'edges' && <><path d="M393 95h70m-6 54v30" class="green" stroke-width="5"/><path d="m578 88 17 13m-24 129 22-4" class="orange dashed"/></>}</g> : <g data-layer="2"><rect x="415" y="98" width="117" height="117" rx="8" class="result-fill"/><text x="474" y="165" text-anchor="middle" class="big">{a.id === 'median-filter' ? '5' : 'Σ'}</text></g>}
-      <text x="149" y="289" text-anchor="middle" class="caption">The highlighted neighbourhood contributes</text><text x="490" y="289" text-anchor="middle" class="caption">{kind === 'gradient' ? 'Keep negative responses in a signed type' : kind === 'edges' ? 'Weak responses need strong neighbours' : 'Repeat at every image position'}</text>
-    </>}
-    {['threshold', 'histogram'].includes(kind) && <>
-      <text x="43" y="36">Intensity distribution</text><text x="422" y="36">{kind === 'threshold' ? 'Selected pixels' : 'Redistributed intensity'}</text>
-      <path d="M45 70v179h252" class="muted"/>
-      {Array.from({ length: 25 }, (_, i) => { const h = 18 + 118 * Math.exp(-(((i - 7) / 3.5) ** 2)) + 75 * Math.exp(-(((i - 20) / 3) ** 2)); return <rect x={51 + i * 9} y={246 - h} width="7" height={h} fill={i < 13 ? '#72707e' : '#ae9aff'} data-bar={i} /> })}
-      <path d="M169 65v188" class="green" stroke-width="2"/><text x="175" y="79" class="tiny green-text">T</text>
-      <path d="M312 164h51" class="muted" marker-end={`url(#${uid})`}/>
-      {Array.from({ length: 49 }, (_, i) => <rect x={391 + i % 7 * 28} y={64 + Math.floor(i / 7) * 28} width="26" height="26" rx="2" fill={kind === 'threshold' ? (i % 7 > 1 && i % 7 < 5 && i > 8 && i < 39 ? '#52d4b0' : '#262a32') : `hsl(258 30% ${15 + i * 1.2}%)`} data-layer="2" />)}
-      <text x="174" y="291" text-anchor="middle" class="caption">Dark → light</text><text x="489" y="291" text-anchor="middle" class="caption">{kind === 'threshold' ? 'Compare intensity with a decision rule' : 'Map values using histogram statistics'}</text>
-    </>}
-    {['morphology', 'distance', 'components', 'segmentation', 'matting'].includes(kind) && <>
-      <text x="47" y="37">Input region</text><text x="390" y="37">{kind === 'distance' ? 'Distance to the boundary' : kind === 'components' ? 'Distinct region labels' : kind === 'matting' ? 'Fractional coverage' : 'Neighbourhood structure'}</text>
-      {[0, 1].map(side => <g data-layer={side ? '2' : '0'}>{Array.from({ length: 81 }, (_, i) => {
-        const x = i % 9, y = Math.floor(i / 9), shape = x >= 2 && x <= 6 && y >= 1 && y <= 7 && !(x >= 5 && y <= 3), speck = x === 8 && y === 2
-        let fill = shape || speck ? '#ae9aff' : '#252830'
-        if (side) {
-          if (kind === 'morphology') fill = (a.id === 'dilation' ? dilated(x, y) : a.id === 'erosion' ? eroded(x, y) : a.id === 'thinning' ? x === 3 && y > 1 && y < 7 || y === 6 && x > 3 && x < 6 || speck : opened(x, y)) ? '#52d4b0' : '#252830'
-          else if (kind === 'distance') fill = region(x, y) ? `hsl(164 60% ${25 + regionDistance(x, y) * 18}%)` : '#252830'
-          else if (kind === 'matting') fill = shape ? `rgba(82,212,176,${x === 2 || x === 6 || y === 1 || y === 7 ? '.4' : '.95'})` : '#252830'
-          else fill = shape ? (a.id === 'connected-components' || y < 5 ? '#52d4b0' : '#ae9aff') : speck ? '#ef9b70' : '#252830'
-        }
-        return <rect x={48 + side * 341 + x * 24} y={59 + y * 24} width="22" height="22" rx="2" fill={fill}/>
-      })}</g>)}
-      <path d="M289 167h66" class="muted" marker-end={`url(#${uid})`}/><rect x="95" y="154" width="73" height="73" class="kernel" data-layer="1"/>
-      <text x="341" y="310" text-anchor="middle" class="caption">{kind === 'distance' ? 'Brighter samples are farther from the nearest zero pixel' : a.id === 'connected-components' ? 'Each connected region has one label; colours visualize labels' : a.id === 'superpixels' ? 'A connected object can contain multiple coherent superpixels' : kind === 'matting' ? 'Soft edge pixels mix foreground and background' : a.id === 'morphology' ? 'Opening example: 3 × 3 erosion followed by dilation' : 'The local rule changes which pixels belong to the region'}</text>
-    </>}
-    {['contour', 'shape'].includes(kind) && <>
-      <text x="52" y="37">Region boundary</text><text x="407" y="37">Geometric description</text>
-      <path d="m67 211 15-108 43-32 53 11 27 65-43 15 52 76-89 9Z" class="region"/>
-      <path d="M258 165h79" class="muted" marker-end={`url(#${uid})`}/>
-      <path d={a.id === 'convex-hull' ? 'm399 210 17-111 40-32 58 11 58 151-113 10Z' : 'm399 210 17-111 40-32 53 11 27 65-43 15 52 76-89 9Z'} class="purple" data-layer="1"/>
-      {[[399, 210], [416, 99], [456, 67], [509, 78], [536, 143], [493, 158], [545, 234], [456, 243]].map(([x, y]) => <circle cx={x} cy={y} r="4" class="green-fill" data-layer="2"/>)}
-      {kind === 'shape' && <g><path d="M439 166h38m-19-19v38" class="orange"/><ellipse cx="458" cy="166" rx="74" ry="107" class="muted dashed"/></g>}
-      <text x="341" y="300" text-anchor="middle" class="caption">{kind === 'shape' ? 'Moments summarize spatial mass; the centre depends on that mass' : 'Vertices retain geometry at the chosen level of detail'}</text>
-    </>}
-    {['warp', 'ecc', 'tracking', 'boxes'].includes(kind) && <>
-      <rect x="70" y="61" width="387" height="209" rx="5" class="frame dashed"/>
-      <path d="m104 226 9-129 171 11-1 128Z" class="muted dashed"/>
-      <path d="m139 231 13-144 182 24-21 139Z" class="muted dashed" data-layer="1"/>
-      <path d="m169 241 28-165 191 33-29 173Z" class="region green" data-layer="2"/>
-      <path d="M109 226l57 13" class="orange" marker-end={`url(#${uid})`}/>
-      <path d="M284 108l193-28M334 111l143 52M388 109l89 129" class="muted dashed"/>
-      <text x="490" y="83" class="caption">{kind === 'boxes' ? 'Overlapping proposal' : 'Initial estimate'}</text><text x="490" y="167" class="caption">{kind === 'boxes' ? 'Competing proposal' : 'Refinement'}</text><text x="490" y="241" class="caption green-text">{kind === 'boxes' ? 'Retained box' : 'Aligned estimate'}</text>
-      <text x="341" y="310" text-anchor="middle" class="caption">{kind === 'boxes' ? 'Suppression compares overlap and confidence' : 'A useful initial estimate makes local refinement possible'}</text>
-    </>}
-    {kind === 'resampling' && <>
-      <text x="48" y="36">Source pixels</text><text x="404" y="36">Destination sample</text>
-      {Array.from({ length: 36 }, (_, i) => <rect x={49 + i % 6 * 32} y={64 + Math.floor(i / 6) * 32} width="30" height="30" fill={`hsl(257 25% ${20 + (i * 7) % 35}%)`}/>)}
-      <circle cx="147" cy="145" r="5" class="green-fill"/><path d="M113 128h64v64h-64Z" class="green"/>
-      <path d="m155 145 248 25" class="green dashed" marker-end={`url(#${uid})`} data-layer="1"/>
-      <rect x="413" y="105" width="112" height="112" class="result-fill" data-layer="2"/>
-      <text x="471" y="154" text-anchor="middle" class="tiny">weighted</text><text x="471" y="179" text-anchor="middle" class="tiny">neighbours</text>
-      <text x="143" y="291" text-anchor="middle" class="caption">Map points between pixel centres</text><text x="478" y="291" text-anchor="middle" class="caption">Weights depend on interpolation</text>
-    </>}
-    {kind === 'polar' && <>
-      <text x="59" y="37">Cartesian coordinates</text><text x="422" y="37">Angle × radius</text>
-      {[35, 70, 106].map(r => <circle cx="162" cy="164" r={r} class="frame"/>)}
-      {Array.from({ length: 8 }, (_, i) => <path d={`M162 164l${106 * Math.cos(i * Math.PI / 4)} ${106 * Math.sin(i * Math.PI / 4)}`} class="grid-line"/>)}
-      <rect x="170" y="119" width="15" height="15" rx="2" class="purple-fill"/><rect x="83" y="99" width="23" height="23" rx="2" transform="rotate(-30 94 110)" class="orange-fill"/>
-      <path d="m170 126-61-17" class="orange dashed" marker-end={`url(#${uid})`}/>
-      <path d="M289 162h55" class="muted" marker-end={`url(#${uid})`}/>
-      <rect x="377" y="62" width="234" height="207" class="frame"/>
-      {[1, 2, 3].map(i => <><path d={`M377 ${62 + i * 52}h234`} class="grid-line"/><path d={`M${377 + i * 58} 62v207`} class="grid-line"/></>)}
-      <rect x="451" y="108" width="15" height="15" rx="2" class="purple-fill"/><rect x="537" y="169" width="23" height="23" rx="2" class="orange-fill" data-layer="2"/>
-      <path d="m466 124 68 49" class="orange dashed" marker-end={`url(#${uid})`} data-layer="1"/>
-      <text x="165" y="307" text-anchor="middle" class="caption">Rotation and scale around a centre</text><text x="495" y="307" text-anchor="middle" class="caption">Log radius turns scaling into a shift</text>
-    </>}
-    {['pyramid', 'inpaint'].includes(kind) && <>
-      {[0, 1, 2].map((level) => { const w = 176 - level * 40, x = 42 + level * 211, y = 68 + level * 25; return <g data-layer={level}><text x={x} y="36">{kind === 'inpaint' ? ['Known boundary', 'Propagate structure', 'Filled region'][level] : ['Fine detail', 'Middle scale', 'Coarse structure'][level]}</text><rect x={x} y={y} width={w} height={w} class="frame"/><path d={`M${x + 12} ${y + w - 18}l${w / 3} -${w / 2} ${w / 4} ${w / 4} ${w / 4} -${w / 2}`} class="purple" stroke-width={3 + level}/><circle cx={x + w * .72} cy={y + w * .22} r={w * .075} class="green-fill"/>{kind === 'inpaint' && level < 2 && <rect x={x + w * .4} y={y + w * .25} width={w * .28} height={w * .5} fill="#121419" stroke="#ef9b70" stroke-dasharray="4 4"/>}{level < 2 && <path d={`M${x + w + 8} ${y + w / 2}h${211 - w - 20}`} class="muted" marker-end={`url(#${uid})`}/>}</g> })}
-      <text x="340" y="300" text-anchor="middle" class="caption">{kind === 'inpaint' ? 'Filled pixels are inferred; preserve a separate observed-data mask' : 'Coarse levels simplify large structures; fine levels retain local detail'}</text>
-    </>}
-    {kind === 'template' && <>
-      <text x="46" y="36">Slide the same patch</text><text x="423" y="36">Response surface</text>
-      <rect x="44" y="58" width="235" height="209" class="frame"/><path d="M77 220V115h52v28h-24v77Z" class="muted"/><path d="M181 166V90h50v26h-25v50Z" class="purple"/>
-      {[0, 1, 2].map(i => <rect x={58 + i * 57} y={188 - i * 51} width="73" height="87" class={i === 2 ? 'kernel' : 'frame dashed'} data-layer={i}/>)}
-      <path d="M300 162h57" class="muted" marker-end={`url(#${uid})`}/>
-      {Array.from({ length: 64 }, (_, i) => <rect x={389 + i % 8 * 26} y={62 + Math.floor(i / 8) * 26} width="24" height="24" fill={`rgba(82,212,176,${.08 + .92 * Math.exp(-((i % 8 - 5) ** 2 + (Math.floor(i / 8) - 2) ** 2) / 2)})`} data-layer="1"/>)}
-      <circle cx="531" cy="126" r="19" class="orange" data-layer="2"/><text x="339" y="310" text-anchor="middle" class="caption">Find a minimum for squared difference, a maximum for correlation</text>
-    </>}
-    {kind === 'hough' && <>
-      <text x="46" y="36">Image coordinates</text><text x="413" y="36">Parameter-space votes</text>
-      <rect x="42" y="58" width="229" height="210" class="frame"/>
-      {Array.from({ length: 9 }, (_, i) => <circle cx={67 + i * 20} cy={225 - i * 16} r="4" class="purple-fill"/>)}
-      <path d="m62 229 174-139" class="green" data-layer="2"/>
-      <path d="M298 160h62" class="muted" marker-end={`url(#${uid})`}/>
-      <path d="M391 59v208h229" class="muted"/>
-      {[0, 1, 2, 3].map(i => <path d={`M399 ${85 + i * 46}C449 ${250 - i * 51},484 134,504 140S573 ${225 - i * 30},610 ${110 + i * 32}`} class="purple" opacity=".65" data-layer="1"/>)}
-      <circle cx="504" cy="140" r="12" class="kernel" data-layer="2"/><text x="506" y="294" text-anchor="middle" class="caption">Shared curve intersection = supported model</text>
-    </>}
-    {kind === 'flow' && <>
-      <text x="44" y="36">Frame t</text><text x="390" y="36">Frame t + 1</text>
-      <rect x="42" y="56" width="230" height="211" class="frame"/><rect x="385" y="56" width="230" height="211" class="frame"/>
-      <path d="m71 212 30-99 101 28-30 99Z" class="region"/><path d="m448 190 30-99 101 28-30 99Z" class="region green"/>
-      {Array.from({ length: 16 }, (_, i) => { const x = 76 + i % 4 * 42, y = 90 + Math.floor(i / 4) * 43; return <g data-layer="1"><circle cx={x} cy={y} r="3" class="purple-fill"/><path d={`M${x + 344} ${y}l29 -19`} class="green" marker-end={`url(#${uid})`}/></g> })}
-      <path d="M292 161h65" class="muted" marker-end={`url(#${uid})`}/><text x="339" y="309" text-anchor="middle" class="caption">Vectors describe displacement; visibility and confidence need separate checks</text>
-    </>}
-    {kind === 'background' && <>
-      {[0, 1, 2, 3].map(i => <g data-layer={Math.min(i, 2)}><rect x={38 + i * 159} y="80" width="128" height="144" class="frame"/><path d={`M${48 + i * 159} 206l32-65 25 36 30-77 22 106`} class="muted"/><rect x={55 + i * 159 + i * 12} y="140" width="28" height="51" rx="3" class={i === 3 ? 'green-fill' : 'purple-fill'}/><text x={102 + i * 159} y="256" text-anchor="middle" class="caption">{['Past samples', 'Recent samples', 'Current frame', 'Foreground / response'][i]}</text></g>)}
-      <text x="341" y="42" text-anchor="middle">Time changes the learned state</text><text x="341" y="307" text-anchor="middle" class="caption">Keep one model across related frames; choose adaptation deliberately</text>
-    </>}
-    {kind === 'kalman' && <>
-      <path d="M58 245Q208 72 584 81" class="muted dashed"/><ellipse cx="396" cy="108" rx="87" ry="46" class="region"/><circle cx="396" cy="108" r="7" class="purple-fill"/><circle cx="446" cy="163" r="7" class="orange-fill" data-layer="1"/><path d="m397 110 47 50" class="orange dashed"/><circle cx="417" cy="132" r="7" class="green-fill" data-layer="2"/><ellipse cx="417" cy="132" rx="44" ry="24" class="green" data-layer="2"/>
-      <text x="83" y="279" class="caption">Predicted path</text><text x="352" y="44" class="caption">Prediction + uncertainty</text><text x="453" y="195" class="caption">Measurement</text><text x="304" y="222" class="green-text caption">Corrected estimate</text>
-    </>}
-    {['camera', 'stereo'].includes(kind) && <>
-      <text x="340" y="34" text-anchor="middle">{kind === 'stereo' ? 'Two views constrain the same 3D point' : 'Known geometry projected through a camera'}</text>
-      <path d="m80 252 22-28 27 28Z M550 252l22-28 27 28Z" class="frame"/><circle cx="349" cy="74" r="6" class="purple-fill"/>
-      <path d="m104 227 245-153 223 153" class="green" data-layer="1"/>
-      <path d="m72 158 107 17-18 74-99-15Zm437 17 102-17 15 76-99 15Z" class="region"/>
-      <circle cx="174" cy="183" r="5" class="orange-fill"/><circle cx="508" cy="183" r="5" class="orange-fill"/>
-      <path d="M128 270h420" class="muted dashed"/><text x="333" y="297" text-anchor="middle" class="caption">{kind === 'stereo' ? 'Baseline and calibration turn correspondence into geometry' : 'Intrinsics and pose determine where geometry lands in the image'}</text>
-      <text x="358" y="68" class="caption">P</text>
-    </>}
-    {['marker', 'text'].includes(kind) && <>
-      <text x="54" y="37">Observed image region</text><text x="431" y="37">Rectified / decoded</text>
-      <g transform="translate(48 72) rotate(-9 94 86)"><rect width="195" height="182" class="frame"/>{kind === 'marker' ? Array.from({ length: 36 }, (_, i) => <rect x={22 + i % 6 * 25} y={16 + Math.floor(i / 6) * 25} width="25" height="25" fill={(i * 13 + Math.floor(i / 6)) % 3 ? '#ae9aff' : '#262a32'}/>) : <><text x="27" y="81" font-size="39" fill="#ae9aff">Vision</text><rect x="19" y="42" width="160" height="55" class="green"/><path d="M21 117h139m-139 22h103" class="muted"/></>}</g>
-      <path d="M283 165h68" class="muted" marker-end={`url(#${uid})`}/><rect x="384" y="81" width="214" height="160" rx="6" class="region green" data-layer="2"/>
-      <text x="491" y="171" text-anchor="middle" class="big">{kind === 'marker' ? 'ID: 42' : 'Vision'}</text><text x="338" y="303" text-anchor="middle" class="caption">Detection finds geometry; decoding assigns meaning</text>
-    </>}
-    {kind === 'frequency' && <>
-      <text x="54" y="37">Spatial signal</text><text x="407" y="37">Frequency components</text><path d="M47 171h220M393 77v173h221" class="muted"/>
-      <path d={Array.from({ length: 180 }, (_, i) => `${i ? 'L' : 'M'}${49 + i * 1.2} ${167 - 39 * Math.sin(i / 18) - 16 * Math.sin(i / 4)}`).join(' ')} class="purple"/>
-      <path d="M295 165h56" class="muted" marker-end={`url(#${uid})`}/>{Array.from({ length: 18 }, (_, i) => <rect x={403 + i * 11} y={247 - (i === 3 ? 141 : i === 12 ? 65 : 8)} width="7" height={i === 3 ? 141 : i === 12 ? 65 : 8} class="green-fill" data-layer="2"/>)}
-      <text x="340" y="307" text-anchor="middle" class="caption">Smooth changes occupy low frequencies; rapid variation adds higher frequencies</text>
-    </>}
-    {['clusters', 'classifier'].includes(kind) && <>
-      <path d="M69 52v218h535" class="muted"/>
-      {Array.from({ length: 66 }, (_, i) => { const group = i % 3, x = 166 + group * 149 + Math.sin(i * 7) * 59, y = 176 - group * 21 + Math.cos(i * 11) * 62; return <circle cx={x} cy={y} r="4" fill={colours[group]} opacity=".7"/> })}
-      {kind === 'classifier' ? <path d="M295 59 239 260M366 51l27 217" class="green" data-layer="2"/> : [0, 1, 2].map(group => <g data-layer="2"><circle cx={166 + group * 149} cy={176 - group * 21} r="12" fill="#15171c" stroke={colours[group]} stroke-width="2"/><path d={`M${160 + group * 149} ${176 - group * 21}h12m-6-6v12`} stroke={colours[group]}/></g>)}
-      <text x="340" y="306" text-anchor="middle" class="caption">{kind === 'classifier' ? 'Learn a decision rule from representative labelled features' : 'Distance is meaningful only when the features and their scale are meaningful'}</text>
-    </>}
-    {kind === 'network' && <>
-      {[0, 1, 2].map(layer => <g>{Array.from({ length: layer === 2 ? 3 : 5 }, (_, i) => <g>{layer < 2 && Array.from({ length: layer === 1 ? 3 : 5 }, (_, j) => <path d={`M${114 + layer * 217} ${68 + i * 43}L${331 + layer * 217} ${68 + j * 43 + (layer === 1 ? 43 : 0)}`} class="grid-line" data-layer={layer + 1}/>)}<circle cx={114 + layer * 217} cy={68 + i * 43 + (layer === 2 ? 43 : 0)} r="14" class={layer === 2 ? 'result-fill' : 'kernel'} /></g>)}</g>)}
-      <text x="112" y="291" text-anchor="middle" class="caption">Input tensor</text><text x="330" y="291" text-anchor="middle" class="caption">Learned operations</text><text x="548" y="291" text-anchor="middle" class="caption">Output tensor</text>
-    </>}
-    {kind === 'colour' && <>
-      <text x="61" y="38">Input representation</text><text x="415" y="38">Output representation</text>
-      {[0, 1].map(side => <g data-layer={side ? '2' : '0'}>{['R', 'G', 'B'].map((c, i) => <g><rect x={60 + side * 347 + i * 19} y={88 + i * 22} width="143" height="121" rx="4" fill={['#bd635d', '#509881', '#566bbb'][side ? 2 - i : i]} stroke="#13151a" stroke-width="2"/><text x={73 + side * 347 + i * 19} y={111 + i * 22} fill="white">{side ? ['B', 'G', 'R'][i] : c}</text></g>)}</g>)}
-      <path d="M285 166h63" class="muted" marker-end={`url(#${uid})`}/><text x="340" y="310" text-anchor="middle" class="caption">Channel order and numeric range are part of the image’s meaning</text>
-    </>}
-    {kind === 'quality' && <>
-      <text x="44" y="35">Reference / reconstruction</text><text x="404" y="35">Spatial difference</text>
-      <path d="M50 226V91h162v50h-93v85Z" class="region"/><path d="M62 227V102h162v49h-93v76Z" class="green dashed" data-layer="1"/>
-      <path d="M277 164h63" class="muted" marker-end={`url(#${uid})`}/>
-      {Array.from({ length: 64 }, (_, i) => <rect x={380 + i % 8 * 27} y={62 + Math.floor(i / 8) * 27} width="25" height="25" fill={i % 8 === 2 || Math.floor(i / 8) === 1 ? '#ef9b70' : '#292b33'} opacity={i % 3 ? '.8' : '.35'} data-layer="2"/>)}
-      <text x="340" y="310" text-anchor="middle" class="caption">A scalar score summarizes a spatial error pattern; inspect both</text>
-    </>}
-  </svg>
-  </div>
+<algorithm-diagram class:list={{ compact }} data-kind={a.diagram} data-stage="2" data-algorithm={a.id}>
+  <div class="diagram-top"><span><i></i> VISUAL WALKTHROUGH</span><span>{a.category}</span></div>
   {!compact && <div class="diagram-controls" role="group" aria-label={`${a.title} explanation stages`}>
-    <button type="button" data-stage-button="0" aria-pressed="false">1 · Input</button><button type="button" data-stage-button="1" aria-pressed="false">2 · Operation</button><button type="button" data-stage-button="2" aria-pressed="true">3 · Result</button>
+    {example.stages.map((stage, i) => <button type="button" data-stage-button={i} aria-pressed={i === 2} aria-label={`${i + 1} · ${names[i]}`}>
+      <span class="step-number">0{i + 1}</span><span><b>{names[i]}</b><small>{stage.title}</small></span>
+    </button>)}
   </div>}
-  <p class="diagram-caption">Conceptual illustration. {compact ? 'Open the visual guide for the steps and limitations.' : a.steps[2]}</p>
+  <div class="diagram-comparison">
+    <figure class="diagram-input">
+      <figcaption><span class="panel-label">REFERENCE INPUT</span><strong>{example.input.title}</strong></figcaption>
+      <div class="diagram-art" role="img" aria-label={example.input.detail} set:html={example.input.svg} />
+      <p class="panel-detail">{example.input.detail}</p>
+    </figure>
+    <div class="comparison-arrow" aria-hidden="true">→</div>
+    <div class="diagram-output">
+      {example.stages.map((stage, i) => (!compact || i === 2) && <figure data-stage-panel={i} hidden={i !== 2}>
+        <figcaption><span class="panel-label">{i === 2 ? 'RESULT' : i === 1 ? 'WORKING VIEW' : 'FIRST STEP'}</span><strong>{stage.title}</strong></figcaption>
+        <div class="diagram-art" role="img" aria-label={`${stage.title}. ${stage.detail}`} set:html={stage.svg} />
+        <p class="panel-detail">{stage.detail}</p>
+      </figure>)}
+    </div>
+  </div>
+  {!compact && <div class="diagram-explanation">
+    <div class="stage-heading"><span data-stage-counter>STEP 03 / 03</span><button class="diagram-play" type="button" aria-label="Play explanation steps" aria-pressed="false"><span aria-hidden="true">▷</span> Play steps</button></div>
+    <p class="diagram-caption" aria-live="polite" aria-atomic="true">{a.steps[2]}</p>
+    <div class="diagram-progress" aria-hidden="true"><span></span></div>
+  </div>}
+  <p class="diagram-note">{example.note}</p>
   {!compact && <script type="application/json" class="diagram-steps" set:html={JSON.stringify(a.steps).replaceAll('<', '\\u003c')} />}
 </algorithm-diagram>
 <script>
   class AlgorithmDiagram extends HTMLElement {
+    private timer: ReturnType<typeof setTimeout> | undefined
+    private cleanup: AbortController | undefined
     connectedCallback() {
       const data = this.querySelector('.diagram-steps')
       if (!data) return
+      this.cleanup?.abort()
+      this.cleanup = new AbortController()
+      const options = { signal: this.cleanup.signal }
       const steps = JSON.parse(data.textContent!) as string[]
-      for (const button of this.querySelectorAll<HTMLButtonElement>('[data-stage-button]')) button.addEventListener('click', () => {
-        this.dataset.stage = button.dataset.stageButton
-        for (const b of this.querySelectorAll<HTMLButtonElement>('[data-stage-button]')) b.setAttribute('aria-pressed', String(b === button))
-        this.querySelector('.diagram-caption')!.textContent = `Conceptual illustration. ${steps[Number(button.dataset.stageButton)]}`
+      const buttons = [...this.querySelectorAll<HTMLButtonElement>('[data-stage-button]')]
+      const panels = [...this.querySelectorAll<HTMLElement>('[data-stage-panel]')]
+      const play = this.querySelector<HTMLButtonElement>('.diagram-play')!
+      const caption = this.querySelector<HTMLElement>('.diagram-caption')!
+      const select = (index: number) => {
+        this.dataset.stage = String(index)
+        buttons.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
+        panels.forEach((panel, i) => panel.hidden = i !== index)
+        caption.textContent = steps[index]
+        this.querySelector('[data-stage-counter]')!.textContent = `STEP 0${index + 1} / 03`
+      }
+      const stop = () => {
+        clearTimeout(this.timer)
+        this.timer = undefined
+        this.dataset.playing = 'false'
+        play.setAttribute('aria-pressed', 'false')
+        play.setAttribute('aria-label', 'Play explanation steps')
+        play.innerHTML = '<span aria-hidden="true">▷</span> Play steps'
+        caption.setAttribute('aria-live', 'polite')
+      }
+      buttons.forEach((button, index) => {
+        button.addEventListener('click', () => { stop(); select(index) }, options)
+        button.addEventListener('keydown', event => {
+          const next = event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : event.key === 'Home' ? 0 : event.key === 'End' ? 2 : -1
+          if (next < 0) return
+          event.preventDefault(); stop(); select(next); buttons[next].focus()
+        }, options)
       })
+      play.addEventListener('click', () => {
+        if (this.timer !== undefined) { stop(); return }
+        caption.setAttribute('aria-live', 'off')
+        select(0)
+        this.dataset.playing = 'true'
+        play.setAttribute('aria-pressed', 'true')
+        play.setAttribute('aria-label', 'Pause explanation steps')
+        play.innerHTML = '<span aria-hidden="true">Ⅱ</span> Pause'
+        const advance = () => {
+          const stage = Number(this.dataset.stage)
+          if (stage >= 2) { stop(); return }
+          select(stage + 1)
+          this.timer = setTimeout(advance, 3200)
+        }
+        this.timer = setTimeout(advance, 3200)
+      }, options)
+      document.addEventListener('visibilitychange', () => { if (document.hidden) stop() }, options)
     }
+    disconnectedCallback() { clearTimeout(this.timer); this.timer = undefined; this.cleanup?.abort() }
   }
   if (!customElements.get('algorithm-diagram')) customElements.define('algorithm-diagram', AlgorithmDiagram)
 </script>
 <style>
-  .diagram-viewport{overflow-x:auto;overscroll-behavior-x:contain}.diagram-viewport:focus-visible{outline:2px solid #52d4b0;outline-offset:-2px}algorithm-diagram{display:block;border:1px solid #30323b;border-radius:12px;background:#15171c;color:#dfdfe5;overflow:hidden;margin:1.5rem 0;--sl-color-text:#dfdfe5}.diagram-top{display:flex;justify-content:space-between;padding:1rem 1.3rem .2rem;color:#9494a3;font:400 .65rem var(--sl-font-mono);letter-spacing:.09em}.diagram-top span:last-child{color:#ae9aff}svg{display:block;width:100%;height:auto;margin:0!important}svg text{fill:#d0cdd8;font:400 14px var(--sl-font)}svg .caption{fill:#a9a5b1;font-size:11px}svg .tiny{font-size:12px}svg .big{font-size:30px;fill:#e9e4f1}svg .green-text{fill:#52d4b0}.frame{stroke:#686771;fill:none;stroke-width:1.2}.dashed{stroke-dasharray:5 5}.region{fill:#ae9aff12;stroke:#9283c9;stroke-width:1.5}.keypoint{fill:none;stroke:#ae9aff;stroke-width:1.4}.purple{fill:none;stroke:#ae9aff;stroke-width:1.6}.green{fill:none;stroke:#52d4b0;stroke-width:1.6}.orange{fill:none;stroke:#ef9b70;stroke-width:1.4}.muted{fill:none;stroke:#777580;stroke-width:1.1}.kernel{fill:#ae9aff25;stroke:#ae9aff;stroke-width:1.4}.result-fill{fill:#52d4b030;stroke:#52d4b0;stroke-width:1.5}.grid-line{fill:none;stroke:#3c3c47;stroke-width:1}.purple-fill{fill:#ae9aff}.green-fill{fill:#52d4b0}.orange-fill{fill:#ef9b70}.noise{fill:#706d76}.white{fill:#fff}.diagram-controls{display:flex;gap:.5rem;padding:.2rem 1.3rem;margin:0!important}.diagram-controls button{border:1px solid #3f3d49;background:transparent;color:#b9b6c5;padding:.4rem .65rem;border-radius:5px;font:400 .73rem var(--sl-font);cursor:pointer}.diagram-controls button[aria-pressed=true]{color:#d9ceff;border-color:#8975c3;background:#ae9aff18}.diagram-controls button:focus-visible{outline:2px solid #52d4b0;outline-offset:3px}.diagram-caption{padding:.65rem 1.3rem 1.2rem;font-size:.76rem!important;color:#a9a5b1;line-height:1.6;margin:0!important}[data-layer]{transition:opacity .2s}[data-stage="0"] [data-layer="1"],[data-stage="0"] [data-layer="2"],[data-stage="1"] [data-layer="2"]{opacity:.12}.compact{margin:1rem 0}.compact .diagram-top{padding:.7rem 1rem .2rem}.compact .diagram-caption{padding:.3rem 1rem .8rem}@media(prefers-reduced-motion:reduce){[data-layer]{transition:none}}@media(max-width:500px){svg{min-width:580px}svg .caption{font-size:12px}.diagram-controls{flex-wrap:wrap;padding-inline:1rem}.diagram-controls button{flex:1;font-size:.7rem}.diagram-top{font-size:.55rem}}
+  algorithm-diagram{display:block;container-type:inline-size;margin:1.6rem 0;border:1px solid #303c50;border-radius:14px;background:#101722;color:#e4e8f0;overflow:hidden;--sl-color-text:#e4e8f0}
+  .diagram-top{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.2rem;color:#a1aec3;font:400 .61rem var(--sl-font-mono);letter-spacing:.085em;border-bottom:1px solid #263244;background:#151e2c}
+  .diagram-top span{display:flex;align-items:center;gap:.5rem;margin:0}.diagram-top span:last-child{color:#b5a0ff;letter-spacing:0}
+  .diagram-top i{width:6px;height:6px;border-radius:50%;background:#63e2bd}
+  .diagram-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin:0!important;padding:1rem 1rem .25rem}
+  .diagram-controls button{display:flex;align-items:flex-start;gap:.6rem;text-align:left;border:1px solid #303c50;border-radius:8px;background:#172030;color:#a7b3c8;padding:.7rem .6rem;cursor:pointer;min-width:0;font:400 .8rem var(--sl-font)}
+  .diagram-controls button[aria-pressed=true]{border-color:#a993f1;background:#b5a0ff16;color:#e2d9ff;box-shadow:inset 0 2px #b5a0ff}
+  .step-number{font:400 .72rem var(--sl-font-mono);opacity:.8;line-height:1.5}.diagram-controls b{display:block;font-weight:550;line-height:1.4}.diagram-controls small{display:block;font-size:.67rem;line-height:1.4;margin-top:.3rem;color:#a7b3c8}
+  .diagram-comparison{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);align-items:start;gap:0;padding:1rem;margin:0!important}
+  figure,.diagram-output{margin:0!important;min-width:0}figcaption{display:flex;flex-direction:column;gap:.35rem;min-height:3.8rem;padding:0 .3rem .6rem;font-size:.81rem;line-height:1.4}figcaption strong{font-weight:550;color:#e4e8f0}.panel-label{color:#a1aec3;font:400 .58rem var(--sl-font-mono);letter-spacing:.08em}.diagram-output .panel-label{color:#63e2bd}
+  .diagram-art{border:1px solid #2a364a;border-radius:7px;overflow:hidden;background:#131c2b;margin:0!important}.diagram-art :global(svg){display:block;width:100%;height:auto;margin:0!important}.diagram-art :global(text){font-family:var(--sl-font-mono)}
+  .comparison-arrow{align-self:start;margin-top:7rem;color:#63e2bd;text-align:center;font-size:1.1rem}
+  .panel-detail{color:#b0bbcf;font-size:.74rem!important;line-height:1.65;margin:.75rem .3rem 0!important}
+  .diagram-explanation{position:relative;padding:1rem 1.2rem 1.1rem;background:#192438;border-block:1px solid #303c50;margin:0!important}
+  .stage-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:0!important}.stage-heading>span{font:400 .61rem var(--sl-font-mono);letter-spacing:.08em;color:#b5a0ff}
+  .diagram-play{background:transparent;border:1px solid #516078;color:#d1dbea;border-radius:5px;padding:.3rem .65rem;font:400 .7rem var(--sl-font);cursor:pointer;margin:0!important;white-space:nowrap}.diagram-play span{color:#63e2bd;margin-right:.2rem}
+  button:focus-visible{outline:2px solid #63e2bd;outline-offset:3px}.diagram-caption{font-size:.82rem!important;line-height:1.65;margin:.65rem 0 0!important;min-height:2.7em;color:#d1dbea}
+  .diagram-note{font-size:.66rem!important;color:#a0acc0;padding:.8rem 1.2rem;line-height:1.6;margin:0!important;background:#101722}
+  .diagram-progress{position:absolute;bottom:0;left:0;right:0;height:2px;background:#263244;margin:0!important}.diagram-progress span{display:block;height:100%;background:#b5a0ff;width:100%;transition:width .18s ease}
+  [data-stage="0"] .diagram-progress span{width:33.333%}[data-stage="1"] .diagram-progress span{width:66.666%}[hidden]{display:none!important}
+  .compact .diagram-comparison{padding:.8rem}.compact .diagram-top{padding:.75rem 1rem}.compact .panel-detail{font-size:.7rem!important}
+  @container(max-width:470px){.diagram-controls{gap:.3rem;padding:.7rem .7rem .2rem}.diagram-controls button{padding:.65rem .4rem;gap:.3rem;align-items:center;justify-content:center}.diagram-controls small{display:none}.diagram-controls b{font-size:.75rem}.step-number{font-size:.6rem}.diagram-comparison{grid-template-columns:1fr;gap:.75rem;padding:.8rem}figcaption{min-height:0;padding-bottom:.5rem}.comparison-arrow{margin:0;line-height:1;transform:rotate(90deg)}.panel-detail{font-size:.76rem!important}.diagram-top{font-size:.53rem;padding:.85rem}.diagram-caption{min-height:0}.diagram-input .diagram-art{max-width:100%}}
+  @media(prefers-reduced-motion:reduce){.diagram-progress span{transition:none}}
 </style>

@@ -2,7 +2,7 @@ node_modules/
 vendor/
 .cache/
 build/
-lib/
+/lib/
 *.tgz
 test-results/
 *.log

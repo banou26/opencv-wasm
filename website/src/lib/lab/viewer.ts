@@ -98,7 +98,7 @@ export class PixelViewer {
       this.panes[source].addEventListener(
         'wheel',
         (event) => {
-          if (!event.ctrlKey && !event.metaKey) return
+          if (event.deltaY === 0) return
           event.preventDefault()
           const rect = canvas.getBoundingClientRect(),
             x = (event.clientX - rect.left) / rect.width,

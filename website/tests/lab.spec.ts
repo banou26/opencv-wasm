@@ -76,8 +76,7 @@ test('all 94 recipes execute native WASM, including alternate selection modes', 
       expect(pixels.width, algorithm.id).toBeGreaterThan(0)
       expect(pixels.height).toBeGreaterThan(0)
       expect(pixels.opaque, algorithm.id).toBe(pixels.width * pixels.height)
-      if (algorithm.id === 'icp')
-        await change(page, () => page.locator('.lab-parameters [name=height]').fill('0.05'))
+      if (algorithm.id === 'icp') await change(page, () => page.locator('.lab-parameters [name=height]').fill('0.05'))
       for (const control of labRecipes[algorithm.id].controls.filter((control) => control.options)) {
         if (algorithm.id === 'dnn-super-resolution' || algorithm.id === 'stitching') continue
         const last = control.options!.at(-1)![0]
@@ -385,32 +384,42 @@ test('zoom, pan and pixel inspection follow the same area across output resoluti
   await expect(page.locator('.pixel-values').last()).toContainText('(150, 100)')
   await page.locator('[name=pixel-source]').selectOption('1')
   await expect(page.locator('[name=pixel-x]')).toHaveValue('150')
-  for (const index of [0, 1]) {
-    const pane = page.locator('.pixel-viewport').nth(index)
-    const anchor = await pane.evaluate((element) => {
-      const canvas = element.querySelector('canvas')!,
-        x = element.clientWidth * 0.35,
-        y = element.clientHeight * 0.4,
-        box = element.getBoundingClientRect()
-      return {
-        u: (element.scrollLeft + x) / canvas.clientWidth,
-        v: (element.scrollTop + y) / canvas.clientHeight,
-        clientX: box.left + element.clientLeft + x,
-        clientY: box.top + element.clientTop + y
-      }
-    })
-    await pane.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: anchor.clientX, clientY: anchor.clientY })
-    const after = await pane.evaluate((element) => {
-      const canvas = element.querySelector('canvas')!
-      return {
-        u: (element.scrollLeft + element.clientWidth * 0.35) / canvas.clientWidth,
-        v: (element.scrollTop + element.clientHeight * 0.4) / canvas.clientHeight
-      }
-    })
-    expect(Math.abs(after.u - anchor.u)).toBeLessThan(0.002)
-    expect(Math.abs(after.v - anchor.v)).toBeLessThan(0.002)
-    await aligned()
-  }
+  const result = await page.locator('image-lab').getAttribute('data-result')
+  for (const index of [0, 1])
+    for (const deltaY of [-100, 100]) {
+      const pane = page.locator('.pixel-viewport').nth(index)
+      await pane.scrollIntoViewIfNeeded()
+      const anchor = await pane.evaluate((element) => {
+        const canvas = element.querySelector('canvas')!,
+          x = element.clientWidth * 0.35,
+          y = element.clientHeight * 0.4,
+          box = element.getBoundingClientRect()
+        return {
+          u: (element.scrollLeft + x) / canvas.clientWidth,
+          v: (element.scrollTop + y) / canvas.clientHeight,
+          clientX: box.left + element.clientLeft + x,
+          clientY: box.top + element.clientTop + y,
+          scrollY: window.scrollY
+        }
+      })
+      const beforeZoom = await page.locator('[name=zoom]').inputValue()
+      await page.mouse.move(anchor.clientX, anchor.clientY)
+      await page.mouse.wheel(0, deltaY)
+      await expect(page.locator('[name=zoom]')).toHaveValue(String(Number(beforeZoom) * (deltaY < 0 ? 2 : 0.5)))
+      const after = await pane.evaluate((element) => {
+        const canvas = element.querySelector('canvas')!
+        return {
+          u: (element.scrollLeft + element.clientWidth * 0.35) / canvas.clientWidth,
+          v: (element.scrollTop + element.clientHeight * 0.4) / canvas.clientHeight,
+          scrollY: window.scrollY
+        }
+      })
+      expect(Math.abs(after.u - anchor.u)).toBeLessThan(0.002)
+      expect(Math.abs(after.v - anchor.v)).toBeLessThan(0.002)
+      expect(after.scrollY).toBe(anchor.scrollY)
+      await expect(page.locator('image-lab')).toHaveAttribute('data-result', result!)
+      await aligned()
+    }
   await page.locator('[name=zoom]').selectOption('fit')
   const [input, output] = await view()
   expect(Math.abs(input.width - output.width)).toBeLessThan(1)

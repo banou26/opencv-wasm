@@ -100,7 +100,8 @@ Worker responses copy native values before releasing matrices.
 `image-lab.ts` owns uploads, processed resolution and revision tracking. Obsolete
 worker results are discarded, and changing an input clears its previous result.
 `PixelViewer` only scales canvas presentation: zoom never reruns an algorithm or
-changes its pixel buffer. Views follow the same relative image position and display
+changes its pixel buffer. Scrolling over either image zooms at the pointer without
+modifier keys; scrollbars pan both views. Views follow the same relative image position and display
 area across resolutions with matching aspect ratios. Other aspect ratios are
 contained without stretching, with panning limited by each image's edges.
 The inspector maps that position to each image’s own pixel coordinates; this does

@@ -71,7 +71,7 @@ const snapshot = (): Inspection => {
 }
 export const inspect = () => {
   const state = useEditor.getState()
-  if (!state.ready || !state.source || !state.selected || state.busy === 'bake' || state.busy === 'load' || state.fatal) return
+  if (!state.ready || !state.selected || state.busy === 'bake' || state.busy === 'load' || state.fatal) return
   active = ++serial; thumbnailGeneration++
   useEditor.setState({ busy: 'inspect', statuses: {}, pixel: null, error: '' })
   send({ type: 'inspect', request: active, value: snapshot() })
@@ -81,8 +81,8 @@ export const loadVideo = (file: File, target?: SourceTarget) => {
   const state = useEditor.getState()
   if (state.busy === 'bake') return
   if (!target) {
-    let node = state.view.nodes.find(n => n.id === state.focused && n.type === 'source') ?? state.view.nodes.find(n => n.type === 'source')
-    if (!node) { state.add('source', { x: 40, y: 80 }); node = useEditor.getState().view.nodes.find(n => n.id === useEditor.getState().focused && n.type === 'source') }
+    let node = state.view.nodes.find(n => n.id === state.focused && (n.type === 'source' || n.type === 'clip')) ?? state.view.nodes.find(n => (n.type === 'source' || n.type === 'clip'))
+    if (!node) { state.add('clip', { x: 40, y: 80 }); node = useEditor.getState().view.nodes.find(n => n.id === useEditor.getState().focused && (n.type === 'source' || n.type === 'clip')) }
     if (!node) return
     target = { node: node.id, definition: state.view.interfaceId }
   }
@@ -121,7 +121,7 @@ export const exportFrame = async () => {
 /** Low-priority, opt-in node images are refreshed after the main inspection settles. */
 export const refreshThumbnails = () => {
   const state = useEditor.getState()
-  if (!state.ready || !state.source || state.fatal || state.busy !== 'idle') return
+  if (!state.ready || state.fatal || state.busy !== 'idle') return
   const nodes = state.view.nodes.filter(n => state.previews[n.id]).map(n => n.id)
   send({ type: 'thumbnails', generation: ++thumbnailGeneration, value: snapshot(), nodes })
 }

@@ -1,25 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
-import { SPECS } from '../engine/specs'
+import { SPECS, HIDDEN_NODES } from '../engine/specs'
 import { searchNodes, matchesQuery } from '../engine/search'
-import { starterGraph } from '../engine/graph'
+import { explicitGraph } from '../engine/prefabs'
 import type { GraphDocument, NodeType } from '../engine/types'
 import { useEditor } from './store'
 import { saveBlob } from './client'
 
 export type MenuPosition = { x: number; y: number; world: { x: number; y: number }; node?: string; edge?: string; socket?: { node: string; handle: string; type: 'source' | 'target' } }
 const prefabs = [
-  { id: 'difference', title: 'Compare neighboring frames', description: 'Source → grayscale → blur → difference → output' },
-  { id: 'motion', title: 'Camera in-betweens', description: 'Source + measured motion × time fraction → Translate → output' },
+  { id: 'difference', title: 'Compare neighboring frames', description: 'Video + explicit indices → two frames → grayscale → blur → difference → output' },
+  { id: 'motion', title: 'Camera in-betweens', description: 'Two explicit frames → translation × fraction → move previous → fill revealed borders from next → output' },
   { id: 'mask', title: 'Changed-pixel mask', description: 'Frame comparison → threshold → output' },
-  { id: 'filter', title: 'Prepare an image', description: 'Source → grayscale → blur → output' },
+  { id: 'crop', title: 'Process a region', description: 'Extract frame → rectangle → crop → Gaussian blur → paste into original → output' },
+  { id: 'pyramid', title: 'Explore Laplacian pyramids', description: 'Extract frame → editable Down / Up / Subtract group → detail bands → reconstruction' },
+  { id: 'filter', title: 'Prepare an image', description: 'Video → Extract Video Frame → grayscale → blur → output' },
 ] as const
-const categories = ['Input', 'Time', 'Color', 'Filter', 'Compare', 'Measure', 'Mask', 'Math', 'Transform', 'Compose', 'Output', 'Custom', 'Prefabs']
+const categories = ['Input', 'Video', 'Frame', 'Data', 'Region', 'Color', 'Filter', 'Edges', 'Pyramid', 'Measure', 'Mask', 'Math', 'Transform', 'Compose', 'Output', 'Custom', 'Prefabs']
 
 /** Copy only selected nodes and connections between them; disconnected boundary inputs stay editable. */
 export const selectedGraph = (): GraphDocument => {
   const { view: doc, highlighted, focused } = useEditor.getState(), ids = new Set(highlighted.length ? highlighted : [focused])
   const nodes = doc.nodes.filter(n => ids.has(n.id) && !['groupInput', 'groupOutput'].includes(n.type)), kept = new Set(nodes.map(n => n.id))
-  return { version: 1, definitions: doc.definitions, nodes, edges: doc.edges.filter(e => kept.has(e.source) && kept.has(e.target)) }
+  return { version: 1, definitions: doc.definitions, dataTypes: doc.dataTypes, nodes, edges: doc.edges.filter(e => kept.has(e.source) && kept.has(e.target)) }
 }
 
 /** Cursor-positioned add menu with keyboard navigation and typo-tolerant property search. */
@@ -32,9 +34,11 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
   const showSelection = selection.length > 0, multiple = selection.length > 1
   const definitions = useEditor(s => s.doc.definitions) ?? []
   const customResults = definitions.filter(d => query.trim() ? matchesQuery(query, `${d.name} ${[...d.inputs, ...d.outputs].map(p => p.label).join(' ')}`) : category === 'Custom')
-  const nodes = query.trim() ? searchNodes(query) : Object.values(SPECS).filter(s => s.category === category && !['group', 'groupInput', 'groupOutput'].includes(s.type)).map(s => s.type)
+  const nodes = query.trim() ? searchNodes(query) : Object.values(SPECS).filter(s => s.category === category && !HIDDEN_NODES.includes(s.type)).map(s => s.type)
   const prefabResults = query.trim() ? prefabs.filter(p => matchesQuery(query, `${p.title} ${p.description} prefab`)) : category === 'Prefabs' ? prefabs : []
-  const count = nodes.length + prefabResults.length + customResults.length
+  const dataTypes = useEditor(s => s.doc.dataTypes) ?? []
+  const records = dataTypes.flatMap(schema => (['makeRecord', 'breakRecord'] as const).map(type => ({ schema, type, title: `${type === 'makeRecord' ? 'Make' : 'Separate'} ${schema.name}` }))).filter(item => query.trim() ? matchesQuery(query, `${item.title} ${item.schema.fields.map(f => f.label).join(' ')} record custom data`) : category === 'Custom')
+  const count = nodes.length + prefabResults.length + customResults.length + records.length
   const top = Math.max(8, Math.min(position.y, window.innerHeight - 495))
   useEffect(() => { input.current?.focus() }, [])
   useEffect(() => { list.current?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' }) }, [index])
@@ -42,7 +46,8 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
   const choose = (at: number) => {
     const type = nodes[at], prefab = prefabResults[at - nodes.length], custom = customResults[at - nodes.length - prefabResults.length]
     if (type) add(type)
-    else if (prefab) { useEditor.getState().insert(starterGraph(prefab.id), position.world); close() }
+    else if (prefab) { useEditor.getState().insert(explicitGraph(prefab.id), position.world); close() }
+    else if (records[at - nodes.length - prefabResults.length - customResults.length]) { const record = records[at - nodes.length - prefabResults.length - customResults.length]!; useEditor.getState().add(record.type, position.world, record.schema.id); close() }
     else if (custom) { useEditor.getState().add('group', position.world, custom.id); close() }
   }
   return <div className="menu-backdrop" onPointerDown={close} onContextMenu={e => { e.preventDefault(); close() }}>
@@ -64,6 +69,7 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
           {nodes.map((type, i) => <button key={type} role="option" aria-selected={index === i} className={index === i ? 'highlighted' : ''} data-index={i} onMouseEnter={() => setIndex(i)} onClick={() => add(type)}><strong>{SPECS[type].title}<small>{SPECS[type].category}</small></strong><span>{SPECS[type].description}</span></button>)}
           {prefabResults.map((p, i) => <button key={p.id} role="option" aria-selected={index === nodes.length + i} className={index === nodes.length + i ? 'highlighted' : ''} data-index={nodes.length + i} onMouseEnter={() => setIndex(nodes.length + i)} onClick={() => choose(nodes.length + i)}><strong>{p.title}<small>Prefab</small></strong><span>{p.description}</span></button>)}
           {customResults.map((d, i) => { const at = nodes.length + prefabResults.length + i; return <button key={d.id} role="option" aria-selected={index === at} className={index === at ? 'highlighted' : ''} data-index={at} onMouseEnter={() => setIndex(at)} onClick={() => choose(at)}><strong>{d.name}<small>Custom node</small></strong><span>{d.inputs.length} inputs → {d.outputs.length} outputs · double-click to enter</span></button> })}
+          {records.map((record, i) => { const at = nodes.length + prefabResults.length + customResults.length + i; return <button key={`${record.type}-${record.schema.id}`} role="option" aria-selected={index === at} className={index === at ? 'highlighted' : ''} data-index={at} onMouseEnter={() => setIndex(at)} onClick={() => choose(at)}><strong>{record.title}<small>Data type</small></strong><span>{record.schema.fields.map(f => `${f.label}: ${f.type}`).join(' · ')}</span></button> })}
           {count === 0 && <p>No match. Try “blur”, “sigma”, “mask” or “time”.</p>}
         </div>
       </div><div className="menu-hint">↑ ↓ navigate · Enter place · Esc close<span>Typos welcome</span></div>

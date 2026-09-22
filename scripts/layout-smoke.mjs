@@ -55,7 +55,7 @@ export const layoutSmoke = async (page, directory) => {
   }
   // An expanded custom interface scrolls on its own while its graph remains usable.
   await page.setViewportSize({ width: 1280, height: 720 })
-  await page.getByRole('button', { name: 'Edit internal nodes' }).click()
+  await page.locator('.react-flow__node[data-id="n3"]').getByRole('button', { name: 'Edit internal nodes' }).click()
   await page.getByLabel('Custom node name').waitFor()
   await assertViewport(page, [...fixed, '.interface-editor', '.graph-surface'])
   const interfaceBox = await page.locator('.interface-editor').boundingBox()

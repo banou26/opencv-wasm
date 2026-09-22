@@ -42,8 +42,9 @@ accept that asset size. The development preview runs on port 4561.
 - **Right-click** empty space or press **Shift A** to add a node at that location.
   Browse categories or search names, native algorithms and properties. Searches
   such as `gausian`, `raduis` and `transalte` tolerate spelling mistakes.
-- Drag between matching colored sockets. Image, number and motion connections
-  are distinct. An input accepts one connection; a new connection replaces it.
+- Drag between matching colored sockets. Video, frame, number, boolean, text,
+  vector, rectangle, frame-list and record connections are distinct. Socket labels
+  show their types as well as their colors. An input accepts one connection; a new connection replaces it.
   Type mismatches and cycles are rejected by both the UI and the execution engine.
   Sockets have enlarged hit areas: hovering lights up the dot and its row. While
   wiring, a green destination accepts the connection; a red one rejects it.
@@ -86,8 +87,8 @@ connections as typed ports, and opens its implementation in another editor tab.
 Inside the custom node, **Group Inputs** supplies the instance's external values;
 **Group Outputs** exposes your results. Rename the utility and add, rename,
 remove or retype its ports in the interface panel. Connect those ports to the
-internal operations as you would any other nodes. Numeric inputs have a fallback
-value on each instance; a connection overrides it.
+internal operations as you would any other nodes. Number, boolean and text inputs
+have fallback values on each instance; a connection overrides them.
 
 Double-click a custom node, click **Edit internal nodes**, or press **Tab** with
 it selected to enter it. The main graph and nested custom nodes remain accessible
@@ -107,18 +108,38 @@ There is no special Translate execution kernel. It is built from the same
 `Translate X` and `Translate Y` primitives available in the add menu. Each axis
 uses spatial bilinear sampling and leaves uncovered pixels black.
 
-Built-in **prefabs** expand into normal nodes, including the camera example:
+Built-in **prefabs** expand into normal nodes. **Camera in-betweens** reads frame
+N and N+1 explicitly, estimates their global translation, and moves the earlier
+drawing by `fraction × delta`. Its **Fill revealed borders** group aligns the
+next drawing with `(fraction − 1) × delta`, then fills the uncovered strip:
 
 ```text
-frame N, frame N+1 → Estimate Translation → Δx, Δy
-Time.Fraction × Δx → Translate.X
-Time.Fraction × Δy → Translate.Y
-frame N ──────────→ Translate.Image → Output
+Previous frame → Translate(fraction × delta) ───────────→ background
+Next frame → Translate((fraction − 1) × delta) ─────────→ foreground
+White masks → same transforms → (next − previous) > 0 ─→ fill mask
+                                                        ↓
+                                                Masked Composite → Output
 ```
 
-This example estimates one global translation. It is a starting graph to inspect
-and change, not a finished layer interpolator. Other prefabs demonstrate filtering,
-frame comparison and a changed-pixel mask.
+The masks measure canvas coverage, so real black pixels inside the source are
+preserved. Where the previous frame covers the image at least as well, its pixels
+stay unchanged. Where the next frame covers more, its aligned pixels replace them.
+Comparing both masks also avoids replacing a partly covered corner with a wholly
+unknown next-frame pixel. This avoids temporal blending. The group exposes the
+filled frame, previous coverage, aligned next frame and fill mask for inspection.
+Open it to edit the ordinary Multiply, Math, Translate, Subtract, Threshold and
+Composite nodes. If neither source covers a corner, it stays empty. Cuts,
+parallax, independent movement or a wrong motion estimate can still produce a
+seam; this is a global camera experiment, not automatic layer interpolation.
+
+**Process a region** demonstrates Rectangle → Crop Frame → Gaussian Blur → Paste
+Region. Separate Rectangle wires the region’s X/Y back into Paste Region, so
+editing the crop also updates where it is placed. The surrounding base pixels
+remain unchanged. **Explore Laplacian
+pyramids** uses an editable group of Pyramid Down, Frame Size, Pyramid Up and
+Subtract Frames, followed by reconstruction. Both Gaussian and Laplacian
+three-level groups are available in the Custom category. Their internals are
+ordinary nodes, and the native pyramid nodes support a variable number of levels.
 
 **Save graph** includes the custom-node library. **Open graph** replaces the
 working project. **Save prefab** in the node context menu saves the selection;
@@ -151,35 +172,75 @@ folder; an existing project must be opened explicitly instead of overwritten.
 Autosave keeps graph edits; it does not automatically rerender or export a movie.
 Old media copies are retained when you remove nodes, so you can recover earlier work.
 
+## Explicit values and frame flow
+
+```text
+Video Source.Video ────────────────→ Extract Video Frame.Video
+Time.Frame index (or Number) ──────→ Extract Video Frame.Frame index
+                                    ↓ Frame
+                                Grayscale → Gaussian Blur → Output
+```
+
+A Video socket carries an indexed clip. It cannot connect directly to a frame
+operation. **Extract Video Frame** decodes one zero-based integer index. Use a
+fixed Number for a pinned drawing, Time's **Frame index** for playback, or Math
+`index + 1` and a second extractor for the next drawing. Grayscale and other image
+operations process exactly the connected frame. **Subtract Frames** compares
+exactly its two inputs, with no implicit offset.
+
+**Every node parameter has an input socket.** An unwired socket shows an editable
+fallback. A wire supplies the value instead, with the same type and range checks.
+For example, Number → Math → Extract Video Frame changes which frame is decoded;
+Number → Gaussian Blur.Radius changes its neighborhood. Select options accept
+Text values matching the displayed option names; boolean options accept Boolean
+or Compare Numbers outputs. Disconnecting restores the saved fallback. Primitive
+value graphs can run before a clip is loaded. The inspector's source-frame list
+reports the actual dependencies after computed parameters resolve, including
+cached results.
+
+Open **Data types** to define a named record: for example Frame + Rectangle +
+Confidence + Label. **Make** packages its fields; **Separate** exposes their typed
+outputs. Records can pass through custom-node ports and are saved with the graph.
+Different named types cannot connect accidentally. Schema edits disconnect only
+invalid field connections; Undo restores the old schema and wires. Records are
+currently flat; nested record fields are not supported.
+
+The socket/default and reusable-group design draws on
+[Blender node groups](https://docs.blender.org/manual/sl/5.2/interface/controls/nodes/groups.html)
+and [Unreal's typed node connections](https://dev.epicgames.com/documentation/unreal-engine/connecting-nodes-in-unreal-engine).
+
 ## Available building blocks
 
 | Purpose | Nodes |
 | --- | --- |
-| Inputs and time | Video Source, Number, Time, Frame Offset, Extract Frame |
-| Image preparation | Grayscale, Gaussian Blur |
-| Measurements | Frame Delta, Estimate Translation |
-| Numeric operations | Multiply |
-| Pixel transforms | Translate X, Translate Y |
-| Masks and layers | Threshold Mask, Masked Composite |
-| Results | Output, custom-node inputs and outputs |
+| Video and time | Video Source, Extract Video Frame, Video Info, Time, Frame Size |
+| Values | Number, Text, Boolean, Vector 2D, Rectangle, Separate Vector, Separate Rectangle |
+| Computation | Math, Multiply, Compare Numbers, Boolean Math, Switch Number |
+| Filtering | Grayscale, Gaussian Blur, Box Blur, Median Blur, Bilateral Filter |
+| Regions and transforms | Crop Frame, Paste Region, Resize Frame, Rotate Frame, Flip Frame, Translate X/Y |
+| Edges | Sobel Derivative, Scharr Derivative, Laplacian Derivative, Gradient Magnitude, Canny Edges |
+| Color and contrast | Normalize Frame, Invert Frame, Scale and Offset, Equalize Histogram, CLAHE, Extract Channel, Combine RGB |
+| Masks | Threshold Mask, Adaptive Threshold, Erode, Dilate, Morphology, Distance Transform, Frame Coverage |
+| Pyramids | Pyramid Down/Up, Gaussian/Laplacian Pyramid, Make Pyramid Levels, Pyramid Level, Reconstruct Pyramid |
+| Composition | Add/Subtract/Multiply/Mix Frames, Masked Composite |
+| Measurements | Estimate Translation: X/Y displacement, diagnostic response, arrow preview |
+| Custom and output | Named Make/Separate records, custom groups, Group Inputs/Outputs, Output |
 
-`Time` exposes source-frame time, its fractional remainder and seconds.
-`Frame Offset` changes the requested time throughout its upstream branch.
-`Extract Frame` pins its upstream branch to an absolute, zero-based frame index,
-independent of the timeline. Add it with **Right-click → Time → Extract Frame**
-or search for its name. **Frame N (from 0)** updates the result as you type.
+Pyramid outputs are frame lists, shown as labeled contact sheets. **Pyramid Level**
+extracts a native-resolution frame for further processing or pixel inspection.
+Laplacian bands retain negative floating-point values; zero appears middle gray.
+Reconstruction expands each coarse level to the exact preceding dimensions,
+including odd sizes, and adds its detail band back.
 
-For an arbitrary frame-pair comparison, connect one Video Source to two Extract
-Frame nodes (for example, N = 2 and N = 7), then connect them to Frame Delta's A
-and B inputs. Both frames remain fixed as you scrub; even Delta's default B offset
-does not move a pinned frame. An out-of-range index produces an explicit error.
-Filters before extraction run at the chosen time, and upstream Frame Offset nodes
-still apply their own offsets.
-`Frame Delta` produces an image and mean absolute luma difference.
-`Estimate Translation` produces X/Y displacements, a diagnostic response and an
-arrow preview. Its arrows repeat a **single global vector**, enlarged 4× for
-visibility; they are not a dense motion field. Regions is a reserved interface
-type; this initial node set does not yet produce region collections.
+Estimate Translation repeats **one global vector** as arrows enlarged 4×. It is
+not dense optical flow. The node catalog is a useful subset of OpenCV; it does not
+yet expose every API, feature detector, contour operation or optical-flow method.
+`Regions` remains a reserved legacy interface type without collection-producing
+nodes. Rectangle is the supported crop-region value.
+
+Older saved graphs still execute their implicit-time Video Source, Frame Offset,
+Extract Frame, Frame Delta and Estimate Translation nodes. These compatibility
+nodes are hidden from the add menu; new prefabs use explicit clip/frame flow.
 
 ## Generate and preview video
 
@@ -190,7 +251,7 @@ type; this initial node set does not yet produce region collections.
 4. Render, play the generated video, and save its MP4 to the project folder.
 
 Output timestamps are mapped to source time using rational rates, including
-24000/1001. The source node holds its earlier integer frame; your graph explicitly
+24000/1001. Time.Frame index selects the earlier integer frame; your graph explicitly
 creates any intermediate positions. Rendering encodes incrementally rather than
 retaining every raw output frame. **Stop and keep completed frames** finalizes a
 playable partial movie when any frames have completed. An existing movie is a
@@ -235,8 +296,12 @@ Set `CHROME_BIN` to another system Chrome wrapper if needed. `APP_URL` and
 browser. Avoid Playwright's default browser launch flags for these GPU tests.
 Artifacts and generated fixtures are written to ignored `build-smoke/`.
 Pixel checks compare native outputs against independent calculations and FFmpeg,
-including backward/open-GOP seeks. Browser checks exercise custom ports, nested
+including backward/open-GOP seeks. Native WASM tests also execute every image
+catalog entry, verify crop/paste pixels, reconstruct odd-sized pyramids, and check
+next-frame border filling in all four pan directions without replacing covered pixels. Browser checks exercise custom ports, nested
 tabs, previews, file drops, per-source bindings, MP4 playback and partial renders.
+They also exercise computed frame indices, live typed parameters, named records,
+source provenance, region processing and editable pyramid reconstruction.
 Layout checks cover six window sizes, docked controls, expanded interfaces and
 switching between image/video previews without replacing the WebGPU canvas.
 Folder tests use real browser filesystem handles and streams from OPFS, substituting
@@ -253,7 +318,7 @@ exports and protection against outside edits.
 - `src/ui/`: React Flow editor, context menu, custom-node tabs, preview and render UI.
 - `tests/`: engine and ownership checks; `scripts/smoke.mjs`: real browser/pixel tests.
 
-To add a primitive, declare its ports, parameters and explanation in `specs.ts`,
+To add a primitive, declare its ports, parameters and explanation in `catalog.ts`,
 then implement its kernel. Native results must have one cache owner and release
 all temporary matrices, including on failure. A custom node needs no new kernel:
 its interface expands into ordinary operations before execution.

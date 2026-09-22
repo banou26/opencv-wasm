@@ -24,13 +24,13 @@ export const graphView = (root: GraphDocument, definition?: string): GraphDocume
   if (!definition) return root
   const entry = root.definitions?.find(d => d.id === definition)
   if (!entry) throw new Error('Missing custom-node tab')
-  return { ...entry.graph, definitions: root.definitions, interfaceId: definition }
+  return { ...entry.graph, definitions: root.definitions, dataTypes: root.dataTypes, interfaceId: definition }
 }
 
 /** Change a graph body while keeping one authoritative definition library. */
 export const replaceView = (root: GraphDocument, definition: string | undefined, view: GraphDocument): GraphDocument => {
   if (!definition) return view
-  return { ...root, definitions: (view.definitions ?? root.definitions)?.map(d => d.id === definition ? { ...d, graph: { version: 1, nodes: view.nodes, edges: view.edges } } : d) }
+  return { ...root, dataTypes: view.dataTypes ?? root.dataTypes, definitions: (view.definitions ?? root.definitions)?.map(d => d.id === definition ? { ...d, graph: { version: 1, nodes: view.nodes, edges: view.edges } } : d) }
 }
 
 /** Resolve an instance path from the root for in-context editing and inspection. */

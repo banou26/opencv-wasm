@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { createServer } from 'node:net'
 import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
+import { primitivesSmoke } from './primitives-smoke.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
 import { dragSmoke, previewSelectionSmoke } from './interaction-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
@@ -138,7 +139,7 @@ try {
   const paneForExtract = page.locator('.react-flow__pane')
   await paneForExtract.click({ button: 'right', position: { x: 30, y: 40 } })
   await page.getByLabel('Search nodes').fill('extract frame')
-  assert.match(await page.getByRole('listbox').innerText(), /Extract Frame/)
+  assert.match(await page.getByRole('listbox').innerText(), /Extract Video Frame/)
   await page.keyboard.press('Escape')
   console.log('PASS: Extract Frame pixels, live parameter updates without blur, timeline independence, serialization and arbitrary-frame delta')
 
@@ -160,7 +161,7 @@ try {
   const translatedGraph = { version: 1, definitions: [translate], nodes: [node('n1', 'source'), { ...node('n3', 'group', { x: 3, y: 2 }, 350), definition: 'gtranslate' }, node('n5', 'output', {}, 680)], edges: [edge('n1', 'n3', 'image'), edge('n3', 'n5', 'in:frame:image', 'image')] }
   await upload(translatedGraph); const translated = await png()
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) for (let c = 0; c < 3; c++) assert.equal(translated[(y * width + x) * 3 + c], x < 3 || y < 2 ? 0 : original[((y - 2) * width + x - 3) * 3 + c])
-  await change(() => page.getByRole('button', { name: 'Edit internal nodes' }).click())
+  await change(() => page.locator('.react-flow__node[data-id="n3"]').getByRole('button', { name: 'Edit internal nodes' }).click())
   assert.equal(await page.getByRole('tab', { name: 'Translate', exact: true }).getAttribute('aria-selected'), 'true')
   assert.deepEqual(await png(), translated)
   await change(() => page.getByRole('button', { name: /Translate X/ }).filter({ has: page.locator('span') }).last().click())
@@ -172,9 +173,10 @@ try {
   await choose('difference')
   await choose('difference') // Reopening the identical prefab must still restore its preview.
   await page.getByRole('button', { name: 'Show all previews', exact: true }).click()
-  await page.waitForFunction(() => [...document.querySelectorAll('.node-thumbnail')].length === 5 && [...document.querySelectorAll('.node-thumbnail canvas')].every(c => c.width === 320))
-  await page.getByRole('button', { name: 'Hide Grayscale preview' }).click(); assert.equal(await page.getByTestId('preview-n2').count(), 0)
-  await page.getByRole('button', { name: 'Show Grayscale preview' }).click(); await page.getByTestId('preview-n2').locator('canvas').waitFor({ state: 'visible' })
+  const previewCount = (await project()).nodes.length
+  await page.waitForFunction(count => document.querySelectorAll('.node-thumbnail').length === count && [...document.querySelectorAll('.node-thumbnail')].every(t => [...t.querySelectorAll('canvas')].some(c => c.width === 320 && getComputedStyle(c).display !== 'none') || t.querySelector('.thumbnail-value, strong')), previewCount)
+  await page.getByRole('button', { name: 'Hide Grayscale preview' }).first().click(); assert.equal(await page.getByTestId('preview-n2').count(), 0)
+  await page.getByRole('button', { name: 'Show Grayscale preview' }).first().click(); await page.getByTestId('preview-n2').locator('canvas').waitFor({ state: 'visible' })
   const pane = page.locator('.react-flow__pane')
   await pane.click({ button: 'right', position: { x: 30, y: 40 } }); await page.getByLabel('Search nodes').fill('raduis')
   assert.match(await page.getByRole('listbox').innerText(), /Gaussian Blur/)
@@ -217,7 +219,7 @@ try {
   assert.ok(count >= 2 && count < 155); assert.match(await page.locator('.movie-caption').innerText(), /partial render/)
   console.log(`PASS: real 60 fps MP4 playback/export; cancelled render preserves ${count} valid frames`)
   // Enter a utility inside another utility and expose a new numeric input/output pair.
-  await change(() => page.getByRole('button', { name: 'Edit internal nodes' }).click())
+  await change(() => page.locator('.react-flow__node[data-id="n3"]').getByRole('button', { name: 'Edit internal nodes' }).click())
   await page.locator('.react-flow__node[data-id="nx"] .operation-head').click()
   await page.locator('.react-flow__node[data-id="ny"] .operation-head').click({ modifiers: ['Shift'] })
   await page.getByLabel('Node editor', { exact: true }).focus(); await page.keyboard.press('Control+g')
@@ -254,10 +256,11 @@ try {
   await change(() => page.getByRole('tab', { name: 'Main graph' }).click())
   console.log('PASS: nested tabs, new typed custom ports, live internal wiring, negative numeric editing and custom scalar outputs')
   await layoutSmoke(page, directory)
+  await primitivesSmoke(page, { directory, upload, choose, change, png, project, sourcePixels, width, height })
   await mediaSmoke(page, { fixture, directory, upload, sourceGraph, change, png, project })
   await assertViewport(page, ['.workspace-notices', '.timeline', '.render-controls', '.render-action', 'footer'])
   assert.deepEqual(errors, [])
-  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY'], output: { count: 10, fps: 60 }, cancelledFrames: count, errors }, null, 2))
+  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY', 'computed frame index', 'crop/process/paste', 'editable Laplacian reconstruction', 'typed record frame roundtrip'], output: { count: 10, fps: 60 }, cancelledFrames: count, errors }, null, 2))
   await page.screenshot({ path: resolve(directory, 'editor.png'), fullPage: true, timeout: 15000 })
   await page.close()
   console.log(`Browser smoke passed. Artifacts: ${directory}`)

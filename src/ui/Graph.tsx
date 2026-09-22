@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useUpdateNodeInternals, useNodesInitialized } from '@xyflow/react'
 import type { Edge, Node, NodeProps, NodeChange, EdgeChange, Connection } from '@xyflow/react'
-import { SPECS, PORT_COLORS, specFor } from '../engine/specs'
+import { SPECS, PORT_COLORS, PORT_LABELS, specFor } from '../engine/specs'
 import { validateConnection } from '../engine/graph'
 import type { GraphNode, NodeType, NodeSpec, Parameter } from '../engine/types'
 import { NodeMenu, selectedGraph } from './NodeMenu'
@@ -14,7 +14,7 @@ import { SourceFile, videoFiles } from './SourceFile'
 import { loadVideo } from './client'
 
 type VisualNode = Node<{ model: GraphNode; spec: NodeSpec; connected: string[] }, 'operation'>
-const symbols: Record<NodeType, string> = { source: '▷', grayscale: '◐', blur: '≋', delta: 'Δ', motion: '↗', translateX: '↔', translateY: '↕', multiply: '×', constant: '#', group: '▧', groupInput: '⇥', groupOutput: '⇤', output: '▣', time: 't', offset: '±', extractFrame: '#N', threshold: '◩', composite: '⊞' }
+const symbols: Partial<Record<NodeType, string>> = { source: '▷', grayscale: '◐', blur: '≋', delta: 'Δ', motion: '↗', translateX: '↔', translateY: '↕', multiply: '×', constant: '#', group: '▧', groupInput: '⇥', groupOutput: '⇤', output: '▣', time: 't', offset: '±', extractFrame: '#N', threshold: '◩', composite: '⊞' }
 
 /** Keep partial numeric edits locally so typing a minus sign or clearing a field is possible. */
 const NumberControl = ({ value, parameter, label, disabled, commit }: { value: number; parameter: Extract<Parameter, { kind: 'number' }>; label: string; disabled: boolean; commit: (value: number) => void }) => {
@@ -37,10 +37,10 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
     canvas.current.width = thumbnail.bitmap.width; canvas.current.height = thumbnail.bitmap.height
     canvas.current.getContext('2d')?.drawImage(thumbnail.bitmap, 0, 0)
   }, [enabled, thumbnail])
-  const connected = (key: string) => data.connected.includes(node.type === 'group' ? key : key === 'pixels' ? 'in:scalar:pixels' : key === 'factor' ? 'in:scalar:b' : '')
+
   const frame = useEditor(s => s.frame), locked = useEditor(s => s.busy === 'bake')
-  return <div className={`operation ${selected ? 'chosen' : ''}`} data-node={node.type} onDragOver={e => { if (node.type === 'source' && e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = locked ? 'none' : 'copy' } }} onDrop={e => {
-    if (node.type !== 'source' || !e.dataTransfer.types.includes('Files')) return
+  return <div className={`operation ${selected ? 'chosen' : ''}`} data-node={node.type} onDragOver={e => { if ((node.type === 'source' || node.type === 'clip') && e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = locked ? 'none' : 'copy' } }} onDrop={e => {
+    if (node.type !== 'source' && node.type !== 'clip' || !e.dataTransfer.types.includes('Files')) return
     e.preventDefault(); e.stopPropagation()
     const files = videoFiles(e.dataTransfer)
     if (locked) return
@@ -51,28 +51,31 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
     {enabled && <div className="node-thumbnail node-drag-handle" data-testid={`preview-${node.id}`}>
       <canvas ref={canvas} style={{ display: thumbnail?.bitmap ? 'block' : 'none' }} />
       {thumbnail?.scalar !== undefined && <strong>{thumbnail.scalar.toFixed(4)}</strong>}
+      {thumbnail?.summary !== undefined && thumbnail.scalar === undefined && !thumbnail.bitmap && <pre className="thumbnail-value">{thumbnail.summary}</pre>}
       {thumbnail?.error && <span className="thumbnail-error">{thumbnail.error}</span>}
-      {!thumbnail && <span>Load a clip and connect the inputs</span>}
+      {!thumbnail && <span>Connect the inputs to see this result</span>}
       {thumbnail && !thumbnail.error && <code className="thumbnail-frame">#{thumbnail.frame.toFixed(2)}{frame !== thumbnail.frame ? ' · updating' : ''}</code>}
     </div>}
-    <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type]}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
-    {node.type === 'source' && <SourceFile node={node} />}
+    <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type] ?? '◇'}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
+    {(node.type === 'source' || node.type === 'clip') && <SourceFile node={node} />}
     <div className="sockets">
-      {spec.inputs.map(port => <div className="socket input" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
-        <Handle type="target" id={port.id} position={Position.Left} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} input · Drag to connect · Right-click to disconnect`} />
-        <span>{port.label}</span>{port.frameParam ? <code>#{Number(node.params[port.frameParam])}</code> : port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>}
-      </div>)}
+      {spec.inputs.map(port => {
+        const control = spec.parameters.find(p => p.key === port.parameter), connected = data.connected.includes(port.id), label = control && `${spec.title} ${control.label}`
+        return <div className={`socket input ${control ? 'parameter-socket' : ''}`} key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
+          <Handle type="target" id={port.id} position={Position.Left} title={`${port.label} · ${PORT_LABELS[port.type]} input · Drag to connect · Right-click to disconnect`} />
+          <span title={port.label}>{control?.label ?? port.label}</span><small className="socket-type">{PORT_LABELS[port.type]}</small>
+          {control && <div className="socket-control nodrag nowheel">{connected ? <span className="wired-parameter" title="The connected value overrides the saved default. Disconnect to edit the default again.">↳ Connected</span> : control.kind === 'number'
+            ? <NumberControl label={label!} value={Number(node.params[control.key])} parameter={control} disabled={locked} commit={value => parameter(node.id, control.key, value)} />
+            : control.kind === 'boolean' ? <input aria-label={label} type="checkbox" checked={Boolean(node.params[control.key])} disabled={locked} onChange={e => parameter(node.id, control.key, e.target.checked)} />
+              : control.kind === 'select' ? <select aria-label={label} value={String(node.params[control.key])} disabled={locked} onChange={e => parameter(node.id, control.key, e.target.value)}>{control.options.map(option => <option key={option}>{option}</option>)}</select>
+                : <input aria-label={label} type="text" maxLength={control.maxLength} value={String(node.params[control.key])} disabled={locked} onChange={e => parameter(node.id, control.key, e.target.value)} />}</div>}
+          {!control && (port.frameParam ? <code>#{String(node.params[port.frameParam])}</code> : port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>)}
+        </div>
+      })}
       {spec.outputs.map(port => <div className="socket output" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
-        <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} output · Drag to connect · Right-click to disconnect`} />
+        <small className="socket-type">{PORT_LABELS[port.type]}</small><span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} title={`${port.label} · ${PORT_LABELS[port.type]} output · Drag to connect · Right-click to disconnect`} />
       </div>)}
     </div>
-    {spec.parameters.length > 0 && <div className="parameters nodrag nowheel">
-      {spec.parameters.map(p => <label key={p.key}><span>{p.label}</span>{p.kind === 'boolean'
-        ? <input type="checkbox" checked={!!node.params[p.key]} disabled={locked} onChange={e => parameter(node.id, p.key, e.target.checked)} />
-        : p.kind === 'select'
-          ? <select aria-label={`${spec.title} ${p.label}`} value={String(node.params[p.key])} disabled={locked} onChange={e => parameter(node.id, p.key, e.target.value)}>{p.options.map(o => <option key={o}>{o}</option>)}</select>
-          : <NumberControl label={`${spec.title} ${p.label}`} value={Number(node.params[p.key])} parameter={p} disabled={locked || connected(p.key)} commit={value => parameter(node.id, p.key, value)} />}</label>)}
-    </div>}
     {node.type === 'group' && <button className="enter-group nodrag" onClick={e => { e.stopPropagation(); useEditor.getState().openGroup(node.id) }}>Edit internal nodes ↗</button>}
     <div className="op-foot"><code>{spec.algorithm}</code><span>{status?.state === 'cached' ? 'cached' : status?.ms !== undefined ? `${Math.round(status.ms)} ms` : ''}</span></div>
   </div>
@@ -134,7 +137,7 @@ const Canvas = () => {
       if (!files.length) { useEditor.setState({ error: 'Drop a video file here. MP4 and MOV containers are supported.' }); return }
       for (const [index, file] of files.entries()) {
         const state = useEditor.getState(), before = state.focused
-        state.add('source', { x: position.x + index * 300, y: position.y })
+        state.add('clip', { x: position.x + index * 300, y: position.y })
         const next = useEditor.getState()
         if (next.focused !== before) { next.togglePreview(next.focused); loadVideo(file, { node: next.focused, definition: next.view.interfaceId }) }
       }

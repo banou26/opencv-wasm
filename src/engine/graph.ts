@@ -1,4 +1,4 @@
-import { defaultParams, SPECS, validateParams, specFor } from './specs'
+import { defaultParams, SPECS, validateParams, specFor, PORT_LABELS, primitiveDefault } from './specs'
 import { graphView, translateDefinition } from './definitions'
 import type { Connection, GraphDocument, GraphEdge, GraphNode, NodeType, NodeDefinition, Port } from './types'
 
@@ -9,6 +9,7 @@ export const validateConnection = (doc: GraphDocument, c: Connection): string | 
   if (!source || !target) return 'The connection refers to a missing node'
   const output = specFor(source, doc).outputs.find(p => p.id === c.sourceHandle), input = specFor(target, doc).inputs.find(p => p.id === c.targetHandle)
   if (!output || !input) return 'Connect an output socket to an input socket'
+  if (output.type === 'custom' && output.schema !== input.schema) return 'Custom record types must match'
   if (output.type !== input.type) return `A ${output.type} output cannot connect to a ${input.type} input`
   const adjacency = new Map<string, string[]>()
   for (const e of doc.edges) {
@@ -56,12 +57,12 @@ export const topological = (doc: GraphDocument): GraphNode[] => {
 }
 
 /** Validate ports before using user-defined interfaces for connection or native execution checks. */
-const checkPorts = (ports: Port[]) => {
+const checkPorts = (ports: Port[], schemas: Set<string>) => {
   if (!Array.isArray(ports) || ports.length > 32) throw new Error('A custom interface supports up to 32 ports per direction')
   const ids = new Set<string>()
   for (const p of ports) {
-    if (!p || typeof p.id !== 'string' || !/^[a-zA-Z][a-zA-Z0-9:_-]{0,99}$/.test(p.id) || ids.has(p.id) || typeof p.label !== 'string' || !p.label.trim() || p.label.length > 80 || !['frame', 'motion', 'scalar', 'regions'].includes(p.type)) throw new Error('Invalid custom-node port')
-    if (p.default !== undefined && (p.type !== 'scalar' || !Number.isFinite(p.default) || Math.abs(p.default) > 1000000)) throw new Error('Invalid port default')
+    if (!p || typeof p.id !== 'string' || !/^[a-zA-Z][a-zA-Z0-9:_-]{0,99}$/.test(p.id) || ids.has(p.id) || typeof p.label !== 'string' || !p.label.trim() || p.label.length > 80 || !Object.hasOwn(PORT_LABELS, p.type) || p.type === 'custom' && (!p.schema || !schemas.has(p.schema))) throw new Error('Invalid custom-node port')
+    if (p.default !== undefined && !(p.type === 'scalar' && typeof p.default === 'number' && Number.isFinite(p.default) && Math.abs(p.default) <= 1000000 || p.type === 'boolean' && typeof p.default === 'boolean' || p.type === 'string' && typeof p.default === 'string' && p.default.length <= 4096)) throw new Error('Invalid port default')
     ids.add(p.id)
   }
 }
@@ -71,17 +72,28 @@ export const parseDocument = (value: unknown): GraphDocument => {
   if (!value || typeof value !== 'object') throw new Error('Not a Cadence project')
   const root = value as GraphDocument
   if (root.definitions !== undefined && (!Array.isArray(root.definitions) || root.definitions.length > 100)) throw new Error('Invalid custom-node library')
+  if (root.dataTypes !== undefined && (!Array.isArray(root.dataTypes) || root.dataTypes.length > 64)) throw new Error('Invalid custom data-type library')
+  const dataTypes = root.dataTypes ?? [], schemas = new Set<string>()
+  for (const type of dataTypes) {
+    if (!type || !/^t[a-z0-9]+$/.test(type.id) || schemas.has(type.id) || typeof type.name !== 'string' || !type.name.trim() || type.name.length > 80) throw new Error('Invalid or duplicate custom data type')
+    schemas.add(type.id)
+  }
+  for (const type of dataTypes) {
+    checkPorts(type.fields, schemas)
+    if (!type.fields.length || type.fields.some(p => p.type === 'custom')) throw new Error('A record needs typed fields; nested record definitions are not supported yet')
+  }
   const definitions = root.definitions ?? [], ids = new Set<string>()
   for (const d of definitions) {
     if (!d || typeof d.id !== 'string' || !/^g[a-z0-9]+$/.test(d.id) || ids.has(d.id) || typeof d.name !== 'string' || !d.name.trim() || d.name.length > 80) throw new Error('Invalid or duplicate custom-node definition')
-    ids.add(d.id); checkPorts(d.inputs); checkPorts(d.outputs)
+    if (d.description !== undefined && (typeof d.description !== 'string' || d.description.length > 2000)) throw new Error('Invalid custom-node description')
+    ids.add(d.id); checkPorts(d.inputs, schemas); checkPorts(d.outputs, schemas)
   }
   const checkBody = (body: GraphDocument, interfaceId?: string): GraphDocument => {
     if (!body || body.version !== 1 || !Array.isArray(body.nodes) || !Array.isArray(body.edges) || body.nodes.length > 100 || body.edges.length > 300) throw new Error('Invalid project format or graph too large')
-    const context = { ...body, definitions, interfaceId }, nodes = new Set<string>()
+    const context = { ...body, definitions, dataTypes, interfaceId }, nodes = new Set<string>()
     for (const n of body.nodes) {
       if (!n || typeof n.id !== 'string' || !/^n[a-z0-9]+$/.test(n.id) || nodes.has(n.id) || !Object.hasOwn(SPECS, n.type)) throw new Error('Invalid or duplicate node')
-      if (n.asset !== undefined && (n.type !== 'source' || typeof n.asset !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(n.asset))) throw new Error('Invalid source media identity')
+      if (n.asset !== undefined && (!['source', 'clip'].includes(n.type) || typeof n.asset !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(n.asset))) throw new Error('Invalid source media identity')
       if (n.assetName !== undefined && (typeof n.assetName !== 'string' || n.assetName.length > 255)) throw new Error('Invalid source filename')
       nodes.add(n.id)
       if (!n.params || typeof n.params !== 'object' || Array.isArray(n.params) || !n.position || !Number.isFinite(n.position.x) || !Number.isFinite(n.position.y)) throw new Error('Invalid node data')
@@ -89,7 +101,7 @@ export const parseDocument = (value: unknown): GraphDocument => {
       if (error) throw new Error(error)
     }
     if (interfaceId && (!ids.has(interfaceId) || body.nodes.filter(n => n.type === 'groupInput').length !== 1 || body.nodes.filter(n => n.type === 'groupOutput').length !== 1)) throw new Error('A custom node needs one Group Inputs node and one Group Outputs node')
-    let checked: GraphDocument = { version: 1, nodes: body.nodes, edges: [], definitions, ...(interfaceId ? { interfaceId } : {}) }
+    let checked: GraphDocument = { version: 1, nodes: body.nodes, edges: [], definitions, ...(dataTypes.length ? { dataTypes } : {}), ...(interfaceId ? { interfaceId } : {}) }
     const sockets = new Set<string>(), edgeIds = new Set<string>()
     for (const e of body.edges) {
       if (!e || typeof e.id !== 'string' || edgeIds.has(e.id)) throw new Error('Invalid or duplicate edge')
@@ -147,24 +159,31 @@ export const starterGraph = (mode: 'difference' | 'filter' | 'motion' | 'mask' =
 /** Insert a saved prefab with independent nodes, safely merging its custom-node definitions. */
 export const insertPrefab = (document: GraphDocument, value: unknown, position: { x: number; y: number }, id: () => string): GraphDocument => {
   const prefab = parseDocument(value), ids = new Map(prefab.nodes.map(n => [n.id, id()]))
+  const dataTypes = [...(document.dataTypes ?? [])], typeIds = new Map<string, string>()
+  for (const type of prefab.dataTypes ?? []) {
+    const existing = dataTypes.find(t => t.id === type.id), mapped = existing && JSON.stringify(existing) !== JSON.stringify(type) ? id().replace(/^n/, 't') : type.id
+    typeIds.set(type.id, mapped)
+    if (!dataTypes.some(t => t.id === mapped)) dataTypes.push({ ...type, id: mapped, fields: type.fields.map(p => ({ ...p })) })
+  }
+  const remapPort = (p: Port): Port => ({ ...p, ...(p.schema ? { schema: typeIds.get(p.schema) ?? p.schema } : {}) })
   const library = [...(document.definitions ?? [])], definitionIds = new Map<string, string>()
   for (const definition of prefab.definitions ?? []) {
     const existing = library.find(d => d.id === definition.id)
-    definitionIds.set(definition.id, existing && JSON.stringify(existing) !== JSON.stringify(definition) ? id().replace(/^n/, 'g') : definition.id)
+    definitionIds.set(definition.id, existing && (JSON.stringify(existing) !== JSON.stringify(definition) || [...definition.inputs, ...definition.outputs].some(p => p.schema && typeIds.get(p.schema) !== p.schema) || definition.graph.nodes.some(n => n.dataType && typeIds.get(n.dataType) !== n.dataType)) ? id().replace(/^n/, 'g') : definition.id)
   }
   // A reused parent must also be cloned when any referenced child was renamed.
   for (let pass = 0; pass < (prefab.definitions?.length ?? 0); pass++) for (const d of prefab.definitions ?? []) {
     if (definitionIds.get(d.id) === d.id && library.some(existing => existing.id === d.id) && d.graph.nodes.some(n => n.definition && definitionIds.get(n.definition) !== n.definition)) definitionIds.set(d.id, id().replace(/^n/, 'g'))
   }
-  const remap = (n: GraphNode): GraphNode => ({ ...n, params: { ...n.params }, ...(n.definition ? { definition: definitionIds.get(n.definition) ?? n.definition } : {}) })
+  const remap = (n: GraphNode): GraphNode => ({ ...n, params: { ...n.params }, ...(n.definition ? { definition: definitionIds.get(n.definition) ?? n.definition } : {}), ...(n.dataType ? { dataType: typeIds.get(n.dataType) ?? n.dataType } : {}) })
   for (const d of prefab.definitions ?? []) {
     const definitionId = definitionIds.get(d.id)!
-    if (!library.some(entry => entry.id === definitionId)) library.push({ ...d, id: definitionId, inputs: d.inputs.map(p => ({ ...p })), outputs: d.outputs.map(p => ({ ...p })), graph: { ...d.graph, nodes: d.graph.nodes.map(remap), edges: d.graph.edges.map(e => ({ ...e })) } })
+    if (!library.some(entry => entry.id === definitionId)) library.push({ ...d, id: definitionId, inputs: d.inputs.map(remapPort), outputs: d.outputs.map(remapPort), graph: { ...d.graph, nodes: d.graph.nodes.map(remap), edges: d.graph.edges.map(e => ({ ...e })) } })
   }
   const minX = Math.min(...prefab.nodes.map(n => n.position.x)), minY = Math.min(...prefab.nodes.map(n => n.position.y))
   const nodes = prefab.nodes.map(n => ({ ...remap(n), id: ids.get(n.id)!, position: { x: n.position.x - minX + position.x, y: n.position.y - minY + position.y } }))
   const edges = prefab.edges.map(e => ({ ...e, id: `e:${ids.get(e.target)}:${e.targetHandle}`, source: ids.get(e.source)!, target: ids.get(e.target)! }))
-  return parseDocument({ ...document, nodes: [...document.nodes, ...nodes], edges: [...document.edges, ...edges], definitions: library })
+  return parseDocument({ ...document, nodes: [...document.nodes, ...nodes], edges: [...document.edges, ...edges], definitions: library, ...(dataTypes.length ? { dataTypes } : {}) })
 }
 
 /** Encapsulate selected operations, expose their boundary sockets, and reconnect the parent graph. */
@@ -175,13 +194,13 @@ export const groupNodes = (root: GraphDocument, definitionId: string | undefined
   const inputs: Port[] = [], outputs: Port[] = [], inputMap = new Map<string, string>(), outputMap = new Map<string, string>()
   for (const e of incoming) {
     const key = `${e.source}/${e.sourceHandle}`
-    if (!inputMap.has(key)) { const node = view.nodes.find(n => n.id === e.target)!, port = specFor(node, view).inputs.find(p => p.id === e.targetHandle)!; const id = `i${inputs.length + 1}`; inputMap.set(key, id); inputs.push({ id, label: port.label, type: port.type, ...(port.type === 'scalar' ? { default: 0 } : {}) }) }
+    if (!inputMap.has(key)) { const node = view.nodes.find(n => n.id === e.target)!, port = specFor(node, view).inputs.find(p => p.id === e.targetHandle)!; const id = `i${inputs.length + 1}`; inputMap.set(key, id); inputs.push({ id, label: port.label, type: port.type, ...(port.schema ? { schema: port.schema } : {}), ...(primitiveDefault(port) !== undefined ? { default: primitiveDefault(port) } : {}) }) }
   }
   const exports = outgoing.map(e => ({ source: e.source, sourceHandle: e.sourceHandle }))
   if (!exports.length) for (const n of chosen.filter(n => !view.edges.some(e => e.source === n.id && set.has(e.target)))) for (const p of specFor(n, view).outputs) exports.push({ source: n.id, sourceHandle: p.id })
   for (const e of exports) {
     const key = `${e.source}/${e.sourceHandle}`
-    if (!outputMap.has(key)) { const n = view.nodes.find(n => n.id === e.source)!, port = specFor(n, view).outputs.find(p => p.id === e.sourceHandle)!; const id = `o${outputs.length + 1}`; outputMap.set(key, id); outputs.push({ id, label: port.label, type: port.type }) }
+    if (!outputMap.has(key)) { const n = view.nodes.find(n => n.id === e.source)!, port = specFor(n, view).outputs.find(p => p.id === e.sourceHandle)!; const id = `o${outputs.length + 1}`; outputMap.set(key, id); outputs.push({ id, label: port.label, type: port.type, ...(port.schema ? { schema: port.schema } : {}) }) }
   }
   const minX = Math.min(...chosen.map(n => n.position.x)), minY = Math.min(...chosen.map(n => n.position.y))
   const internals = chosen.map(n => ({ ...n, position: { x: n.position.x - minX + 330, y: n.position.y - minY + 80 } }))
@@ -194,7 +213,7 @@ export const groupNodes = (root: GraphDocument, definitionId: string | undefined
     ...incoming.map(e => ({ ...e, source: 'ninput', sourceHandle: inputMap.get(`${e.source}/${e.sourceHandle}`)! })),
     ...[...outputMap].map(([key, port]) => { const [source, sourceHandle] = key.split('/'); return { id: `e:output:${port}`, source: source!, sourceHandle: sourceHandle!, target: 'noutput', targetHandle: port } }),
   ] } }
-  const instance: GraphNode = { id: instanceId, type: 'group', definition: groupId, params: Object.fromEntries(inputs.filter(p => p.type === 'scalar').map(p => [p.id, 0])), position: { x: minX, y: minY } }
+  const instance: GraphNode = { id: instanceId, type: 'group', definition: groupId, params: Object.fromEntries(inputs.filter(p => primitiveDefault(p) !== undefined).map(p => [p.id, primitiveDefault(p)!])), position: { x: minX, y: minY } }
   let next: GraphDocument = { ...view, definitions: [...(root.definitions ?? []), definition], nodes: [...view.nodes.filter(n => !set.has(n.id)), instance], edges: view.edges.filter(e => !set.has(e.source) && !set.has(e.target)) }
   for (const e of incoming) next = connect(next, { source: e.source, sourceHandle: e.sourceHandle, target: instanceId, targetHandle: inputMap.get(`${e.source}/${e.sourceHandle}`)! })
   for (const e of outgoing) next = connect(next, { source: instanceId, sourceHandle: outputMap.get(`${e.source}/${e.sourceHandle}`)!, target: e.target, targetHandle: e.targetHandle })

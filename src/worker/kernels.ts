@@ -1,32 +1,30 @@
 import { Mat, matFromArray, CV_8UC4, CV_32F, CV_64F, COLOR_GRAY2RGBA, COLOR_RGBA2GRAY, GaussianBlur, cvtColor, transform, subtract, absdiff, mean, phaseCorrelate, createHanningWindow, warpAffine, INTER_LINEAR, BORDER_CONSTANT, arrowedLine, LINE_AA, threshold, THRESH_BINARY, THRESH_BINARY_INV, CV_8U } from '@banou/opencv-wasm'
 import type { Step } from '../engine/plan'
-import type { Bundle } from '../engine/types'
+import type { Bundle, GraphDocument } from '../engine/types'
 import type { VideoSource } from '../video/source'
 
-/** A native frame is owned by exactly one cache bundle. Pixel values are normalized float32. */
-export type Frame = { kind: 'frame'; mat: Mat; range: 'unit' | 'signed' }
-/** Runtime payloads remain inside the worker; only metadata crosses to the UI. */
-export type Payload = Frame | { kind: 'scalar'; value: number } | { kind: 'motion'; dx: number; dy: number; response: number; preview: Frame }
-
-const image = (value: Payload | undefined): Frame => {
-  if (value?.kind !== 'frame') throw new Error('A frame input is required')
-  return value
-}
+import { image } from './payload'
+import type { Frame, Payload } from './payload'
+import { valueKernel } from './value-kernels'
+import { imageKernel } from './image-kernels'
+export type { Frame, Payload } from './payload'
 
 /** Execute the starter algorithms through the package's named TypeScript API. */
-export const runKernel = async (step: Step, inputs: Record<string, Payload>, source: VideoSource, cancelled: () => boolean): Promise<Bundle<Payload>> => {
-  if (step.node.type === 'time') return { outputs: { 'out:scalar:fraction': { kind: 'scalar', value: step.frame - Math.floor(step.frame) }, 'out:scalar:frame': { kind: 'scalar', value: step.frame }, 'out:scalar:seconds': { kind: 'scalar', value: step.frame / source.info.fps } }, bytes: 24, dispose: () => {} }
-  if (step.node.type === 'constant' || step.node.type === 'multiply') {
-    const a = inputs['in:scalar:a'], b = inputs['in:scalar:b']
-    const value = step.node.type === 'constant' ? Number(step.node.params.value) : (a?.kind === 'scalar' ? a.value : NaN) * (b?.kind === 'scalar' ? b.value : Number(step.node.params.factor))
-    if (!Number.isFinite(value)) throw new Error('The numeric operation produced a non-finite value')
-    return { outputs: { 'out:scalar:value': { kind: 'scalar', value } }, bytes: 8, dispose: () => {} }
-  }
+export const runKernel = async (step: Step, inputs: Record<string, Payload>, source: VideoSource | undefined, cancelled: () => boolean, doc: GraphDocument = { version: 1, nodes: [], edges: [] }, sourceById: (asset: string) => VideoSource | undefined = () => source): Promise<Bundle<Payload>> => {
+  const primitive = valueKernel(step, inputs, source, doc)
+  if (primitive) return primitive
+  const operation = imageKernel(step, inputs)
+  if (operation) return operation
   const out = new Mat(), outputs: Record<string, Payload> = {}
   let range: Frame['range'] = 'unit'
   try {
-    if (step.node.type === 'source') {
-      const frame = await source.frameAt(step.frame, cancelled)
+    if (step.node.type === 'source' || step.node.type === 'readFrame') {
+      const clip = inputs['in:video:clip']
+      const video = step.node.type === 'readFrame' ? clip?.kind === 'video' ? sourceById(clip.asset) : undefined : source
+      if (!video) throw new Error('Connect a video clip before extracting a frame')
+      const index = step.node.type === 'readFrame' ? Number(step.node.params.frame) : step.frame
+      if (!Number.isInteger(index) || index < 0 || index >= video.info.frameCount) throw new Error(`Frame ${index} is outside this clip (0 to ${video.info.frameCount - 1})`)
+      const frame = await video.frameAt(index, cancelled)
       try {
         const options: VideoFrameCopyToOptions = { format: 'RGBA', colorSpace: 'srgb', rect: { x: frame.visibleRect?.x ?? 0, y: frame.visibleRect?.y ?? 0, width: frame.displayWidth, height: frame.displayHeight }, layout: [{ offset: 0, stride: frame.displayWidth * 4 }] }
         const pixels = new Uint8Array(frame.displayWidth * frame.displayHeight * 4)
@@ -59,7 +57,7 @@ export const runKernel = async (step: Step, inputs: Record<string, Payload>, sou
       const radius = Number(step.node.params.radius)
       if (!radius) input.mat.copyTo(out)
       else GaussianBlur(input.mat, out, { width: 2 * radius + 1, height: 2 * radius + 1 }, Number(step.node.params.sigma))
-    } else if (step.node.type === 'motion') {
+    } else if ((step.node.type === 'motion' || step.node.type === 'phaseCorrelation')) {
       const a = image(inputs['in:frame:a']), b = image(inputs['in:frame:b'])
       if (a.mat.rows !== b.mat.rows || a.mat.cols !== b.mat.cols) throw new Error('Motion inputs must have matching dimensions')
       using ga = new Mat(), gb = new Mat(), window = new Mat()

@@ -1,9 +1,11 @@
 import { create } from 'zustand'
-import { connect, parseDocument, starterGraph, insertPrefab, groupNodes } from '../engine/graph'
+import { connect, parseDocument, insertPrefab, groupNodes } from '../engine/graph'
+import { explicitGraph } from '../engine/prefabs'
 import { defaultParams, specFor } from '../engine/specs'
 import { graphView, pathDefinition, replaceView } from '../engine/definitions'
+import { updateDataType } from '../engine/data-types'
 import { updateInterface } from '../engine/interfaces'
-import type { Connection, GraphDocument, NodeDefinition, NodeType } from '../engine/types'
+import type { Connection, GraphDocument, NodeDefinition, NodeType, DataTypeDefinition } from '../engine/types'
 import type { NodeStatus } from '../engine/execute'
 import type { SourceInfo, WorkerEvent } from '../protocol'
 
@@ -35,6 +37,7 @@ type State = {
   switchTab: (id: string) => void
   closeTab: (id: string) => void
   makeGroup: (name?: string) => void
+  changeDataType: (schema: DataTypeDefinition) => void
   changeInterface: (id: string, patch: Pick<NodeDefinition, 'name' | 'inputs' | 'outputs'>) => void
   undo: () => void; redo: () => void
 }
@@ -42,8 +45,8 @@ type State = {
 const freshId = (prefix = 'n') => `${prefix}${crypto.randomUUID().replaceAll('-', '')}`
 const clearThumbnails = (state: State) => { for (const preview of Object.values(state.thumbnails)) preview.bitmap?.close() }
 const target = (doc: GraphDocument) => doc.nodes.find(n => n.type === 'output' || n.type === 'groupOutput')?.id ?? doc.nodes[0]?.id ?? ''
-const defaults = (doc: GraphDocument) => Object.fromEntries(doc.nodes.map(n => [n.id, ['source', 'output', 'groupInput', 'groupOutput'].includes(n.type)]))
-const initial = starterGraph('difference')
+const defaults = (doc: GraphDocument) => Object.fromEntries(doc.nodes.map(n => [n.id, ['source', 'clip', 'output', 'groupInput', 'groupOutput'].includes(n.type)]))
+const initial = explicitGraph('filter')
 
 /** Root project and reusable definitions are authoritative; the active tab is only a view. */
 export const useEditor = create<State>((set, get) => {
@@ -76,7 +79,7 @@ export const useEditor = create<State>((set, get) => {
       if (target.definition && !state.doc.definitions?.some(d => d.id === target.definition)) { set({ assets: { ...state.assets, [info.id]: info }, source: state.source ?? info }); return }
       const body = graphView(state.doc, target.definition), previous = body.nodes.find(n => n.id === target.node)
       clearThumbnails(state)
-      commit(replaceView(state.doc, target.definition, { ...body, nodes: body.nodes.map(n => n.id === target.node && n.type === 'source' ? { ...n, asset: info.id, assetName: info.name } : n) }))
+      commit(replaceView(state.doc, target.definition, { ...body, nodes: body.nodes.map(n => n.id === target.node && (n.type === 'source' || n.type === 'clip') ? { ...n, asset: info.id, assetName: info.name } : n) }))
       const reference = !state.source || state.source.id === previous?.asset || !previous?.asset && state.assets[info.id] === undefined && Object.keys(state.assets).length === 0
       set({ assets: { ...state.assets, [info.id]: info }, ...(reference ? { source: info, frame: 0 } : {}), result: null, pixel: null, thumbnails: {}, statuses: {} })
     },
@@ -90,7 +93,7 @@ export const useEditor = create<State>((set, get) => {
       edit(view => insertPrefab(view, value, position ?? { x: 40, y: Math.max(0, ...view.nodes.map(n => n.position.y)) + 600 }, freshId))
       const inserted = get().view.nodes.filter(n => !before.has(n.id))
       if (!inserted.length) return
-      set(s => ({ highlighted: inserted.map(n => n.id), focused: inserted[0]!.id, revision: s.revision + 1, previews: { ...s.previews, ...Object.fromEntries(inserted.map(n => [n.id, n.type === 'source' || n.type === 'output'])) } }))
+      set(s => ({ highlighted: inserted.map(n => n.id), focused: inserted[0]!.id, revision: s.revision + 1, previews: { ...s.previews, ...Object.fromEntries(inserted.map(n => [n.id, (n.type === 'source' || n.type === 'clip') || n.type === 'output'])) } }))
     },
     // Editing focus and the inspector target are deliberately independent.
     focus: focused => set({ focused, highlighted: [focused] }),
@@ -98,9 +101,9 @@ export const useEditor = create<State>((set, get) => {
     parameter: (id, key, value) => edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === id ? { ...n, params: { ...n.params, [key]: value } } : n) })),
     add: (type, position, definition) => {
       if (get().view.nodes.length >= 100) { set({ error: 'A graph can contain up to 100 nodes.' }); return }
-      const id = freshId(), node = { id, type, position, params: defaultParams(type), ...(definition ? { definition } : {}) }
+      const id = freshId(), node = { id, type, position, params: defaultParams(type), ...(definition ? type === 'makeRecord' || type === 'breakRecord' ? { dataType: definition } : { definition } : {}) }
       try {
-        if (type === 'group') node.params = Object.fromEntries(specFor(node, get().view).parameters.map(p => [p.key, p.default]))
+        if (type === 'group' || type === 'makeRecord' || type === 'breakRecord') node.params = Object.fromEntries(specFor(node, get().view).parameters.map(p => [p.key, p.default]))
         edit(view => { const next = { ...view, nodes: [...view.nodes, node] }; parseDocument(replaceView(get().doc, view.interfaceId, next)); return next })
         if (get().view.nodes.some(n => n.id === id)) set({ focused: id, highlighted: [id] })
       } catch (error) { set({ error: String(error) }) }
@@ -138,6 +141,7 @@ export const useEditor = create<State>((set, get) => {
         commit(doc); set(s => ({ selected: s.view.nodes.some(n => n.id === s.selected) ? s.selected : instance, focused: instance, highlighted: [instance], port: s.view.nodes.some(n => n.id === s.selected) ? s.port : null, revision: s.revision + 1 })); get().openGroup(instance)
       } catch (error) { set({ error: error instanceof Error ? error.message : String(error) }) }
     },
+    changeDataType: schema => { try { commit(updateDataType(get().doc, schema)) } catch (error) { set({ error: String(error) }) } },
     changeInterface: (id, patch) => { try { commit(updateInterface(get().doc, id, patch)) } catch (error) { set({ error: String(error) }) } },
     undo: () => {
       const s = get(), doc = s.past.at(-1); if (!doc || s.busy === 'bake') return
@@ -151,5 +155,5 @@ export const useEditor = create<State>((set, get) => {
 })
 
 /** Layout and interface labels are excluded from semantic processing identity. */
-export const computationKey = (doc: GraphDocument): string => JSON.stringify({ nodes: doc.nodes.map(({ id, type, params, definition, asset }) => ({ id, type, params, definition, asset })), edges: doc.edges, definitions: doc.definitions?.map(d => ({ id: d.id, inputs: d.inputs, outputs: d.outputs, graph: computationKey(d.graph) })) })
+export const computationKey = (doc: GraphDocument): string => JSON.stringify({ nodes: doc.nodes.map(({ id, type, params, definition, dataType, asset }) => ({ id, type, params, definition, dataType, asset })), edges: doc.edges, dataTypes: doc.dataTypes, definitions: doc.definitions?.map(d => ({ id: d.id, inputs: d.inputs, outputs: d.outputs, graph: computationKey(d.graph) })) })
 export const nodeTitle = (id: string) => { const { view } = useEditor.getState(), node = view.nodes.find(n => n.id === id); return node ? specFor(node, view).title : 'Output' }

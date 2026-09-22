@@ -1,4 +1,4 @@
-import { SPECS } from './specs'
+import { SPECS, HIDDEN_NODES } from './specs'
 import type { NodeType } from './types'
 
 const normalize = (text: string) => text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -17,7 +17,7 @@ export const typoDistance = (a: string, b: string): number => {
 /** Rank names first, then algorithms and properties; require every query word to match. */
 export const searchNodes = (query: string): NodeType[] => {
   const words = normalize(query).split(' ').filter(Boolean)
-  return Object.values(SPECS).filter(s => !['group', 'groupInput', 'groupOutput'].includes(s.type)).map(spec => {
+  return Object.values(SPECS).filter(s => !HIDDEN_NODES.includes(s.type)).map(spec => {
     const fields: [string, number][] = [[`${spec.title} ${spec.type}`, 0], [spec.algorithm, 0.3], [spec.parameters.map(p => `${p.key} ${p.label}`).join(' '), 0.5], [[...spec.inputs, ...spec.outputs].map(p => p.label).join(' '), 0.7], [spec.category, 1], [spec.description, 2]]
     let score = 0
     for (const word of words) {

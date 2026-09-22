@@ -1,17 +1,17 @@
 import { initOpenCV } from '@banou/opencv-wasm'
 import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
 import { ResultCache } from '../engine/cache'
-import { execute } from '../engine/execute'
+import { evaluateGraph } from '../engine/evaluate'
 import { parseDocument } from '../engine/graph'
-import { planGraph } from '../engine/plan'
 import { outputCount, outputTime } from '../engine/time'
 import type { Lease } from '../engine/types'
 import { Presenter } from '../gpu/presenter'
 import { VideoSource } from '../video/source'
 import { MovieEncoder } from '../video/encoder'
-import type { Inspection, WorkerCommand, WorkerEvent } from '../protocol'
+import type { Inspection, SourceDemand, WorkerCommand, WorkerEvent } from '../protocol'
 import { displayPixels, runKernel } from './kernels'
 import type { Payload } from './kernels'
+import { parameterValue, payloadSummary } from './payload'
 
 const scope = self as DedicatedWorkerGlobalScope
 const post = (event: WorkerEvent, transfer: Transferable[] = []) => scope.postMessage(event, transfer)
@@ -30,18 +30,42 @@ let thumbnailGeneration = 0
 let initialization: Promise<void> | undefined
 
 const evaluate = async (value: Inspection, request: number, extraCancelled = () => false, silent = false) => {
-  if (!source) throw new Error('Load a video clip first')
-  const currentSource = sources.get(value.referenceAsset ?? '') ?? source
-  const plan = planGraph(parseDocument(value.doc), value.selected, value.port, value.frame, currentSource.info.id, currentSource.info.frameCount, value.path, catalog())
-  return execute(plan, {
-    cache, cancelled: () => request !== latest || extraCancelled(), yield: wait, now: () => performance.now(),
+  const currentSource = sources.get(value.referenceAsset ?? '') ?? source, doc = parseDocument(value.doc)
+  const sourceById = (id: string) => { const video = sources.get(id); for (const other of sources.values()) if (other !== video) other.close(); return video }
+  const demands = new Map<string, SourceDemand>()
+  const result = await evaluateGraph(doc, value.selected, value.port, value.frame, value.path ?? [], {
+    cache, assets: catalog(), sourceId: currentSource?.info.id, parameter: parameterValue,
+    cancelled: () => request !== latest || extraCancelled(), yield: wait, now: () => performance.now(),
     status: status => { if (request === latest && !silent) post({ type: 'status', request, value: status }) },
-    kernel: (step, inputs) => {
-      const inputSource = step.asset ? sources.get(step.asset)! : currentSource
-      if (step.node.type === 'source') for (const other of sources.values()) if (other !== inputSource) other.close()
-      return runKernel(step, inputs, inputSource, () => request !== latest || extraCancelled())
+    trace: (step, inputs) => {
+      const video = inputs['in:video:clip']
+      const asset = step.node.type === 'source' ? step.asset : step.node.type === 'readFrame' && video?.kind === 'video' ? video.asset : undefined
+      if (asset) {
+        const frame = step.node.type === 'source' ? step.frame : Number(step.node.params.frame)
+        demands.set(`${asset}:${frame}`, { asset, frame })
+      }
     },
+    kernel: (step, inputs) => runKernel(step, inputs, step.asset ? step.node.type === 'source' ? sourceById(step.asset) : sources.get(step.asset) : currentSource, () => request !== latest || extraCancelled(), doc, sourceById),
   })
+  return { ...result, sources: [...demands.values()] }
+}
+
+/** Frame lists show a contact sheet; selecting Pyramid Level exposes its actual pixels. */
+const visualization = (value: Payload, gain: number): { rgba: Uint8Array<ArrayBuffer>; width: number; height: number } | undefined => {
+  const frame = value.kind === 'frame' ? value : value.kind === 'motion' ? value.preview : undefined
+  if (frame) return { rgba: displayPixels(frame, gain), width: frame.mat.cols, height: frame.mat.rows }
+  if (value.kind !== 'frames') return
+  const columns = Math.min(3, value.frames.length), width = columns * 240, height = Math.ceil(value.frames.length / columns) * 190
+  const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#182019'; ctx.fillRect(0, 0, width, height)
+  for (const [i, frame] of value.frames.entries()) {
+    const raw = new OffscreenCanvas(frame.mat.cols, frame.mat.rows)
+    raw.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(displayPixels(frame, gain)), raw.width, raw.height), 0, 0)
+    const scale = Math.min(220 / raw.width, 145 / raw.height), x = (i % columns) * 240 + 10, y = Math.floor(i / columns) * 190 + 30
+    ctx.drawImage(raw, x, y, raw.width * scale, raw.height * scale)
+    ctx.fillStyle = '#d0ddc6'; ctx.font = '12px sans-serif'; ctx.fillText(`Level ${i} · ${raw.width} × ${raw.height}`, x, y - 10)
+  }
+  return { rgba: new Uint8Array(ctx.getImageData(0, 0, width, height).data.buffer), width, height }
 }
 
 const work = async (job: Job) => {
@@ -65,13 +89,11 @@ const work = async (job: Job) => {
     try {
       const value = result.value
       const frame = value.kind === 'frame' ? value : value.kind === 'motion' ? value.preview : undefined
-      if (frame) {
-        const rgba = displayPixels(frame, job.value.gain)
-        width = frame.mat.cols; height = frame.mat.rows
-        presenter.show(rgba, width, height); pixels = rgba
-      }
+      const visual = visualization(value, job.value.gain)
+      if (visual) { width = visual.width; height = visual.height; pixels = visual.rgba; presenter.show(pixels, width, height) }
+      else { width = 0; height = 0; pixels = undefined }
       displayed?.release(); displayed = result
-      post({ type: 'result', request: job.request, selected: job.value.selected, path: job.value.path, frame: job.value.frame, width, height, scalar: value.kind === 'scalar' ? value.value : undefined, motion: value.kind === 'motion' ? { dx: value.dx, dy: value.dy, response: value.response } : undefined, range: frame?.range ?? 'unit', elapsed: performance.now() - started, cacheBytes: cache.bytes, cacheEntries: cache.size })
+      post({ type: 'result', request: job.request, selected: job.value.selected, path: job.value.path, frame: job.value.frame, width, height, kind: value.kind, sources: result.sources, summary: payloadSummary(value), scalar: value.kind === 'scalar' ? value.value : undefined, motion: value.kind === 'motion' ? { dx: value.dx, dy: value.dy, response: value.response } : undefined, range: frame?.range ?? 'unit', elapsed: performance.now() - started, cacheBytes: cache.bytes, cacheEntries: cache.size })
     } catch (error) { if (displayed !== result) result.release(); throw error }
     return
   }
@@ -81,8 +103,7 @@ const work = async (job: Job) => {
   if (![24, 25, 30, 50, 60, 120].includes(job.fps)) throw new Error('Choose a supported output frame rate')
   const total = outputCount(job.start, job.end, reference.info.fps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
-  const doc = parseDocument(job.value.doc)
-  for (const frame of [job.start, outputTime(total - 1, job.start, reference.info.fps, job.fps)]) planGraph(doc, job.value.selected, job.value.port, frame, reference.info.id, reference.info.frameCount, job.value.path, catalog())
+  parseDocument(job.value.doc)
   let encoder: MovieEncoder | undefined
   let count = 0
   try {
@@ -110,7 +131,6 @@ const work = async (job: Job) => {
 /** Thumbnails use the same native cache, but never replace the main inspector surface. */
 const thumbnails = async (job: Extract<WorkerCommand, { type: 'thumbnails' }>) => {
   await initialization
-  if (!source) return
   const request = latest, cancelled = () => job.generation !== thumbnailGeneration || request !== latest
   for (const node of job.nodes) {
     if (cancelled()) return
@@ -119,18 +139,18 @@ const thumbnails = async (job: Extract<WorkerCommand, { type: 'thumbnails' }>) =
       try {
         if (cancelled()) return
         const value = result.value
-        if (value.kind === 'scalar') post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, scalar: value.value })
+        const visual = visualization(value, job.value.gain)
+        if (!visual) post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, kind: value.kind, summary: payloadSummary(value), scalar: value.kind === 'scalar' ? value.value : undefined })
         else {
-          const frame = value.kind === 'motion' ? value.preview : value
-          const raw = new OffscreenCanvas(frame.mat.cols, frame.mat.rows), context = raw.getContext('2d')
+          const raw = new OffscreenCanvas(visual.width, visual.height), context = raw.getContext('2d')
           if (!context) throw new Error('Cannot create node preview')
-          context.putImageData(new ImageData(new Uint8ClampedArray(displayPixels(frame, job.value.gain)), raw.width, raw.height), 0, 0)
+          context.putImageData(new ImageData(new Uint8ClampedArray(visual.rgba), raw.width, raw.height), 0, 0)
           const width = 320, height = Math.max(1, Math.round(width * raw.height / raw.width)), small = new OffscreenCanvas(width, height), ctx = small.getContext('2d')
           if (!ctx) throw new Error('Cannot resize node preview')
           ctx.drawImage(raw, 0, 0, width, height)
           const bitmap = small.transferToImageBitmap()
           if (cancelled()) { bitmap.close(); return }
-          post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, bitmap }, [bitmap])
+          post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, kind: value.kind, bitmap }, [bitmap])
         }
       } finally { result.release() }
     } catch (error) {

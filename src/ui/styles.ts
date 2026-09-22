@@ -33,6 +33,27 @@ export const styles = css`
   .operation-head { display: flex; align-items: center; gap: 9px; padding: 12px; border-bottom: 1px solid #3a4433; } .operation-head small { display: block; font: 8px 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 1.4px; color: #9fad92; margin-bottom: 4px; } .operation-head strong { font-size: 13px; font-weight: 600; } .op-symbol { font: 21px 'JetBrains Mono', monospace; color: #c5e7ae; width: 27px; text-align: center; } .op-symbol.motion { color: #9caef4; } .op-symbol.delta { color: #efbc7b; }
   .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #56604e; margin-left: auto; } .status-dot.done { background: #c5e7ae; } .status-dot.running { background: #efbc7b; animation: blink .6s infinite alternate; } .status-dot.cached { background: #9caef4; } @keyframes blink { to { opacity: .3; } }
   .sockets { padding: 7px 0; } .socket { position: relative; height: 25px; display: flex; align-items: center; gap: 5px; padding: 0 13px; font-size: 10px; } .socket code { margin-left: auto; color: #b5c4a7; font-size: 9px; } .socket.output { justify-content: flex-end; color: #c4d4b9; } .react-flow__handle { width: 12px; height: 12px; border: 0; border-radius: 50%; background: transparent; } .react-flow__handle-left { left: 0; } .react-flow__handle-right { right: 0; }
+  .parameter-socket { height: auto; min-height: 38px; flex-wrap: wrap; padding-top: 5px; padding-bottom: 5px; border-top: 1px solid #394331; }
+  .socket > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .socket-type { color: var(--socket-color); opacity: .78; font-size: 8px; white-space: nowrap; margin-left: auto; }
+  .socket.output .socket-type { margin-left: 0; margin-right: auto; }
+  .socket-control { width: 100%; display: flex; justify-content: flex-end; }
+  .socket-control input:not([type=checkbox]), .socket-control select { width: 100%; min-width: 0; padding: 4px 6px; font-size: 11px; }
+  .wired-parameter { color: #c5e7ae; font-size: 10px; padding: 3px 0; }
+  .thumbnail-value { white-space: pre-wrap; overflow: auto; max-height: 100%; width: 100%; padding: 10px; font-size: 11px; color: #d2dfc6; }
+  .value-preview { padding: 30px; width: 100%; height: 100%; overflow: auto; }
+  .value-preview pre { margin-top: 15px; white-space: pre-wrap; font-size: 14px; line-height: 1.8; }
+  .graph-flow-guide { padding: 7px 12px; border-bottom: 1px solid #34422c; color: #bfd3ad; background: #1b2418; font-size: 10px; flex-shrink: 0; }
+  .graph-bottom { flex-wrap: wrap; gap: 7px; }
+  .data-type-controls { margin-left: auto; display: flex; align-items: center; }
+  .data-type-editor { position: fixed; z-index: 1001; top: 85px; left: 20px; width: min(520px, calc(100vw - 40px)); max-height: calc(100dvh - 110px); overflow: auto; padding: 16px; background: #20281d; border: 1px solid #687f54; border-radius: 10px; box-shadow: 0 10px 50px #0008; }
+  .data-type-heading, .data-type-toolbar, .data-type-field { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .data-type-heading strong { flex: 1; }
+  .data-type-editor p, .data-type-editor small { color: #b0bea2; font-size: 11px; line-height: 1.6; display: block; margin: 10px 0; }
+  .data-type-editor label { display: flex; gap: 12px; align-items: center; font-size: 11px; margin: 12px 0; }
+  .data-type-field input { flex: 1; min-width: 0; width: 40%; }
+  .data-type-field select { width: 140px; }
+  .data-type-fields { margin: 12px 0; }
   .menu-backdrop { position: fixed; inset: 0; z-index: 1000; cursor: default; }
   .node-menu.connection-menu { width: 340px; }
   .connection-menu .menu-title button { margin-left: auto; }

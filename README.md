@@ -247,7 +247,8 @@ nodes are hidden from the add menu; new prefabs use explicit clip/frame flow.
 1. Open an MP4 and wire an image into an Output node.
 2. Scrub the source-frame timeline. Use **Between frames** to inspect fractional
    times, which your graph can use through the Time node.
-3. Choose a root Output, inclusive source-frame range and output frame rate.
+3. Choose a root Output and output frame rate. The range defaults to the entire
+   clip, from frame 0 through the last frame; shorten it only when you want a test render.
 4. Render, play the generated video, and save its MP4 to the project folder.
 
 Output timestamps are mapped to source time using rational rates, including
@@ -270,8 +271,10 @@ Current limits:
   by frame index; the **Timeline reference** sets the frame rate used for time and
   rendering. There is no automatic rate conversion between input clips. Unbound
   prefab sources follow the reference clip until you attach their own media.
-- Temporal branches need valid source frames. An N+1 graph cannot render the last
-  source drawing without another drawing after it. No hidden frame clamping occurs.
+- Rendering repeats the last source drawing for forward-looking requests beyond
+  the clip, so N+1 camera graphs render the entire duration, including the final
+  frame interval. This applies separately to each input clip. Interactive frame
+  inspection still reports unavailable indices; negative indices remain invalid.
 - Native calls finish atomically; cancellation occurs between operations and frames.
   Rendering is offline, not a promise of real-time 60 fps processing.
 - The native result cache is 512 MiB. That is not a total process-memory limit:

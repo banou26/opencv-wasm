@@ -21,6 +21,12 @@ const fixture = () => {
       count++; parameters.push(step.node.params)
       let outputs: Record<string, string | number | boolean> = {}
       if (step.node.type === 'source') { sourceFrames.push(step.frame); outputs = { 'out:frame:image': step.frame } }
+      else if (step.node.type === 'clip') outputs = { 'out:video:clip': step.asset! }
+      else if (step.node.type === 'readFrame') {
+        const index = Number(step.node.params.frame), frames = context.assets[String(inputs['in:video:clip'])]!.frameCount
+        if (index >= frames) throw new Error('Frame is outside this clip')
+        sourceFrames.push(index); outputs = { 'out:frame:image': index }
+      }
       else if (step.node.type === 'constant') outputs = { 'out:scalar:value': Number(step.node.params.value) }
       else if (step.node.type === 'time') outputs = { 'out:scalar:index': Math.floor(step.frame), 'out:scalar:frame': step.frame }
       else if (step.node.type === 'text') outputs = { 'out:string:value': String(step.node.params.value) }
@@ -124,4 +130,28 @@ test('editing a group interface retains named-record context inside its graph', 
   const renamed = updateInterface(graph, definition.id, { name: 'Read Data', inputs: definition.inputs, outputs: definition.outputs })
   expect(renamed.definitions?.[0]?.name).toBe('Read Data'); expect(renamed.definitions?.[0]?.inputs[0]?.schema).toBe('tdata')
   expect(() => parseDocument(renamed)).not.toThrow()
+})
+
+test('rendering holds each explicit clip endpoint and cannot leak that behavior into inspection', async () => {
+  const f = fixture()
+  f.context.assets.short = { frameCount: 3 }
+  f.context.clipFrameCount = value => f.context.assets[String(value)]?.frameCount
+  let graph = doc({ ...n('nv', 'clip'), asset: 'short' }, n('nf', 'readFrame', { frame: 3 }))
+  graph = wire(graph, 'nv', 'out:video:clip', 'nf', 'in:video:clip')
+  const result = await evaluateGraph(graph, 'nf', null, 39.5, [], { ...f.context, holdLastFrame: true })
+  expect(result.value).toBe(2); expect(f.sourceFrames).toEqual([2]); result.release()
+  expect(graph.nodes[1]?.params.frame).toBe(3)
+  await expect(evaluateGraph(graph, 'nf', null, 39.5, [], f.context)).rejects.toThrow('outside this clip')
+  graph.nodes[1]!.params.frame = 2
+  const cached = await evaluateGraph(graph, 'nf', null, 39.5, [], f.context)
+  expect(cached.value).toBe(2); expect(f.sourceFrames).toEqual([2]); cached.release(); f.context.cache.clear()
+})
+test('rendering legacy N+1 graphs holds the last drawing while inspection still rejects it', async () => {
+  const f = fixture(); let graph = doc(n('ns', 'source'), n('nd', 'delta'))
+  graph = wire(graph, 'ns', 'out:frame:image', 'nd', 'in:frame:a'); graph = wire(graph, 'ns', 'out:frame:image', 'nd', 'in:frame:b')
+  const result = await evaluateGraph(graph, 'nd', null, 39.5, [], { ...f.context, holdLastFrame: true })
+  expect(result.value).toBe(0); expect(f.sourceFrames).toEqual([39]); result.release()
+  await expect(evaluateGraph(graph, 'nd', null, 39.5, [], f.context)).rejects.toThrow('outside this clip')
+  await expect(evaluateGraph(graph, 'nd', null, -1, [], { ...f.context, holdLastFrame: true })).rejects.toThrow('outside this clip')
+  f.context.cache.clear()
 })

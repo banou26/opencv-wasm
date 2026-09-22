@@ -1,6 +1,6 @@
 import { createFile, MP4BoxBuffer, MultiBufferStream, VisualSampleEntry } from 'mp4box'
 import type { Sample, Track } from 'mp4box'
-import { frameRate, presentationOrder, startSample } from '../engine/video-index'
+import { avcHasIdr, frameRate, presentationOrder, startSample } from '../engine/video-index'
 import type { SourceInfo } from '../protocol'
 
 const pause = () => new Promise<void>(resolve => setTimeout(resolve, 1))
@@ -14,6 +14,7 @@ export class VideoSource {
   private needsKey = true
   private failure: Error | null = null
   private generation = 0
+  private submitted = new Set<number>()
   private ranks = new Map<number, number>()
   private minimumRank = 0
   readonly ordered: Sample[]
@@ -54,6 +55,11 @@ export class VideoSource {
       config = { ...config, hardwareAcceleration: 'prefer-hardware' }; decoder = 'hardware'
       if (!(await VideoDecoder.isConfigSupported(config)).supported) throw new Error(`This browser cannot decode ${track.codec}. Convert the clip to an H.264 MP4 first.`)
     }
+    // MP4 open-GOP sync samples may be non-IDR pictures that cannot start WebCodecs AVC decoding.
+    if (config.codec.startsWith('avc') && bytes && bytes.length >= 5) {
+      const lengthBytes = (bytes[4]! & 3) + 1
+      for (const sample of samples) if (sample.is_sync) sample.is_sync = avcHasIdr(new Uint8Array(await file.slice(sample.offset, sample.offset + sample.size).arrayBuffer()), lengthBytes)
+    }
     const ordered = presentationOrder(samples)
     const warnings = ['Video input is decoded to 8-bit RGBA. Use the original 16-bit PNGs outside this video path for precision measurements.']
     if (decoder === 'hardware') warnings.push('Hardware decoding can alter color and make seeking slower on this machine. H.264 software decoding is preferred.')
@@ -62,7 +68,7 @@ export class VideoSource {
   }
 
   private reset(target: Sample) {
-    this.generation++
+    this.generation++; this.submitted.clear()
     if (this.decoder && this.decoder.state !== 'closed') this.decoder.close()
     this.failure = null; this.next = startSample(this.samples, target); this.needsKey = false
     this.minimumRank = this.ranks.get(this.next) ?? 0
@@ -70,11 +76,13 @@ export class VideoSource {
     this.decoder = new VideoDecoder({
       output: frame => {
         const rank = frame.timestamp
-        if (generation !== this.generation || rank < Math.max(this.minimumRank, this.wanted - 2) || rank > this.wanted + 8) { frame.close(); return }
+        if (generation !== this.generation) { frame.close(); return }
+        this.submitted.delete(rank)
+        if (rank < Math.max(this.minimumRank, this.wanted - 2) || rank > this.wanted + 8) { frame.close(); return }
         this.frames.get(rank)?.close(); this.frames.set(rank, frame)
         this.prune()
       },
-      error: error => { if (generation === this.generation) this.failure = error },
+      error: error => { if (generation === this.generation) this.failure = new Error(`Cannot decode frame ${this.wanted}: ${error.message}`) },
     })
     this.decoder.configure(this.config)
   }
@@ -88,8 +96,8 @@ export class VideoSource {
     const target = this.ordered[rank]
     if (!Number.isInteger(rank) || !target) throw new Error(`Frame ${rank} is outside the clip`)
     const hit = this.frames.get(rank)
-    if (hit) return hit.clone()
-    if (this.needsKey || !this.decoder || this.decoder.state === 'closed' || rank < this.wanted || target.number < this.next) this.reset(target)
+    if (hit) { this.wanted = rank; this.prune(); return hit.clone() }
+    if (this.needsKey || !this.decoder || this.decoder.state === 'closed' || rank < this.wanted || target.number < this.next && !this.submitted.has(rank)) this.reset(target)
     this.wanted = rank; this.prune()
     const decoder = this.decoder
     if (!decoder) throw new Error('Video decoder did not initialize')
@@ -113,6 +121,7 @@ export class VideoSource {
       if (cancelled()) throw new Error('Cancelled')
       const timestamp = this.ranks.get(sample.number)
       if (timestamp === undefined) throw new Error('Missing presentation timestamp')
+      this.submitted.add(timestamp)
       decoder.decode(new EncodedVideoChunk({ type: sample.is_sync ? 'key' : 'delta', timestamp, duration: 1, data }))
       this.next++
     }
@@ -123,7 +132,7 @@ export class VideoSource {
 
   /** Close all retained frames and invalidate callbacks from the previous session. */
   close() {
-    this.generation++
+    this.generation++; this.submitted.clear()
     if (this.decoder?.state !== 'closed') this.decoder?.close()
     for (const frame of this.frames.values()) frame.close()
     this.frames.clear(); this.decoder = null

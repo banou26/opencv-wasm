@@ -29,12 +29,13 @@ let pendingThumbnails: Extract<WorkerCommand, { type: 'thumbnails' }> | undefine
 let thumbnailGeneration = 0
 let initialization: Promise<void> | undefined
 
-const evaluate = async (value: Inspection, request: number, extraCancelled = () => false, silent = false) => {
+const evaluate = async (value: Inspection, request: number, extraCancelled = () => false, silent = false, holdLastFrame = false) => {
   const currentSource = sources.get(value.referenceAsset ?? '') ?? source, doc = parseDocument(value.doc)
   const sourceById = (id: string) => { const video = sources.get(id); for (const other of sources.values()) if (other !== video) other.close(); return video }
   const demands = new Map<string, SourceDemand>()
   const result = await evaluateGraph(doc, value.selected, value.port, value.frame, value.path ?? [], {
-    cache, assets: catalog(), sourceId: currentSource?.info.id, parameter: parameterValue,
+    cache, assets: catalog(), sourceId: currentSource?.info.id, parameter: parameterValue, holdLastFrame,
+    clipFrameCount: value => value.kind === 'video' ? value.info.frameCount : undefined,
     cancelled: () => request !== latest || extraCancelled(), yield: wait, now: () => performance.now(),
     status: status => { if (request === latest && !silent) post({ type: 'status', request, value: status }) },
     trace: (step, inputs) => {
@@ -99,7 +100,7 @@ const work = async (job: Job) => {
   }
   const reference = sources.get(job.value.referenceAsset ?? '') ?? source
   if (!reference) throw new Error('Load a clip before baking')
-  if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start) throw new Error('Choose a valid inclusive frame range')
+  if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start || job.end >= reference.info.frameCount) throw new Error('Choose a valid inclusive frame range')
   if (![24, 25, 30, 50, 60, 120].includes(job.fps)) throw new Error('Choose a supported output frame rate')
   const total = outputCount(job.start, job.end, reference.info.fps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
@@ -109,7 +110,8 @@ const work = async (job: Job) => {
   try {
     for (let index = 0; index < total && job.request === latest; index++) {
       const frame = outputTime(index, job.start, reference.info.fps, job.fps)
-      const result = await evaluate({ ...job.value, frame }, job.request)
+      // Extend each input clip with its last drawing so N+1 dependencies include the final interval.
+      const result = await evaluate({ ...job.value, frame }, job.request, () => false, false, true)
       try {
         if (job.request !== latest) break
         if (result.value.kind !== 'frame') throw new Error('Select an image output to bake. Scalar outputs are available in Inspect.')

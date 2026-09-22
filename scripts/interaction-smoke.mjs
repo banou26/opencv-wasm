@@ -8,6 +8,8 @@ export const dragSmoke = async (page, project) => {
   await page.waitForFunction(() => document.querySelector('[data-testid=preview-n1] canvas')?.width === 320)
   for (const surface of ['.operation-head strong', '.node-preview-toolbar > span', '.node-thumbnail canvas']) {
     const before = (await project()).nodes.find(n => n.id === 'n1').position
+    // Wait for Fit View and preview sizing to settle before taking drag coordinates.
+    await node.locator(surface === '.node-thumbnail canvas' ? '.node-thumbnail' : surface).hover()
     const header = await node.locator(surface).boundingBox()
     const x = header.x + Math.min(15, header.width / 2), y = header.y + header.height / 2
     await page.mouse.move(x, y); await page.mouse.down()

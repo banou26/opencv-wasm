@@ -22,3 +22,21 @@ export const frameRate = (timestamps: number[], timescale: number): number => {
   const nearest = standards.reduce((a, b) => Math.abs(a - measured) < Math.abs(b - measured) ? a : b)
   return Math.abs(nearest - measured) / measured < 0.012 ? nearest : measured
 }
+
+/** WebCodecs AVC key chunks require an IDR, not just an MP4 open-GOP sync flag.
+ * https://www.w3.org/TR/webcodecs-avc-codec-registration/#encodedvideochunk-type
+ */
+export const avcHasIdr = (data: Uint8Array, lengthBytes: number): boolean => {
+  if (![1, 2, 4].includes(lengthBytes)) throw new Error('Invalid AVC NAL length size')
+  let offset = 0, idr = false
+  while (offset < data.length) {
+    if (offset + lengthBytes > data.length) throw new Error('Truncated AVC NAL length')
+    let size = 0
+    for (let i = 0; i < lengthBytes; i++) size = size * 256 + data[offset + i]!
+    offset += lengthBytes
+    if (!size || offset + size > data.length) throw new Error('Invalid AVC NAL payload size')
+    if ((data[offset]! & 31) === 5) idr = true
+    offset += size
+  }
+  return idr
+}

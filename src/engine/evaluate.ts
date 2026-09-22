@@ -11,6 +11,9 @@ export type GraphEvaluation<T> = ExecutionContext<T> & {
   parameter: (value: T) => string | number | boolean
   sourceId?: string
   assets: SourceCatalog
+  /** Rendering can extend a clip's last drawing for forward-looking dependencies. Inspection stays strict. */
+  holdLastFrame?: boolean
+  clipFrameCount?: (video: T) => number | undefined
   /** Observe resolved steps, including cache hits, for truthful source-frame provenance. */
   trace?: (step: Step, inputs: Record<string, T>) => void
 }
@@ -93,21 +96,26 @@ export const evaluateGraph = async <T>(root: GraphDocument, selected: string, po
   }
   const run = async (node: GraphNode, time: number, path: string[], refs: Step['inputs'], inputs: Map<string, Target<T>>, output: string): Promise<Target<T>> => {
     try {
+      const payloads = Object.fromEntries([...inputs].map(([id, value]) => {
+        const payload = value.lease.value.outputs[value.port]
+        if (payload === undefined) throw new Error('A required input was not produced')
+        return [id, payload]
+      }))
       const asset = node.type === 'source' || node.type === 'clip' ? node.asset ?? context.sourceId : undefined
       if (node.type === 'source' || node.type === 'clip') {
         if (!asset || !context.assets[asset]) throw new Error(`Attach ${node.assetName ?? 'a video'} to this Video Source node`)
+        if (node.type === 'source' && context.holdLastFrame) time = Math.min(time, context.assets[asset]!.frameCount - 1)
         if (node.type === 'source' && (time < 0 || Math.floor(time) >= context.assets[asset]!.frameCount)) throw new Error(`Frame ${time} is outside this clip`)
+      }
+      if (node.type === 'readFrame' && context.holdLastFrame) {
+        const video = payloads['in:video:clip'], count = video !== undefined ? context.clipFrameCount?.(video) : undefined
+        if (count && Number(node.params.frame) >= count) node = { ...node, params: { ...node.params, frame: count - 1 } }
       }
       const spec = specFor(node, root)
       // Resolved parameter values carry their own identity. A Time node can emit the
       // same integer frame index at several subframes; that must reuse decoded pixels.
       const dataRefs = Object.fromEntries(Object.entries(refs).filter(([id]) => !spec.inputs.find(p => p.id === id)?.parameter))
       const key = contentKey([node.type, spec.version, node.params, node.dataType, dataRefs, node.type === 'source' ? [asset, Math.floor(time)] : node.type === 'clip' ? asset : node.type === 'time' ? [context.sourceId ?? null, time] : null].map(v => v === undefined ? null : v))
-      const payloads = Object.fromEntries([...inputs].map(([id, value]) => {
-        const payload = value.lease.value.outputs[value.port]
-        if (payload === undefined) throw new Error('A required input was not produced')
-        return [id, payload]
-      }))
       const step: Step = { key, node, frame: node.type === 'source' ? Math.floor(time) : time, path, ...(asset ? { asset } : {}), inputs: refs }
       context.trace?.(step, payloads)
       let lease = context.cache.acquire(key)

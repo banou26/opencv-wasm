@@ -85,6 +85,8 @@ try {
   const pipeline = (type, params) => ({ version: 1, nodes: [node('n1', 'source'), node('n2', type, params, 350), node('n5', 'output', {}, 680)], edges: [edge('n1', 'n2'), edge('n2', 'n5')] })
   const sourceGraph = { version: 1, nodes: [node('n1', 'source'), node('n5', 'output', {}, 350)], edges: [edge('n1', 'n5')] }
   await change(() => page.locator('input[type=file][accept*="video"]').first().setInputFiles(fixture.video))
+  assert.equal(await page.getByLabel('Render first frame').inputValue(), '0')
+  assert.equal(await page.getByLabel('Render last frame').inputValue(), '31', 'A newly loaded clip defaults to all frames')
   await upload(sourceGraph)
   const sourcePixels = new Map()
   for (const frame of [0, 7, 23, 2, 31, 9, 0]) {
@@ -197,18 +199,25 @@ try {
   console.log('PASS: node previews, typo/property search, multi-selection grouping, renamed interfaces and project round-trip')
   await choose('motion'); await change(() => page.locator('.step-strip button').filter({ hasText: 'Estimate Translation' }).click()); const motionText = await page.locator('.motion-key strong').innerText(); const displacement = motionText.match(/Δx ([\d.-]+) px.*Δy ([\d.-]+) px/); assert.ok(displacement); assert.ok(Math.abs(Number(displacement[1]) - 2) < 0.3 && Math.abs(Number(displacement[2]) - 1) < 0.3, motionText); await change(() => page.locator('.step-strip button').filter({ hasText: 'Output' }).click()); await change(() => page.getByLabel('Subframe fraction').fill('0.5'))
   const atHalf = await png(); await change(() => page.getByLabel('Subframe fraction').fill('0')); const atZero = await png(); assert.notDeepEqual(atHalf, atZero)
-  await page.getByLabel('Render last frame').fill('3')
+  assert.equal(await page.getByLabel('Render last frame').inputValue(), '31', 'Changing graphs preserves the full clip range')
   await page.getByRole('button', { name: 'Render video', exact: false }).click(); await page.getByRole('button', { name: 'Save MP4 to folder', exact: true }).waitFor({ timeout: 45000 })
-  assert.match(await page.locator('.movie-caption').innerText(), /10 frames · 60 fps/)
+  assert.match(await page.locator('.movie-caption').innerText(), /80 frames · 60 fps/)
   const movie = async name => {
     const url = await page.locator('.movie-preview video, .render-preview video, video').getAttribute('src')
     const bytes = await page.evaluate(async u => Array.from(new Uint8Array(await (await fetch(u)).arrayBuffer())), url), file = resolve(directory, name)
     await writeFile(file, Buffer.from(bytes))
     return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file], { encoding: 'utf8' }))
   }
-  const info = await movie('generated.mp4'); assert.equal(info.streams.length, 1); assert.equal(info.streams[0].nb_read_frames, '10'); assert.equal(info.streams[0].r_frame_rate, '60/1')
+  const info = await movie('generated.mp4'); assert.equal(info.streams.length, 1); assert.equal(info.streams[0].nb_read_frames, '80'); assert.equal(info.streams[0].r_frame_rate, '60/1')
   const duration = await page.locator('video').evaluate(async v => { if (v.readyState < 1) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true })); await v.play(); return v.duration })
-  assert.ok(Math.abs(duration - 10 / 60) < 0.01); await page.locator('video').evaluate(v => v.pause())
+  assert.ok(Math.abs(duration - 80 / 60) < 0.01); await page.locator('video').evaluate(v => v.pause())
+  const generated = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(directory, 'generated.mp4'), '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { maxBuffer: 16 * 1024 ** 2 })
+  const pixelsPerFrame = width * height * 3, last = generated.subarray(generated.length - pixelsPerFrame)
+  // Encoding is lossy (including chroma resampling), so check frame identity against
+  // every independently decoded source drawing instead of demanding PNG precision.
+  const matches = Array.from({ length: fixture.count }, (_, frame) => ({ frame, error: last.reduce((sum, v, i) => sum + Math.abs(v - reference[frame * pixelsPerFrame + i]), 0) / last.length })).sort((a, b) => a.error - b.error)
+  assert.equal(matches[0].frame, 31, 'The full camera render must include the final source drawing')
+  assert.ok(matches[0].error * 2 < matches[1].error, 'The final drawing must match clearly better than an earlier frame')
   await page.getByLabel('Render last frame').fill('30'); await page.getByLabel('Render fps').selectOption('120')
   const previous = await page.locator('video').getAttribute('src')
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
@@ -217,7 +226,7 @@ try {
   await page.waitForFunction(old => { const video = document.querySelector('video'); return video && video.getAttribute('src') !== old }, previous)
   const partial = await movie('partial.mp4'), count = Number(partial.streams[0].nb_read_frames)
   assert.ok(count >= 2 && count < 155); assert.match(await page.locator('.movie-caption').innerText(), /partial render/)
-  console.log(`PASS: real 60 fps MP4 playback/export; cancelled render preserves ${count} valid frames`)
+  console.log(`PASS: complete 80-frame camera render including final drawing, 60 fps MP4 playback/export; cancelled render preserves ${count} valid frames`)
   // Enter a utility inside another utility and expose a new numeric input/output pair.
   await change(() => page.locator('.react-flow__node[data-id="n3"]').getByRole('button', { name: 'Edit internal nodes' }).click())
   await page.locator('.react-flow__node[data-id="nx"] .operation-head').click()
@@ -260,7 +269,7 @@ try {
   await mediaSmoke(page, { fixture, directory, upload, sourceGraph, change, png, project })
   await assertViewport(page, ['.workspace-notices', '.timeline', '.render-controls', '.render-action', 'footer'])
   assert.deepEqual(errors, [])
-  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY', 'computed frame index', 'crop/process/paste', 'editable Laplacian reconstruction', 'typed record frame roundtrip'], output: { count: 10, fps: 60 }, cancelledFrames: count, errors }, null, 2))
+  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY', 'computed frame index', 'crop/process/paste', 'editable Laplacian reconstruction', 'typed record frame roundtrip'], output: { count: 80, fps: 60 }, cancelledFrames: count, errors }, null, 2))
   await page.screenshot({ path: resolve(directory, 'editor.png'), fullPage: true, timeout: 15000 })
   await page.close()
   console.log(`Browser smoke passed. Artifacts: ${directory}`)

@@ -2,13 +2,14 @@ import { createFile, MP4BoxBuffer, MultiBufferStream, VisualSampleEntry } from '
 import type { Sample, Track } from 'mp4box'
 import { avcHasIdr, frameRate, presentationOrder, startSample } from '../engine/video-index'
 import type { SourceInfo } from '../protocol'
+import { DecodedFrameCache } from './frame-cache'
 
 const pause = () => new Promise<void>(resolve => setTimeout(resolve, 1))
 
-/** Indexed MP4 reader with a software-first decoder and a bounded look-ahead window. */
+/** Indexed MP4 reader with a software-first decoder and bounded bidirectional frame reuse. */
 export class VideoSource {
   private decoder: VideoDecoder | null = null
-  private frames = new Map<number, VideoFrame>()
+  private frames = new DecodedFrameCache<VideoFrame>()
   private next = 0
   private wanted = -1
   private needsKey = true
@@ -81,17 +82,14 @@ export class VideoSource {
         const rank = frame.timestamp
         if (generation !== this.generation) { frame.close(); return }
         this.submitted.delete(rank)
-        if (rank < Math.max(this.minimumRank, this.wanted - 2) || rank > this.wanted + 8) { frame.close(); return }
-        this.frames.get(rank)?.close(); this.frames.set(rank, frame)
-        this.prune()
+        // Dependencies decoded on the way to a target are useful for reverse
+        // scrubbing. Discarding them forced another keyframe decode every third step.
+        if (rank < this.minimumRank || rank > this.wanted + 8) { frame.close(); return }
+        this.frames.set(rank, frame, this.wanted)
       },
       error: error => { if (generation === this.generation) this.failure = new Error(`Cannot decode frame ${this.wanted}: ${error.message}`) },
     })
     this.decoder.configure(this.config)
-  }
-
-  private prune() {
-    for (const [rank, frame] of this.frames) if (rank < this.wanted - 2 || rank > this.wanted + 8) { this.frames.delete(rank); frame.close() }
   }
 
   /** Return an owned VideoFrame. The caller must close it, including on cancellation. */
@@ -99,9 +97,9 @@ export class VideoSource {
     const target = this.ordered[rank]
     if (!Number.isInteger(rank) || !target) throw new Error(`Frame ${rank} is outside the clip`)
     const hit = this.frames.get(rank)
-    if (hit) { this.wanted = rank; this.prune(); return hit.clone() }
+    if (hit) { this.wanted = rank; return hit.clone() }
     if (this.needsKey || !this.decoder || this.decoder.state === 'closed' || rank < this.wanted || target.number < this.next && !this.submitted.has(rank)) this.reset(target)
-    this.wanted = rank; this.prune()
+    this.wanted = rank
     const decoder = this.decoder
     if (!decoder) throw new Error('Video decoder did not initialize')
     const started = performance.now()
@@ -137,7 +135,6 @@ export class VideoSource {
   close() {
     this.generation++; this.submitted.clear()
     if (this.decoder?.state !== 'closed') this.decoder?.close()
-    for (const frame of this.frames.values()) frame.close()
     this.frames.clear(); this.decoder = null
   }
 }

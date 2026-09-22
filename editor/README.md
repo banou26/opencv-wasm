@@ -99,7 +99,11 @@ focus. Typing in a field keeps the shortcuts inactive.
 
 The rendered-output player displays exact decoded frames on a canvas. Its worker
 decodes keyframes and dependencies privately, then presents only the requested
-frame; the previous image stays visible while a seek finishes. Use its frame
+frame; the previous image stays visible while a seek finishes. Both source and
+output decoders reuse recent decoded frames in either direction, retaining up to
+128 MiB or 256 frames per reader. A single requested frame can exceed that budget;
+decoder surfaces and frames currently being displayed are additional memory.
+Seeking outside this cache still decodes from an earlier keyframe. Use its frame
 number field or draggable timeline to jump, **Space** to play/pause when the
 image has focus, and the speed, loop and fullscreen controls for playback.
 Playback can skip frames to keep up with elapsed time; paused stepping always

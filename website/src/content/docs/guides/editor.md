@@ -34,6 +34,9 @@ The included **Camera in-betweens** prefab is composed of ordinary editable node
   the exact output frame. Their canvas keeps the last image visible while the
   decoder prepares the requested frame, without displaying intermediate keyframes.
 - In the rendered player, enter a frame number or drag the timeline to seek.
+  Recent decoded frames are reused for backward as well as forward scrubbing.
+  Each reader retains up to 128 MiB or 256 frames, separate from the native result
+  cache. A jump outside that history still needs decoding from a keyframe.
   Press **Space** on the focused image to play/pause. Playback has speed, loop
   and fullscreen controls; it may skip frames to keep pace, while paused stepping
   selects every frame individually.

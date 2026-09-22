@@ -9,6 +9,15 @@ export const movieShortcutsSmoke = async (page, { count, reference, width, heigh
     return p?.dataset.frame === String(index) && p.dataset.seeking === 'false'
   }, index)
   await settled(0)
+  const decoder = page.workers().find(worker => /player\.worker/.test(worker.url()))
+  assert.ok(decoder, 'Inspect the real rendered-preview decoder')
+  await decoder.evaluate(() => {
+    self.seekDecodeCalls = 0; self.seekResetCalls = 0
+    self.originalDecode = VideoDecoder.prototype.decode
+    self.originalConfigure = VideoDecoder.prototype.configure
+    VideoDecoder.prototype.decode = function (...args) { self.seekDecodeCalls++; return self.originalDecode.apply(this, args) }
+    VideoDecoder.prototype.configure = function (...args) { self.seekResetCalls++; return self.originalConfigure.apply(this, args) }
+  })
   await page.evaluate(() => {
     window.outputPaints = []
     window.originalDrawImage = CanvasRenderingContext2D.prototype.drawImage
@@ -51,8 +60,24 @@ export const movieShortcutsSmoke = async (page, { count, reference, width, heigh
     for (const [key, expected] of [['>', 1], ['.', 2], ['<', 1], [',', 0], [',', 0]]) {
       await checkSeek(() => page.keyboard.press(key), expected)
     }
-    // Both directions across decode dependencies, well beyond the decoder's small cache.
+    // Both directions across separate decode dependency ranges.
     for (const index of [67, 7, 53, 19, count - 1]) await checkSeek(() => frame.fill(String(index)), index)
+    // The last seek decoded the tiny fixture's dependencies. Drag backward by
+    // more than two frames per update: every paint must be exact and reuse them.
+    const before = await decoder.evaluate(() => [self.seekDecodeCalls, self.seekResetCalls])
+    assert.ok(before[0] > 0, 'The counter must observe real uncached decoding before checking reuse')
+    const track = await page.getByRole('slider', { name: 'Output timeline', exact: true }).boundingBox()
+    const point = index => track.x + 7 + (track.width - 14) * index / (count - 1)
+    await page.mouse.move(point(count - 1), track.y + track.height / 2); await page.mouse.down()
+    try {
+      await settled(count - 1)
+      for (const index of [74, 69, 64, 59, 54, 49, 44, 39, 34, 29, 24, 19, 14, 9, 4, 0]) {
+        await checkSeek(() => page.mouse.move(point(index), track.y + track.height / 2), index)
+      }
+    } finally { await page.mouse.up() }
+    assert.deepEqual(await decoder.evaluate(() => [self.seekDecodeCalls, self.seekResetCalls]), before, 'Backward dragging must reuse cached pixels without decoding or restarting')
+    console.log('PASS: backward pointer dragging paints exact frames with zero decoder calls or restarts')
+    await checkSeek(() => frame.fill(String(count - 1)), count - 1)
     await player.focus(); await checkSeek(() => page.keyboard.press('>'), count - 1)
     await checkSeek(() => page.keyboard.press('Home'), 0)
     await checkSeek(() => page.keyboard.press('End'), count - 1)
@@ -92,5 +117,6 @@ export const movieShortcutsSmoke = async (page, { count, reference, width, heigh
     console.log('PASS: actual output pixels match FFmpeg on every seek paint; focused shortcuts, rapid reversals, playback, loop/end and source isolation')
   } finally {
     await page.evaluate(() => { CanvasRenderingContext2D.prototype.drawImage = window.originalDrawImage; delete window.outputPaints; delete window.originalDrawImage })
+    await decoder.evaluate(() => { VideoDecoder.prototype.decode = self.originalDecode; VideoDecoder.prototype.configure = self.originalConfigure })
   }
 }

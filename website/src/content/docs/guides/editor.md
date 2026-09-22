@@ -30,7 +30,13 @@ The included **Camera in-betweens** prefab is composed of ordinary editable node
 - Drag the timeline to scrub, scroll over the large image to zoom, and drag it to
   pan. The pixel inspector shows the underlying numeric values.
 - Press **< / >** (or comma / period) to step the active preview one frame at a
-  time. Rendered videos pause and step at their output frame rate.
+  time, including when the player has focus. Rendered videos pause and select
+  the exact output frame. Their canvas keeps the last image visible while the
+  decoder prepares the requested frame, without displaying intermediate keyframes.
+- In the rendered player, enter a frame number or drag the timeline to seek.
+  Press **Space** on the focused image to play/pause. Playback has speed, loop
+  and fullscreen controls; it may skip frames to keep pace, while paused stepping
+  selects every frame individually.
 - Select nodes and press **Ctrl G** to create a custom node with typed inputs and
   outputs. Open its internal graph in a tab to keep editing it.
 

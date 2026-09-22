@@ -46,7 +46,7 @@ export const layoutSmoke = async (page, directory) => {
     await page.locator('.node-details summary').click()
     if (width === 1366) await page.screenshot({ path: resolve(directory, 'layout-laptop.png') })
     await page.getByRole('button', { name: 'View video', exact: true }).click()
-    await assertViewport(page, [...fixed, '.render-preview video', '.movie-caption', '.movie-caption button'])
+    await assertViewport(page, [...fixed, '.output-surface', '.output-transport', '.output-transport .timeline-slider', '.movie-caption', '.movie-caption button'])
     if (width === 1366) await page.screenshot({ path: resolve(directory, 'layout-video.png') })
     if (width === 390) await page.screenshot({ path: resolve(directory, 'layout-narrow.png') })
     assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), selected, 'Switching view panels preserves the preview target')

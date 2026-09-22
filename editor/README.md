@@ -94,7 +94,16 @@ or press Escape to dismiss it. Text stays readable when zooming out.
 
 Press **< / >** (or **comma / period**) to step backward or forward in the active
 preview. Node previews advance the source timeline; rendered videos pause and step
-at their own output frame rate. Typing in a field keeps the shortcuts inactive.
+at their own output frame rate, including while the player or its controls have
+focus. Typing in a field keeps the shortcuts inactive.
+
+The rendered-output player displays exact decoded frames on a canvas. Its worker
+decodes keyframes and dependencies privately, then presents only the requested
+frame; the previous image stays visible while a seek finishes. Use its frame
+number field or draggable timeline to jump, **Space** to play/pause when the
+image has focus, and the speed, loop and fullscreen controls for playback.
+Playback can skip frames to keep up with elapsed time; paused stepping always
+selects a single frame. The exported MP4 is unchanged.
 
 ## Make reusable custom nodes
 

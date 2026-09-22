@@ -8,7 +8,8 @@ import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
 import { primitivesSmoke } from './primitives-smoke.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
-import { dragSmoke, previewSelectionSmoke, timelineSmoke, frameShortcutsSmoke, movieShortcutsSmoke } from './interaction-smoke.mjs'
+import { dragSmoke, previewSelectionSmoke, timelineSmoke, frameShortcutsSmoke } from './interaction-smoke.mjs'
+import { movieShortcutsSmoke } from './output-player-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
 import { waitForBrowser } from './browser-poll.mjs'
 import { graphActionsSmoke } from './graph-actions-smoke.mjs'
@@ -211,16 +212,14 @@ try {
   await page.getByRole('button', { name: 'Render video', exact: false }).click(); await page.getByRole('button', { name: 'Save MP4 to folder', exact: true }).waitFor({ timeout: 45000 })
   assert.match(await page.locator('.movie-caption').innerText(), /80 frames · 60 fps/)
   const movie = async name => {
-    const url = await page.locator('.movie-preview video, .render-preview video, video').getAttribute('src')
+    const url = await page.locator('.frame-player').getAttribute('data-src')
     const bytes = await page.evaluate(async u => Array.from(new Uint8Array(await (await fetch(u)).arrayBuffer())), url), file = resolve(directory, name)
     await writeFile(file, Buffer.from(bytes))
     return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-show_format', '-of', 'json', file], { encoding: 'utf8' }))
   }
   const info = await movie('generated.mp4'); assert.equal(info.streams.length, 1); assert.equal(info.streams[0].nb_read_frames, '80'); assert.equal(info.streams[0].r_frame_rate, '60/1')
-  const duration = await page.locator('video').evaluate(async v => { if (v.readyState < 1) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true })); await v.play(); return v.duration })
-  assert.ok(Math.abs(duration - 80 / 60) < 0.01); await page.locator('video').evaluate(v => v.pause())
-  await movieShortcutsSmoke(page, 60, 80)
-  const generated = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(directory, 'generated.mp4'), '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { maxBuffer: 16 * 1024 ** 2 })
+  const generated = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(directory, 'generated.mp4'), '-sws_flags', 'bicubic+accurate_rnd+full_chroma_int', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { maxBuffer: 16 * 1024 ** 2 })
+  await movieShortcutsSmoke(page, { count: 80, reference: generated, width, height })
   const pixelsPerFrame = width * height * 3, last = generated.subarray(generated.length - pixelsPerFrame)
   // Encoding is lossy (including chroma resampling), so check frame identity against
   // every independently decoded source drawing instead of demanding PNG precision.
@@ -228,11 +227,11 @@ try {
   assert.equal(matches[0].frame, 31, 'The full camera render must include the final source drawing')
   assert.ok(matches[0].error * 2 < matches[1].error, 'The final drawing must match clearly better than an earlier frame')
   await page.getByLabel('Render last frame').fill('30'); await page.getByLabel('Render fps').selectOption('120')
-  const previous = await page.locator('video').getAttribute('src')
+  const previous = await page.locator('.frame-player').getAttribute('data-src')
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   await page.waitForFunction(() => Number(document.querySelector('progress')?.value) >= 2)
   await page.getByRole('button', { name: 'Stop and keep completed frames' }).click()
-  await page.waitForFunction(old => { const video = document.querySelector('video'); return video && video.getAttribute('src') !== old }, previous)
+  await page.waitForFunction(old => { const video = document.querySelector('.frame-player'); return video && video.getAttribute('data-src') !== old && video.dataset.frame === '0' }, previous)
   const partial = await movie('partial.mp4'), count = Number(partial.streams[0].nb_read_frames)
   assert.ok(count >= 2 && count < 155); assert.match(await page.locator('.movie-caption').innerText(), /partial render/)
   console.log(`PASS: complete 80-frame camera render including final drawing, 60 fps MP4 playback/export; cancelled render preserves ${count} valid frames`)
@@ -257,7 +256,8 @@ try {
   // Follow the live elements rather than stale coordinates while the nested viewport settles.
   await from.hover(); await page.mouse.down(); await to.hover()
   await page.waitForFunction(id => document.querySelector(`[data-nodeid="noutput"][data-handleid="${id}"]`)?.classList.contains('valid'), outputId)
-  await page.mouse.up()
+  await to.hover(); await page.mouse.up()
+  await page.locator(`[data-testid="rf__edge-e:noutput:${outputId}"]`).waitFor()
   const wired = await project()
   assert.ok(wired.definitions.find(d => d.id === nested.id).graph.edges.some(e => e.targetHandle === outputId && e.sourceHandle === inputId), 'Custom scalar ports should be wired')
   await page.locator('.step-strip button').filter({ hasText: 'Group Outputs' }).click()

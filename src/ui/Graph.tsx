@@ -7,6 +7,7 @@ import { validateConnection } from '../engine/graph'
 import type { GraphNode, NodeType, NodeSpec, Parameter } from '../engine/types'
 import { NodeMenu, selectedGraph } from './NodeMenu'
 import { ConnectionMenu } from './ConnectionMenu'
+import { NodeHelp } from './NodeHelp'
 import type { MenuPosition } from './NodeMenu'
 import type { GraphDocument } from '../engine/types'
 import { useEditor } from './store'
@@ -56,7 +57,7 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
       {!thumbnail && <span>Connect the inputs to see this result</span>}
       {thumbnail && !thumbnail.error && <code className="thumbnail-frame">#{thumbnail.frame.toFixed(2)}{frame !== thumbnail.frame ? ' · updating' : ''}</code>}
     </div>}
-    <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type] ?? '◇'}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
+    <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type] ?? '◇'}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><NodeHelp spec={spec} /><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
     {(node.type === 'source' || node.type === 'clip') && <SourceFile node={node} />}
     <div className="sockets">
       {spec.inputs.map(port => {

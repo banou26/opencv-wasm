@@ -30,6 +30,15 @@ export const styles = css`
   .edge-tools button { font-size: 10px; padding: 4px 7px; }
   .react-flow__node { border-radius: 9px; } .operation { width: 230px; border: 1px solid #485340; border-radius: 8px; background: #22291f; box-shadow: 0 7px 16px #0003; color: #dbe6d3; } .operation.chosen { border-color: #c5e7ae; box-shadow: 0 0 0 1px #b5d49c, 0 8px 20px #0005; }
   .node-drag-handle { cursor: grab; user-select: none; } .react-flow__node.dragging .node-drag-handle { cursor: grabbing; }
+  .operation-head > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .operation-head .op-symbol, .operation-head .status-dot { flex-shrink: 0; }
+  .node-help { flex-shrink: 0; width: 23px; height: 23px; padding: 0; border-color: transparent; background: transparent; color: #a9bd99; font-size: 17px; cursor: help; }
+  .node-help[aria-expanded=true] { color: #ddf4cb; background: #35452c; border-color: #718361; }
+  .node-description { position: fixed; z-index: 1000; width: 350px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 16px; border: 1px solid #718361; border-radius: 8px; background: #20291f; box-shadow: 0 12px 40px #0008; color: #dce8d2; user-select: text; }
+  .node-description > strong { display: block; margin-top: 6px; font-size: 16px; }
+  .node-description p { margin: 12px 0; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .node-description > code { display: block; color: #c5e7ae; font-size: 11px; overflow-wrap: anywhere; }
+  .node-description > small { display: block; margin-top: 12px; padding-top: 10px; border-top: 1px solid #425238; color: #a4b49a; font-size: 10px; }
   .operation-head { display: flex; align-items: center; gap: 9px; padding: 12px; border-bottom: 1px solid #3a4433; } .operation-head small { display: block; font: 8px 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 1.4px; color: #9fad92; margin-bottom: 4px; } .operation-head strong { font-size: 13px; font-weight: 600; } .op-symbol { font: 21px 'JetBrains Mono', monospace; color: #c5e7ae; width: 27px; text-align: center; } .op-symbol.motion { color: #9caef4; } .op-symbol.delta { color: #efbc7b; }
   .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #56604e; margin-left: auto; } .status-dot.done { background: #c5e7ae; } .status-dot.running { background: #efbc7b; animation: blink .6s infinite alternate; } .status-dot.cached { background: #9caef4; } @keyframes blink { to { opacity: .3; } }
   .sockets { padding: 7px 0; } .socket { position: relative; height: 25px; display: flex; align-items: center; gap: 5px; padding: 0 13px; font-size: 10px; } .socket code { margin-left: auto; color: #b5c4a7; font-size: 9px; } .socket.output { justify-content: flex-end; color: #c4d4b9; } .react-flow__handle { width: 12px; height: 12px; border: 0; border-radius: 50%; background: transparent; } .react-flow__handle-left { left: 0; } .react-flow__handle-right { right: 0; }

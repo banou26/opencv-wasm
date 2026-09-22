@@ -54,5 +54,9 @@ export const previewSelectionSmoke = async (page, change) => {
   await output.locator('.operation-head').click({ button: 'right' })
   await change(() => page.getByRole('button', { name: 'Select for preview', exact: true }).click())
   assert.equal(await inspector.getAttribute('data-selected'), 'n5')
+  await page.getByRole('button', { name: 'Rendered video', exact: true }).click()
+  await output.locator('.operation-head').click({ button: 'right' })
+  await page.getByRole('button', { name: 'Select for preview', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Node preview', exact: true }).getAttribute('aria-pressed'), 'true', 'Selecting the same node for preview must return from the video panel')
   console.log('PASS: graph click, context menu, insert and delete preserve the inspector; Select for preview explicitly retargets it')
 }

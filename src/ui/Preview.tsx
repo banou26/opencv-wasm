@@ -10,7 +10,7 @@ export const Preview = () => {
   const pinnedPosition = useRef<{ x: number; y: number } | null>(null)
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null), throttle = useRef(0)
   const width = result?.width || source?.width || 1920, height = result?.height || source?.height || 1080
-  const fit = Math.min((box.width - 28) / width, (box.height - 28) / height), scale = fit * zoom
+  const fit = Math.min(Math.max(1, box.width - 28) / width, Math.max(1, box.height - 28) / height), scale = fit * zoom
   const current = useRef({ zoom, pan, fit }); current.current = { zoom, pan, fit }
   useEffect(() => {
     const el = viewport.current

@@ -27,6 +27,14 @@ accept that asset size. The development preview runs on port 4561.
 
 ## Work in the graph
 
+- The editor fits the browser window: the graph and inspector share the available
+  space, with the timeline and render controls docked below. Drag the divider to
+  resize the panels. Narrow windows use **Node graph / Inspector** buttons.
+- **Node preview / Rendered video** switches the inspector between the selected
+  node and the last movie. Rendering opens the video view when it finishes;
+  **View video** also opens it. **About this step** opens a scrollable explanation
+  above its toggle, without shrinking the image. Custom interfaces and long lists
+  scroll inside their panels, rather than moving the entire page.
 - **Drop video files onto the canvas** to create one Video Source per file. Drop a
   file onto an existing source to replace that clip, or use its **Open file** button.
   Each source keeps its own media; the source dropdown can reuse an already loaded
@@ -215,6 +223,8 @@ Artifacts and generated fixtures are written to ignored `build-smoke/`.
 Pixel checks compare native outputs against independent calculations and FFmpeg,
 including backward/open-GOP seeks. Browser checks exercise custom ports, nested
 tabs, previews, file drops, per-source bindings, MP4 playback and partial renders.
+Layout checks cover six window sizes, docked controls, expanded interfaces and
+switching between image/video previews without replacing the WebGPU canvas.
 Folder tests use real browser filesystem handles and streams from OPFS, substituting
 only the native OS folder picker; they check media copies, autosave, reopening,
 exports and protection against outside edits.

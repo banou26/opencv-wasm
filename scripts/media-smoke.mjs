@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { waitForBrowser } from './browser-poll.mjs'
 
 /** Real file drops and real browser filesystem IO; only the OS folder picker is substituted. */
 export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph, change, png, project }) => {
@@ -71,16 +72,17 @@ export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph
   await page.waitForTimeout(300)
   const box = await node.boundingBox()
   await page.mouse.move(box.x + 45, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + 75, box.y + 35, { steps: 8 }); await page.mouse.up()
-  await page.waitForFunction(async ({ id, x }) => {
+  await waitForBrowser(page, async ({ id, x }) => {
     const doc = JSON.parse(await (await (await window.testFolder.getFileHandle('cadence-graph.json')).getFile()).text())
     return doc.nodes.find(n => n.id === id).position.x !== x
   }, { id: secondNode.id, x: initialX })
   await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
-  await page.waitForFunction(async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame.png')).getFile()).size > 100 } catch { return false } })
+  await waitForBrowser(page, async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame.png')).getFile()).size > 100 } catch { return false } })
   await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
-  await page.waitForFunction(async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame-2.png')).getFile()).size > 100 } catch { return false } })
+  await waitForBrowser(page, async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame-2.png')).getFile()).size > 100 } catch { return false } })
+  await page.getByRole('button', { name: 'View video', exact: true }).click()
   await page.getByRole('button', { name: 'Save MP4 to folder', exact: true }).click()
-  await page.waitForFunction(async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-output.mp4')).getFile()).size > 100 } catch { return false } })
+  await waitForBrowser(page, async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-output.mp4')).getFile()).size > 100 } catch { return false } })
   await page.waitForFunction(() => document.querySelector('.project-folder-strip')?.textContent.includes('Saved exports/cadence-output.mp4'))
   const movie = await page.evaluate(async () => {
     const dir = await window.testFolder.getDirectoryHandle('exports')
@@ -124,7 +126,7 @@ export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph
 
 const pngInFolder = async page => {
   await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
-  await page.waitForFunction(async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame-3.png')).getFile()).size > 100 } catch { return false } })
+  await waitForBrowser(page, async () => { try { return (await (await (await window.testFolder.getDirectoryHandle('exports')).getFileHandle('cadence-frame-3.png')).getFile()).size > 100 } catch { return false } })
   await page.waitForFunction(() => document.querySelector('.project-folder-strip')?.textContent.includes('Saved exports/cadence-frame-3.png'))
   const bytes = await page.evaluate(async () => {
     const dir = await window.testFolder.getDirectoryHandle('exports')

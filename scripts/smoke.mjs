@@ -8,6 +8,8 @@ import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
 import { dragSmoke, previewSelectionSmoke } from './interaction-smoke.mjs'
+import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
+import { waitForBrowser } from './browser-poll.mjs'
 
 const directory = resolve('build-smoke'), children = [], errors = []
 const pause = ms => new Promise(r => setTimeout(r, ms))
@@ -56,7 +58,13 @@ try {
   const png = async () => {
     const name = `cadence-frame${exportIndex ? `-${exportIndex + 1}` : ''}.png`
     await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
-    await page.waitForFunction(file => document.querySelector('[data-testid=folder-state]')?.textContent.includes(`Saved exports/${file}`), name)
+    // Autosave may replace the export status immediately; wait for the actual completed file.
+    await waitForBrowser(page, async file => {
+      try {
+        const folder = await window.testFolder.getDirectoryHandle('exports')
+        return (await (await folder.getFileHandle(file)).getFile()).size > 0 && document.querySelector('[data-testid=folder-state]')?.getAttribute('data-pending') === '0'
+      } catch { return false }
+    }, name)
     const bytes = await page.evaluate(async name => {
       const folder = await window.testFolder.getDirectoryHandle('exports'), handle = await folder.getFileHandle(name), file = await handle.getFile()
       return [...new Uint8Array(await file.arrayBuffer())]
@@ -239,7 +247,9 @@ try {
   assert.equal(Number(await page.locator('.scalar-preview strong').innerText()), -12)
   await change(() => page.getByRole('tab', { name: 'Main graph' }).click())
   console.log('PASS: nested tabs, new typed custom ports, live internal wiring, negative numeric editing and custom scalar outputs')
+  await layoutSmoke(page, directory)
   await mediaSmoke(page, { fixture, directory, upload, sourceGraph, change, png, project })
+  await assertViewport(page, ['.workspace-notices', '.timeline', '.render-controls', '.render-action', 'footer'])
   assert.deepEqual(errors, [])
   await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY'], output: { count: 10, fps: 60 }, cancelledFrames: count, errors }, null, 2))
   await page.screenshot({ path: resolve(directory, 'editor.png'), fullPage: true, timeout: 15000 })

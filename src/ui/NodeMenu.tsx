@@ -32,6 +32,7 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
   const nodes = query.trim() ? searchNodes(query) : Object.values(SPECS).filter(s => s.category === category && !['group', 'groupInput', 'groupOutput'].includes(s.type)).map(s => s.type)
   const prefabResults = query.trim() ? prefabs.filter(p => matchesQuery(query, `${p.title} ${p.description} prefab`)) : category === 'Prefabs' ? prefabs : []
   const count = nodes.length + prefabResults.length + customResults.length
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - 495))
   useEffect(() => { input.current?.focus() }, [])
   useEffect(() => { list.current?.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' }) }, [index])
   const add = (type: NodeType) => { useEditor.getState().add(type, position.world); close() }
@@ -42,7 +43,7 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
     else if (custom) { useEditor.getState().add('group', position.world, custom.id); close() }
   }
   return <div className="menu-backdrop" onPointerDown={close} onContextMenu={e => { e.preventDefault(); close() }}>
-    <div className="node-menu" role="dialog" aria-label="Add node" style={{ left: Math.max(8, Math.min(position.x, window.innerWidth - 488)), top: Math.max(8, Math.min(position.y, window.innerHeight - 495)) }} onPointerDown={e => e.stopPropagation()} onContextMenu={e => e.preventDefault()} onKeyDown={e => {
+    <div className="node-menu" role="dialog" aria-label="Add node" style={{ left: Math.max(8, Math.min(position.x, window.innerWidth - 488)), top, maxHeight: `calc(100dvh - ${top + 8}px)` }} onPointerDown={e => e.stopPropagation()} onContextMenu={e => e.preventDefault()} onKeyDown={e => {
       if (e.key === 'Escape') { e.preventDefault(); close() }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => count ? (i + (e.key === 'ArrowDown' ? 1 : count - 1)) % count : 0) }
       else if (e.key === 'Enter') { e.preventDefault(); choose(index) }

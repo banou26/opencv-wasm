@@ -13,7 +13,7 @@ export type SourceTarget = { node: string; definition?: string }
 export type EditorTab = { id: string; path: string[]; definition?: string; focused?: string; selected?: string; port?: string | null }
 type State = {
   doc: GraphDocument; view: GraphDocument; path: string[]; tabs: EditorTab[]; activeTab: string
-  highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; gain: number
+  highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; gain: number; inspectorView: 'frame' | 'movie'
   ready: boolean; adapter: string; source: SourceInfo | null; assets: Record<string, SourceInfo>; loadingSource: SourceTarget | null; busy: 'idle' | 'load' | 'inspect' | 'bake'
   error: string; fatal: boolean; result: Result | null; statuses: Record<string, NodeStatus>
   progress: { done: number; total: number } | null; movie: Movie | null; cancelling: boolean
@@ -66,7 +66,7 @@ export const useEditor = create<State>((set, get) => {
   }
   return {
     doc: initial, view: initial, path: [], tabs: [{ id: 'main', path: [] }], activeTab: 'main',
-    highlighted: ['n5'], focused: 'n5', selected: 'n5', port: null, frame: 0, gain: 1,
+    highlighted: ['n5'], focused: 'n5', selected: 'n5', port: null, frame: 0, gain: 1, inspectorView: 'frame',
     ready: false, adapter: '', source: null, assets: {}, loadingSource: null, busy: 'idle', error: '', fatal: false,
     result: null, statuses: {}, progress: null, movie: null, cancelling: false, pixel: null, revision: 0,
     previews: defaults(initial), thumbnails: {}, past: [], future: [],
@@ -94,7 +94,7 @@ export const useEditor = create<State>((set, get) => {
     },
     // Editing focus and the inspector target are deliberately independent.
     focus: focused => set({ focused, highlighted: [focused] }),
-    select: (selected, port = null) => set({ selected, port, pixel: null }),
+    select: (selected, port = null) => set({ selected, port, pixel: null, inspectorView: 'frame' }),
     parameter: (id, key, value) => edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === id ? { ...n, params: { ...n.params, [key]: value } } : n) })),
     add: (type, position, definition) => {
       if (get().view.nodes.length >= 100) { set({ error: 'A graph can contain up to 100 nodes.' }); return }

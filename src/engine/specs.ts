@@ -1,9 +1,22 @@
-import type { NodeSpec, NodeType, Params, PortType } from './types'
+import type { GraphDocument, GraphNode, NodeSpec, NodeType, Params, PortType } from './types'
 
-/** Port colors remain consistent in the palette, sockets, edges and preview. */
+/** Port colors remain consistent in the menu, sockets, edges and preview. */
 export const PORT_COLORS: Record<PortType, string> = { frame: '#a6cb9d', scalar: '#efbc7b', motion: '#9caef4', regions: '#d495bd' }
 /** Node contracts are the single source of truth for controls and graph validation. */
 export const SPECS: Record<NodeType, NodeSpec> = {
+  group: { type: 'group', title: 'Custom Node', category: 'Custom', description: 'A reusable graph with named, typed inputs and outputs. Double-click to edit its basic nodes.', algorithm: 'Internal node graph', version: 1, inputs: [], outputs: [], parameters: [] },
+  groupInput: { type: 'groupInput', title: 'Group Inputs', category: 'Interface', description: 'Values supplied by this custom-node instance’s external connections or numeric defaults.', algorithm: 'External inputs → internal graph', version: 1, inputs: [], outputs: [], parameters: [] },
+  groupOutput: { type: 'groupOutput', title: 'Group Outputs', category: 'Interface', description: 'Connect the internal results you want this custom node to expose to its parent graph.', algorithm: 'Internal graph → external outputs', version: 1, inputs: [], outputs: [], parameters: [] },
+  constant: { type: 'constant', title: 'Number', category: 'Input', description: 'Produce a reusable numeric value that can drive another node’s input.', algorithm: 'constant', version: 1, inputs: [], outputs: [{ id: 'out:scalar:value', label: 'Value', type: 'scalar' }], parameters: [{ kind: 'number', key: 'value', label: 'Value', default: 0, min: -1000000, max: 1000000, step: 0.1 }] },
+  multiply: { type: 'multiply', title: 'Multiply', category: 'Math', description: 'Multiply two numbers. For example, displacement times a time fraction gives the intermediate displacement.', algorithm: 'A × B', version: 1, inputs: [{ id: 'in:scalar:a', label: 'A', type: 'scalar' }, { id: 'in:scalar:b', label: 'B · optional', type: 'scalar', optional: true }], outputs: [{ id: 'out:scalar:value', label: 'Product', type: 'scalar' }], parameters: [{ kind: 'number', key: 'factor', label: 'Fallback B', default: 1, min: -1000000, max: 1000000, step: 0.1 }] },
+  translateX: { type: 'translateX', title: 'Translate X', category: 'Transform', description: 'Shift an image horizontally by a scalar number of pixels. Positive values move right. Empty space is black.', algorithm: 'warpAffine · X axis', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }, { id: 'in:scalar:pixels', label: 'X pixels · optional', type: 'scalar', optional: true }], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [{ kind: 'number', key: 'pixels', label: 'Fallback X · px', default: 0, min: -1000000, max: 1000000, step: 0.1 }] },
+  translateY: { type: 'translateY', title: 'Translate Y', category: 'Transform', description: 'Shift an image vertically by a scalar number of pixels. Positive values move down. Empty space is black.', algorithm: 'warpAffine · Y axis', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }, { id: 'in:scalar:pixels', label: 'Y pixels · optional', type: 'scalar', optional: true }], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [{ kind: 'number', key: 'pixels', label: 'Fallback Y · px', default: 0, min: -1000000, max: 1000000, step: 0.1 }] },
+  time: { type: 'time', title: 'Time', category: 'Input', description: 'Expose the current evaluation time as scalar outputs. Fraction is the progress from source frame N toward N+1.', algorithm: 'time → floor + fraction', version: 1, inputs: [], outputs: [{ id: 'out:scalar:fraction', label: 'Fraction 0…1', type: 'scalar' }, { id: 'out:scalar:frame', label: 'Frame time', type: 'scalar' }, { id: 'out:scalar:seconds', label: 'Seconds', type: 'scalar' }], parameters: [] },
+  offset: { type: 'offset', title: 'Frame Offset', category: 'Time', description: 'Request another time from the entire connected upstream branch. Use +1 for the next source drawing or −1 for the previous one.', algorithm: 'upstream time + offset', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image at N + offset', type: 'frame', offsetParam: 'offset' }], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [{ kind: 'number', key: 'offset', label: 'Frame offset', default: 1, min: -32, max: 32, step: 1 }] },
+  threshold: { type: 'threshold', title: 'Threshold Mask', category: 'Mask', description: 'Select pixels whose brightness exceeds a cutoff. On a difference image this marks changed pixels, not a complete character layer.', algorithm: 'transform · threshold', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }], outputs: [{ id: 'out:frame:image', label: 'Binary mask', type: 'frame' }], parameters: [{ kind: 'number', key: 'cutoff', label: 'Cutoff 0…1', default: 0.04, min: 0, max: 1, step: 0.01 }, { kind: 'boolean', key: 'invert', label: 'Invert mask', default: false }] },
+  composite: { type: 'composite', title: 'Masked Composite', category: 'Compose', description: 'Copy foreground pixels where the mask exceeds 0.5 and keep the background everywhere else. The binary decision preserves source pixels.', algorithm: 'threshold · copyTo', version: 1, inputs: [{ id: 'in:frame:foreground', label: 'Foreground', type: 'frame' }, { id: 'in:frame:background', label: 'Background', type: 'frame' }, { id: 'in:frame:mask', label: 'Mask', type: 'frame' }], outputs: [{ id: 'out:frame:image', label: 'Composite', type: 'frame' }], parameters: [] },
+
+  motion: { type: 'motion', title: 'Estimate Translation', category: 'Measure', description: 'Compare two frames in the frequency domain to estimate one global camera translation. This does not separate independently moving layers.', algorithm: 'phaseCorrelate', version: 1, inputs: [{ id: 'in:frame:a', label: 'A · frame N', type: 'frame' }, { id: 'in:frame:b', label: 'B · N + offset', type: 'frame', offsetParam: 'offset' }], outputs: [{ id: 'out:motion:shift', label: 'Translation', type: 'motion' }, { id: 'out:scalar:response', label: 'Response', type: 'scalar' }, { id: 'out:scalar:dx', label: 'Delta X · px', type: 'scalar' }, { id: 'out:scalar:dy', label: 'Delta Y · px', type: 'scalar' }], parameters: [{ kind: 'number', key: 'offset', label: 'B offset', default: 1, min: 1, max: 8, step: 1 }] },
   source: { type: 'source', title: 'Video Source', category: 'Input', description: 'Decode an exact frame from your clip. Connect it twice to compare neighboring frames.', algorithm: 'WebCodecs', version: 1, inputs: [], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [] },
   grayscale: { type: 'grayscale', title: 'Grayscale', category: 'Color', description: 'Keep brightness while removing color. Useful before comparing structure or motion.', algorithm: 'transform · cvtColor', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [{ kind: 'select', key: 'weights', label: 'Weights', default: 'rec709', options: ['rec709', 'average'] }] },
   blur: { type: 'blur', title: 'Gaussian Blur', category: 'Filter', description: 'Average nearby pixels with Gaussian weights to reduce grain before measuring differences.', algorithm: 'GaussianBlur', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }], outputs: [{ id: 'out:frame:image', label: 'Image', type: 'frame' }], parameters: [{ kind: 'number', key: 'radius', label: 'Radius', default: 3, min: 0, max: 32, step: 1 }, { kind: 'number', key: 'sigma', label: 'Sigma', default: 1.5, min: 0.1, max: 16, step: 0.1 }] },
@@ -11,12 +24,27 @@ export const SPECS: Record<NodeType, NodeSpec> = {
   output: { type: 'output', title: 'Output', category: 'Output', description: 'Choose the final image for inspection and baking. It forwards the connected result without copying it.', algorithm: 'Preview target', version: 1, inputs: [{ id: 'in:frame:image', label: 'Image', type: 'frame' }], outputs: [], parameters: [] },
 }
 
+/** Resolve a custom node against the project library, or its explicit interface context. */
+export const specFor = (node: GraphNode, doc: GraphDocument): NodeSpec => {
+  if (node.type === 'group') {
+    const definition = doc.definitions?.find(d => d.id === node.definition)
+    if (!definition) throw new Error('Missing custom-node definition')
+    return { ...SPECS.group, title: definition.name, inputs: definition.inputs.map(p => ({ ...p, optional: p.type === 'scalar' })), outputs: definition.outputs, parameters: definition.inputs.filter(p => p.type === 'scalar').map(p => ({ kind: 'number', key: p.id, label: p.label, default: p.default ?? 0, min: -1000000, max: 1000000, step: 0.1 })) }
+  }
+  if (node.type === 'groupInput' || node.type === 'groupOutput') {
+    const definition = doc.definitions?.find(d => d.id === doc.interfaceId)
+    if (!definition) throw new Error('Group interface nodes belong inside a custom node')
+    return node.type === 'groupInput' ? { ...SPECS.groupInput, outputs: definition.inputs } : { ...SPECS.groupOutput, inputs: definition.outputs }
+  }
+  return SPECS[node.type]
+}
+
 /** Produce independent default parameters for a newly created node. */
 export const defaultParams = (type: NodeType): Params => Object.fromEntries(SPECS[type].parameters.map(p => [p.key, p.default]))
 
 /** Refuse unknown, missing or out-of-range values before a native operation. */
-export const validateParams = (type: NodeType, params: Params): string | null => {
-  const controls = SPECS[type].parameters
+export const validateParams = (type: NodeType, params: Params, spec = SPECS[type]): string | null => {
+  const controls = spec.parameters
   if (Object.keys(params).some(key => !controls.some(p => p.key === key))) return 'Unknown node parameter'
   for (const p of controls) {
     const v = params[p.key]

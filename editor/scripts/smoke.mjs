@@ -231,8 +231,13 @@ try {
   await page.getByLabel('Render last frame').fill('30'); await page.getByLabel('Render fps').selectOption('120')
   const previous = await page.locator('.frame-player').getAttribute('data-src')
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
-  await page.waitForFunction(() => Number(document.querySelector('progress')?.value) >= 2)
-  await page.getByRole('button', { name: 'Stop and keep completed frames' }).click()
+  // This tiny cached fixture can finish while Playwright waits for button
+  // stability. Click as soon as progress arrives, before the render completes.
+  await page.waitForFunction(() => {
+    const button = document.querySelector('.render-action button.danger')
+    if (!(Number(document.querySelector('progress')?.value) >= 2) || !button || button.disabled) return false
+    button.click(); return true
+  })
   await page.waitForFunction(old => { const video = document.querySelector('.frame-player'); return video && video.getAttribute('data-src') !== old && video.dataset.frame === '0' }, previous)
   const partial = await movie('partial.mp4'), count = Number(partial.streams[0].nb_read_frames)
   assert.ok(count >= 2 && count < 155); assert.match(await page.locator('.movie-caption').innerText(), /partial render/)

@@ -47,8 +47,16 @@ accept that asset size. The development preview runs on port 4561.
   Type mismatches and cycles are rejected by both the UI and the execution engine.
   Sockets have enlarged hit areas: hovering lights up the dot and its row. While
   wiring, a green destination accepts the connection; a red one rejects it.
+- **Right-click a wire → Disconnect wire**, or select it and press **Delete**.
+  Selected wires also show a **Disconnect wire** button below the graph.
+  **Right-click an input socket → Disconnect input** works without finding the
+  wire. Output sockets list each branch and can disconnect all outputs together.
+  Nodes stay in place, and **Ctrl Z** restores the removed connections.
 - Drag the node title, preview bar, or preview image to move it. Buttons and
   parameter fields stay interactive.
+- Numeric parameters update the graph and preview as you type a valid value;
+  there is no need to press Enter or leave the field. Incomplete or out-of-range
+  input keeps the last valid value until you finish typing.
 - Click a node to select it for editing. The large inspector keeps its current
   target while you select, move, add or duplicate nodes. **Right-click → Select for
   preview** changes that target. Select an output socket in the inspector for
@@ -159,7 +167,7 @@ Old media copies are retained when you remove nodes, so you can recover earlier 
 `Frame Offset` changes the requested time throughout its upstream branch.
 `Extract Frame` pins its upstream branch to an absolute, zero-based frame index,
 independent of the timeline. Add it with **Right-click → Time → Extract Frame**
-or search for its name. Set **Frame N (from 0)** and press Enter to apply it.
+or search for its name. **Frame N (from 0)** updates the result as you type.
 
 For an arbitrary frame-pair comparison, connect one Video Source to two Extract
 Frame nodes (for example, N = 2 and N = 7), then connect them to Frame Delta's A

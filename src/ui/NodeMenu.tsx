@@ -6,7 +6,7 @@ import type { GraphDocument, NodeType } from '../engine/types'
 import { useEditor } from './store'
 import { saveBlob } from './client'
 
-export type MenuPosition = { x: number; y: number; world: { x: number; y: number }; node?: string; edge?: string }
+export type MenuPosition = { x: number; y: number; world: { x: number; y: number }; node?: string; edge?: string; socket?: { node: string; handle: string; type: 'source' | 'target' } }
 const prefabs = [
   { id: 'difference', title: 'Compare neighboring frames', description: 'Source → grayscale → blur → difference → output' },
   { id: 'motion', title: 'Camera in-betweens', description: 'Source + measured motion × time fraction → Translate → output' },
@@ -29,7 +29,7 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
   const node = useEditor(s => s.view.nodes.find(n => n.id === position.node))
   const highlighted = useEditor(s => s.highlighted), view = useEditor(s => s.view)
   const selection = view.nodes.filter(n => highlighted.includes(n.id)), editable = selection.filter(n => n.type !== 'groupInput' && n.type !== 'groupOutput')
-  const showSelection = !position.edge && selection.length > 0, multiple = selection.length > 1
+  const showSelection = selection.length > 0, multiple = selection.length > 1
   const definitions = useEditor(s => s.doc.definitions) ?? []
   const customResults = definitions.filter(d => query.trim() ? matchesQuery(query, `${d.name} ${[...d.inputs, ...d.outputs].map(p => p.label).join(' ')}`) : category === 'Custom')
   const nodes = query.trim() ? searchNodes(query) : Object.values(SPECS).filter(s => s.category === category && !['group', 'groupInput', 'groupOutput'].includes(s.type)).map(s => s.type)
@@ -54,10 +54,9 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
     }}>
       <div className="menu-title"><span>{showSelection ? `${selection.length} node${multiple ? 's' : ''} selected` : 'Add to graph'}</span><code>Shift A</code><button aria-label="Close node menu" onClick={close}>×</button></div>
       <div className="menu-search"><span>⌕</span><input ref={input} aria-label="Search nodes" placeholder="Search nodes, algorithms or properties…" value={query} onChange={e => { setQuery(e.target.value); setIndex(0) }} /></div>
-      {(node || showSelection || position.edge) && <div className="menu-context">
+      {(node || showSelection) && <div className="menu-context">
         {node && <><button onClick={() => { useEditor.getState().select(node.id); close() }}>Select for preview</button><button onClick={() => { useEditor.getState().togglePreview(node.id); close() }}>Toggle node preview</button></>}
         {showSelection && <><button disabled={!editable.length} onClick={() => { const anchor = editable[0]!; useEditor.getState().insert(selectedGraph(), { x: anchor.position.x + 40, y: anchor.position.y + 40 }); close() }}>{multiple ? 'Duplicate selected nodes' : 'Duplicate'}</button><button disabled={!editable.length} onClick={() => { useEditor.getState().makeGroup(); close() }}>Make custom node</button><button disabled={!editable.length} onClick={() => { saveBlob(new Blob([JSON.stringify(selectedGraph(), null, 2)], { type: 'application/json' }), 'cadence-prefab.json'); close() }}>Save prefab to folder</button><button className="danger" disabled={!editable.length} onClick={() => { useEditor.getState().remove(editable.map(n => n.id)); close() }}>{multiple ? `Delete selected nodes (${editable.length})` : 'Delete'}</button></>}
-        {position.edge && <button onClick={() => { useEditor.getState().remove([], [position.edge!]); close() }}>Delete connection</button>}
       </div>}
       <div className={`menu-body ${query ? 'searching' : ''}`}>
         {!query && <nav aria-label="Node categories">{categories.map(c => <button key={c} className={category === c ? 'active' : ''} onMouseEnter={() => { setCategory(c); setIndex(0) }} onFocus={() => { setCategory(c); setIndex(0) }} onClick={() => { setCategory(c); setIndex(0); input.current?.focus() }}>{c}<span>›</span></button>)}</nav>}

@@ -43,6 +43,7 @@ export const graphActionsSmoke = async (page, { upload, project, sourceGraph, di
   await pane.click({ position: { x: 10, y: 10 } })
   const first = await a.boundingBox(), second = await b.boundingBox()
   await page.keyboard.down('Shift')
+  await pane.and(page.locator('.selection')).waitFor()
   await page.mouse.move(Math.min(first.x, second.x) - 8, Math.min(first.y, second.y) - 8)
   await page.mouse.down()
   await page.mouse.move(Math.max(first.x + first.width, second.x + second.width) + 8, Math.max(first.y + first.height, second.y + second.height) + 8, { steps: 12 })
@@ -79,6 +80,50 @@ export const graphActionsSmoke = async (page, { upload, project, sourceGraph, di
   await page.screenshot({ path: resolve(directory, 'socket-invalid.png') })
   await page.mouse.up()
   assert.deepEqual((await project()).edges, before)
+  const connected = await project()
+  const restoreWire = async () => {
+    await page.getByLabel('Node editor', { exact: true }).focus(); await page.keyboard.press('Control+z')
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge').length === 3)
+    assert.deepEqual((await project()).edges, connected.edges)
+  }
+  const checkDisconnected = async handles => {
+    const saved = await project()
+    assert.deepEqual(saved.nodes, connected.nodes, 'Disconnecting a wire must keep every node')
+    assert.deepEqual(saved.edges, connected.edges.filter(e => !handles.includes(e.targetHandle)))
+    assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'n5', 'Disconnecting an unrelated branch keeps the inspector target')
+  }
+  await input.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Disconnect input', exact: true }).click()
+  await checkDisconnected(['in:scalar:b'])
+  await input.click({ button: 'right' })
+  assert.match(await page.getByRole('dialog', { name: 'Connection actions' }).innerText(), /no connections/)
+  await page.keyboard.press('Escape'); await restoreWire()
+  // Output sockets expose each branch as well as a single undoable disconnect-all action.
+  await output.click({ button: 'right' })
+  await page.locator('.connection-item').filter({ hasText: 'Multiply · A' }).getByRole('button', { name: 'Disconnect wire', exact: true }).click()
+  await checkDisconnected(['in:scalar:a']); await restoreWire()
+  await output.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Disconnect all outputs (2)', exact: true }).click()
+  await checkDisconnected(['in:scalar:a', 'in:scalar:b']); await restoreWire()
+  const wirePoint = () => page.locator('.react-flow__edge[data-id="e:nb:in:scalar:b"] .react-flow__edge-path').evaluate(path => {
+    const point = path.getPointAtLength(path.getTotalLength() * 0.75), transformed = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM())
+    return { x: transformed.x, y: transformed.y }
+  })
+  for (const method of ['menu', 'keyboard', 'button']) {
+    const point = await wirePoint()
+    await page.mouse.click(point.x, point.y, { button: method === 'menu' ? 'right' : 'left' })
+    if (method === 'menu') {
+      await page.getByRole('dialog', { name: 'Connection actions' }).waitFor()
+      await page.screenshot({ path: resolve(directory, 'disconnect-wire.png') })
+      await page.getByRole('dialog', { name: 'Connection actions' }).getByRole('button', { name: 'Disconnect wire', exact: true }).click()
+    } else {
+      assert.deepEqual(await selectedIds(), [], 'Selecting a wire clears node selection before Delete')
+      if (method === 'keyboard') { await page.getByLabel('Node editor', { exact: true }).focus(); await page.keyboard.press('Delete') }
+      else await page.getByRole('button', { name: 'Disconnect wire', exact: true }).click()
+    }
+    await checkDisconnected(['in:scalar:b']); await restoreWire()
+  }
+  console.log('PASS: wire menu, Delete key, disconnect button, input/output socket menus, branch isolation and one-step undo')
   await upload(sourceGraph)
   console.log('PASS: enlarged socket hit area starts a real wire; valid and invalid destination feedback matches connection behavior')
 }

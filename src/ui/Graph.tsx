@@ -6,6 +6,7 @@ import { SPECS, PORT_COLORS, specFor } from '../engine/specs'
 import { validateConnection } from '../engine/graph'
 import type { GraphNode, NodeType, NodeSpec, Parameter } from '../engine/types'
 import { NodeMenu, selectedGraph } from './NodeMenu'
+import { ConnectionMenu } from './ConnectionMenu'
 import type { MenuPosition } from './NodeMenu'
 import type { GraphDocument } from '../engine/types'
 import { useEditor } from './store'
@@ -21,7 +22,7 @@ const NumberControl = ({ value, parameter, label, disabled, commit }: { value: n
   // Do not replace a focused input with a delayed parent value between keystrokes.
   useEffect(() => { if (!editing.current) setDraft(String(value)) }, [value])
   const valid = (n: number) => Number.isFinite(n) && n >= parameter.min && n <= parameter.max && (parameter.step !== 1 || Number.isInteger(n))
-  return <input aria-label={label} type="number" value={draft} min={parameter.min} max={parameter.max} step={parameter.step} disabled={disabled} onFocus={() => { editing.current = true }} title="Apply with Enter or when leaving the field" onChange={e => setDraft(e.target.value)} onBlur={e => { editing.current = false; if (valid(e.target.valueAsNumber)) commit(e.target.valueAsNumber); else setDraft(String(value)) }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = String(value); setDraft(String(value)); e.currentTarget.blur() } }} />
+  return <input aria-label={label} type="number" value={draft} min={parameter.min} max={parameter.max} step={parameter.step} disabled={disabled} onFocus={() => { editing.current = true }} title="Updates immediately when the value is valid" onChange={e => { setDraft(e.target.value); const next = e.target.valueAsNumber; if (valid(next) && next !== value) commit(next) }} onBlur={e => { editing.current = false; const next = e.target.valueAsNumber; if (valid(next)) { if (next !== value) commit(next); setDraft(String(next)) } else setDraft(String(value)) }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = String(value); setDraft(String(value)); e.currentTarget.blur() } }} />
 }
 
 const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
@@ -58,11 +59,11 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
     {node.type === 'source' && <SourceFile node={node} />}
     <div className="sockets">
       {spec.inputs.map(port => <div className="socket input" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
-        <Handle type="target" id={port.id} position={Position.Left} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} input · Drag to connect`} />
+        <Handle type="target" id={port.id} position={Position.Left} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} input · Drag to connect · Right-click to disconnect`} />
         <span>{port.label}</span>{port.frameParam ? <code>#{Number(node.params[port.frameParam])}</code> : port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>}
       </div>)}
       {spec.outputs.map(port => <div className="socket output" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
-        <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} output · Drag to connect`} />
+        <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} output · Drag to connect · Right-click to disconnect`} />
       </div>)}
     </div>
     {spec.parameters.length > 0 && <div className="parameters nodrag nowheel">
@@ -83,8 +84,11 @@ const Canvas = () => {
   const revision = useEditor(s => s.revision), locked = useEditor(s => s.busy === 'bake')
   const flow = useReactFlow<VisualNode>(), nodesInitialized = useNodesInitialized(), fittedRevision = useRef<number | undefined>(undefined)
   const [menu, setMenu] = useState<MenuPosition | null>(null), [selectedEdge, setSelectedEdge] = useState<string | null>(null)
+  // Controlled React Flow nodes must retain measurements across ordinary rerenders.
+  // Dropping them resets handle bounds and makes selection treat nodes as unmeasured.
+  const [measurements, setMeasurements] = useState<Record<string, { width: number; height: number }>>({})
   const clipboard = useRef<GraphDocument | null>(null), container = useRef<HTMLDivElement>(null)
-  const openMenu = (x: number, y: number, node?: string, edge?: string) => { if (!locked) setMenu({ x, y, world: flow.screenToFlowPosition({ x, y }), node, edge }) }
+  const openMenu = (x: number, y: number, node?: string, edge?: string, socket?: MenuPosition['socket']) => { if (!locked) { if (!edge) setSelectedEdge(null); setMenu({ x, y, world: flow.screenToFlowPosition({ x, y }), node, edge, socket }) } }
   useEffect(() => {
     if (!nodesInitialized || fittedRevision.current === revision) return
     fittedRevision.current = revision
@@ -92,21 +96,27 @@ const Canvas = () => {
     // interpolate a zero-size viewport into NaN transforms in a fresh browser.
     void flow.fitView({ padding: 0.15, maxZoom: 1 })
   }, [revision, nodesInitialized, flow])
-  const nodes: VisualNode[] = doc.nodes.map(model => ({ id: model.id, position: model.position, data: { model, spec: specFor(model, doc), connected: doc.edges.filter(e => e.target === model.id).map(e => e.targetHandle) }, type: 'operation', dragHandle: '.node-drag-handle', deletable: model.type !== 'groupInput' && model.type !== 'groupOutput', selected: highlighted.includes(model.id) }))
+  const nodes: VisualNode[] = doc.nodes.map(model => ({ id: model.id, position: model.position, measured: measurements[model.id], data: { model, spec: specFor(model, doc), connected: doc.edges.filter(e => e.target === model.id).map(e => e.targetHandle) }, type: 'operation', dragHandle: '.node-drag-handle', deletable: model.type !== 'groupInput' && model.type !== 'groupOutput', selected: highlighted.includes(model.id) }))
   const edges: Edge[] = doc.edges.map(e => {
     const source = doc.nodes.find(n => n.id === e.source), type = source && specFor(source, doc).outputs.find(p => p.id === e.sourceHandle)?.type
-    return { ...e, selected: selectedEdge === e.id, type: 'default', style: { stroke: PORT_COLORS[type ?? 'frame'], strokeWidth: 1.7 } }
+    return { ...e, selected: selectedEdge === e.id, type: 'default', interactionWidth: 28, style: { stroke: PORT_COLORS[type ?? 'frame'] } }
   })
   const onNodesChange = useCallback((changes: NodeChange<VisualNode>[]) => {
     for (const c of changes) {
-      if (c.type === 'position' && c.position) useEditor.getState().edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === c.id ? { ...n, position: c.position! } : n) }), false)
+      if (c.type === 'dimensions' && c.dimensions) setMeasurements(s => s[c.id]?.width === c.dimensions!.width && s[c.id]?.height === c.dimensions!.height ? s : { ...s, [c.id]: c.dimensions! })
+      else if (c.type === 'position' && c.position) useEditor.getState().edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === c.id ? { ...n, position: c.position! } : n) }), false)
       else if (c.type === 'select') useEditor.setState(s => ({ highlighted: c.selected ? [...new Set([...s.highlighted, c.id])] : s.highlighted.filter(id => id !== c.id) }))
     }
   }, [])
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     for (const c of changes) if (c.type === 'select') setSelectedEdge(c.selected ? c.id : null)
   }, [])
-  return <div ref={container} className="graph-surface" tabIndex={0} aria-label="Node editor" onKeyDown={e => {
+  return <div ref={container} className="graph-surface" tabIndex={0} aria-label="Node editor" onContextMenuCapture={e => {
+    const handle = e.target instanceof Element ? e.target.closest<HTMLElement>('.react-flow__handle') : null
+    if (!handle?.dataset.nodeid || !handle.dataset.handleid) return
+    e.preventDefault(); e.stopPropagation(); setSelectedEdge(null)
+    openMenu(e.clientX, e.clientY, undefined, undefined, { node: handle.dataset.nodeid, handle: handle.dataset.handleid, type: handle.classList.contains('target') ? 'target' : 'source' })
+  }} onKeyDown={e => {
     if (locked || menu || (e.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName))) return
     const bounds = container.current!.getBoundingClientRect(), point = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
     if (e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openMenu(point.x, point.y) }
@@ -133,12 +143,12 @@ const Canvas = () => {
     const type = e.dataTransfer.getData('application/cadence-node')
     if (Object.hasOwn(SPECS, type) && !locked) useEditor.getState().add(type as NodeType, flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
   }}>
-    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onDelete={({ nodes, edges }) => { useEditor.getState().remove(nodes.map(n => n.id), edges.map(e => e.id)); setSelectedEdge(null) }} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ focused: n.id }); setSelectedEdge(null) }} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onSelectionContextMenu={(e, nodes) => { e.preventDefault(); e.stopPropagation(); useEditor.setState({ highlighted: nodes.map(n => n.id) }); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); e.stopPropagation(); if (!useEditor.getState().highlighted.includes(n.id)) useEditor.getState().focus(n.id); else useEditor.setState({ focused: n.id }); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesDraggable={!locked} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
+    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onDelete={({ nodes, edges }) => { useEditor.getState().remove(nodes.map(n => n.id), edges.map(e => e.id)); setSelectedEdge(null) }} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ focused: n.id }); setSelectedEdge(null) }} onEdgeClick={(_e, edge) => { useEditor.setState({ highlighted: [], focused: '' }); setSelectedEdge(edge.id) }} onPaneClick={() => setSelectedEdge(null)} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onSelectionContextMenu={(e, nodes) => { e.preventDefault(); e.stopPropagation(); useEditor.setState({ highlighted: nodes.map(n => n.id) }); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); e.stopPropagation(); if (!useEditor.getState().highlighted.includes(n.id)) useEditor.getState().focus(n.id); else useEditor.setState({ focused: n.id }); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); e.stopPropagation(); useEditor.setState({ highlighted: [], focused: '' }); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesDraggable={!locked} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
       <Background variant={BackgroundVariant.Dots} color="#374239" gap={22} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>
-    <div className="graph-help">Drop videos here · Right-click / Shift A to add · Shift-select multiple</div>
-    {menu && <NodeMenu position={menu} close={() => { setMenu(null); container.current?.focus() }} />}
+    {selectedEdge && doc.edges.some(e => e.id === selectedEdge) ? <div className="edge-tools"><span>Wire selected · Delete to disconnect</span><button disabled={locked} onClick={() => { useEditor.getState().remove([], [selectedEdge]); setSelectedEdge(null) }}>Disconnect wire</button></div> : <div className="graph-help">Right-click to add nodes · Right-click wires or sockets to disconnect</div>}
+    {menu && (menu.edge || menu.socket ? <ConnectionMenu position={menu} close={() => { setMenu(null); container.current?.focus() }} /> : <NodeMenu position={menu} close={() => { setMenu(null); container.current?.focus() }} />)}
   </div>
 }
 export const Graph = () => { const active = useEditor(s => s.activeTab); return <ReactFlowProvider key={active}><Canvas /></ReactFlowProvider> }

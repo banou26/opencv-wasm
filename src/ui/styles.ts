@@ -23,12 +23,26 @@ export const styles = css`
   .graph-help { position: absolute; bottom: 19px; right: 15px; max-width: calc(100% - 72px); font-size: 10px; color: #9caa94; background: #171d16e8; padding: 6px 9px; border-radius: 4px; pointer-events: none; } .graph-bottom { padding: 5px 12px; display: flex; flex-shrink: 0; gap: 12px; align-items: center; border-top: 1px solid #30382d; font-size: 10px; } .graph-bottom span { display: flex; align-items: center; gap: 6px; } .graph-bottom span:last-child { margin-left: auto; } .graph-bottom i { width: 5px; height: 5px; border-radius: 50%; }
   .react-flow { --xy-background-color: transparent; --xy-controls-button-background-color: #252c25; --xy-controls-button-background-color-hover: #344032; --xy-controls-button-color: #cfdfc7; --xy-controls-button-border-color: #45503c; }
   .react-flow__controls { box-shadow: none; border: 1px solid #3a4533; border-radius: 5px; overflow: hidden; margin: 15px; }
+  .react-flow__edge { cursor: pointer; }
+  .react-flow__edge-path { stroke-width: 1.7; transition: stroke-width .1s, filter .1s; }
+  .react-flow__edge:hover .react-flow__edge-path, .react-flow__edge.selected .react-flow__edge-path { stroke-width: 3.5; filter: drop-shadow(0 0 3px #c5e7ae99); }
+  .edge-tools { position: absolute; bottom: 15px; right: 15px; max-width: calc(100% - 72px); display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid #718361; border-radius: 5px; background: #171d16f5; color: #c5e7ae; font-size: 10px; }
+  .edge-tools button { font-size: 10px; padding: 4px 7px; }
   .react-flow__node { border-radius: 9px; } .operation { width: 230px; border: 1px solid #485340; border-radius: 8px; background: #22291f; box-shadow: 0 7px 16px #0003; color: #dbe6d3; } .operation.chosen { border-color: #c5e7ae; box-shadow: 0 0 0 1px #b5d49c, 0 8px 20px #0005; }
   .node-drag-handle { cursor: grab; user-select: none; } .react-flow__node.dragging .node-drag-handle { cursor: grabbing; }
   .operation-head { display: flex; align-items: center; gap: 9px; padding: 12px; border-bottom: 1px solid #3a4433; } .operation-head small { display: block; font: 8px 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 1.4px; color: #9fad92; margin-bottom: 4px; } .operation-head strong { font-size: 13px; font-weight: 600; } .op-symbol { font: 21px 'JetBrains Mono', monospace; color: #c5e7ae; width: 27px; text-align: center; } .op-symbol.motion { color: #9caef4; } .op-symbol.delta { color: #efbc7b; }
   .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #56604e; margin-left: auto; } .status-dot.done { background: #c5e7ae; } .status-dot.running { background: #efbc7b; animation: blink .6s infinite alternate; } .status-dot.cached { background: #9caef4; } @keyframes blink { to { opacity: .3; } }
   .sockets { padding: 7px 0; } .socket { position: relative; height: 25px; display: flex; align-items: center; gap: 5px; padding: 0 13px; font-size: 10px; } .socket code { margin-left: auto; color: #b5c4a7; font-size: 9px; } .socket.output { justify-content: flex-end; color: #c4d4b9; } .react-flow__handle { width: 12px; height: 12px; border: 0; border-radius: 50%; background: transparent; } .react-flow__handle-left { left: 0; } .react-flow__handle-right { right: 0; }
   .menu-backdrop { position: fixed; inset: 0; z-index: 1000; cursor: default; }
+  .node-menu.connection-menu { width: 340px; }
+  .connection-menu .menu-title button { margin-left: auto; }
+  .connection-list { overflow: auto; min-height: 0; overscroll-behavior: contain; scrollbar-width: thin; }
+  .connection-item { padding: 12px 14px; border-bottom: 1px solid #3b4633; }
+  .connection-item p { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 12px; overflow-wrap: anywhere; }
+  .connection-arrow { color: #99a393; font-size: 10px; }
+  .connection-item button, .connection-all button { width: 100%; text-align: left; }
+  .connection-all { padding: 10px 14px; flex-shrink: 0; }
+  .connection-empty { padding: 14px; font-size: 12px; line-height: 1.6; color: #a1b494; }
   /* The hit area is larger than the dot, without shifting the wire's endpoint. */
   .react-flow__handle::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
   .react-flow__handle::after { content: ''; position: absolute; inset: 0; border: 2px solid #1b2118; border-radius: 50%; background: var(--socket-color); pointer-events: none; transition: inset .1s, box-shadow .1s; }

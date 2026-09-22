@@ -122,7 +122,9 @@ try {
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('23'))
   assert.deepEqual(await png(), sourcePixels.get(7))
   const extractControl = page.getByLabel('Extract Frame Frame N (from 0)', { exact: true })
-  await change(async () => { await extractControl.fill('2'); await extractControl.press('Enter') })
+  await extractControl.click()
+  await change(() => extractControl.fill('2'))
+  assert.ok(await extractControl.evaluate(input => document.activeElement === input), 'Extract Frame must finish updating while its field still has focus')
   assert.deepEqual(await png(), sourcePixels.get(2))
   await upload(await project())
   assert.deepEqual(await png(), sourcePixels.get(2))
@@ -138,7 +140,7 @@ try {
   await page.getByLabel('Search nodes').fill('extract frame')
   assert.match(await page.getByRole('listbox').innerText(), /Extract Frame/)
   await page.keyboard.press('Escape')
-  console.log('PASS: Extract Frame pixels, absolute index editing, timeline independence, serialization and arbitrary-frame delta')
+  console.log('PASS: Extract Frame pixels, live parameter updates without blur, timeline independence, serialization and arbitrary-frame delta')
 
   const composite = { version: 1, nodes: [node('n1', 'source'), node('n2', 'offset', { offset: 7 }, 350), node('n3', 'threshold', { cutoff: 0.5, invert: false }, 350), node('n4', 'composite', {}, 680), node('n5', 'output', {}, 990)], edges: [edge('n1', 'n2'), edge('n1', 'n3'), edge('n1', 'n4', 'in:frame:background'), edge('n2', 'n4', 'in:frame:foreground'), edge('n3', 'n4', 'in:frame:mask'), edge('n4', 'n5')] }
   composite.nodes[2].position.y = 400
@@ -231,17 +233,12 @@ try {
   const nestedProject = await project(), nested = nestedProject.definitions.find(d => d.name === 'Axis Pair'), inputId = nested.inputs.at(-1).id, outputId = nested.outputs.at(-1).id
   await page.getByRole('button', { name: 'Fit View', exact: true }).click()
   await page.waitForTimeout(300)
-  const from = await page.locator(`.react-flow__node[data-id="ninput"] [data-handleid="${inputId}"]`).boundingBox(), to = await page.locator(`.react-flow__node[data-id="noutput"] [data-handleid="${outputId}"]`).boundingBox()
-  assert.ok(from && to)
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down(); await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 }); await page.mouse.up()
+  const from = page.locator(`.react-flow__node[data-id="ninput"] [data-handleid="${inputId}"]`), to = page.locator(`.react-flow__node[data-id="noutput"] [data-handleid="${outputId}"]`)
+  // Follow the live elements rather than stale coordinates while the nested viewport settles.
+  await from.hover(); await page.mouse.down(); await to.hover()
+  await page.waitForFunction(id => document.querySelector(`[data-nodeid="noutput"][data-handleid="${id}"]`)?.classList.contains('valid'), outputId)
+  await page.mouse.up()
   const wired = await project()
-  if (!wired.definitions.find(d => d.id === nested.id).graph.edges.some(e => e.targetHandle === outputId && e.sourceHandle === inputId)) {
-    await page.screenshot({ path: resolve(directory, 'custom-wire-failure.png') })
-    console.log('Custom wire hit targets', await page.evaluate(({ from, to }) => [from, to].map(box => {
-      const el = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
-      return { box, target: el?.outerHTML.slice(0, 700) }
-    }), { from, to }))
-  }
   assert.ok(wired.definitions.find(d => d.id === nested.id).graph.edges.some(e => e.targetHandle === outputId && e.sourceHandle === inputId), 'Custom scalar ports should be wired')
   await page.locator('.step-strip button').filter({ hasText: 'Group Outputs' }).click()
   await change(() => page.getByLabel('Output socket').selectOption(outputId))

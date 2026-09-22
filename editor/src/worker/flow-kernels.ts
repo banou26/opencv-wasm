@@ -13,27 +13,31 @@ const median = (values: number[]) => { values.sort((a, b) => a - b); const mid =
 const gray8 = (src: Mat, dst: Mat) => { using gray = new Mat(); cvtColor(src, gray, COLOR_RGBA2GRAY); gray.convertTo(dst, CV_8U, 255) }
 const frame = (mat: Mat): Frame => ({ kind: 'frame', mat, range: 'unit' })
 
-/** Sparse arrows retain the underlying image; missing support is distinct from zero motion. */
+/** Keep the background at native resolution, mapping analysis coordinates and vectors onto it. */
 export const drawFlow = (flow: Flow, background: Frame, cell: number, gain: number, brightness: number, grid: boolean, labels: boolean, validity?: Frame): Frame => {
-  sameSize(flow.mat, background.mat); if (validity) sameSize(flow.mat, validity.mat)
+  if (validity) sameSize(flow.mat, validity.mat)
   using bytes = new Mat()
   background.mat.convertTo(bytes, CV_8UC4, 255 * brightness)
   const rgba = bytes.data, original = background.mat.data32F
   for (let i = 3; i < rgba.length; i += 4) rgba[i] = Math.round(Math.max(0, Math.min(1, original[i]!)) * 255)
   const width = flow.mat.cols, height = flow.mat.rows, values = Float32Array.from(flow.mat.data32F), mask = validity ? Float32Array.from(validity.mat.data32F) : undefined
+  const sx = background.mat.cols / width, sy = background.mat.rows / height, scale = Math.min(sx, sy)
+  const point = (x: number, y: number) => ({ x: Math.round((x + 0.5) * sx - 0.5), y: Math.round((y + 0.5) * sy - 0.5) })
+  const thickness = Math.max(1, Math.round(scale)), radius = Math.max(2, Math.round(2 * scale))
   const mint: Scalar = [85, 216, 178, 255], orange: Scalar = [244, 154, 109, 255], gray: Scalar = [130, 130, 130, 255]
   for (let y = 0; y < height; y += cell) for (let x = 0; x < width; x += cell) {
     const w = Math.min(cell, width - x), h = Math.min(cell, height - y), center = { x: Math.round(x + (w - 1) / 2), y: Math.round(y + (h - 1) / 2) }
     const i = center.y * width + center.x, dx = values[i * 2]!, dy = values[i * 2 + 1]!, valid = (!mask || mask[i * 4]! > 0.5) && Number.isFinite(dx) && Number.isFinite(dy)
-    if (grid) rectangle(bytes, { x, y }, { x: x + w - 1, y: y + h - 1 }, [100, 100, 100, 255], 1)
+    const origin = point(center.x, center.y)
+    if (grid) rectangle(bytes, { x: Math.round(x * sx), y: Math.round(y * sy) }, { x: Math.round((x + w) * sx) - 1, y: Math.round((y + h) * sy) - 1 }, [100, 100, 100, 255], thickness)
     if (valid) {
-      circle(bytes, center, 2, orange, -1)
-      if (Math.hypot(dx, dy) * gain >= 0.5) arrowedLine(bytes, center, { x: Math.round(center.x + dx * gain), y: Math.round(center.y + dy * gain) }, mint, 1, LINE_AA, 0, 0.3)
-      else circle(bytes, center, 2, mint, -1)
-      if (labels && w >= 40 && h >= 24) putText(bytes, `${Math.round(dx)},${Math.round(dy)}`, { x: x + 3, y: y + 12 }, FONT_HERSHEY_SIMPLEX, 0.3, mint, 1, LINE_AA)
+      circle(bytes, origin, radius, orange, -1)
+      if (Math.hypot(dx * sx, dy * sy) * gain >= 0.5) arrowedLine(bytes, origin, point(center.x + dx * gain, center.y + dy * gain), mint, thickness, LINE_AA, 0, 0.3)
+      else circle(bytes, origin, radius, mint, -1)
+      if (labels && w >= 40 && h >= 24) putText(bytes, `${Math.round(dx * sx)},${Math.round(dy * sy)}`, point(x + 3, y + 12), FONT_HERSHEY_SIMPLEX, 0.3 * scale, mint, thickness, LINE_AA)
     } else {
-      line(bytes, { x: center.x - 2, y: center.y - 2 }, { x: center.x + 2, y: center.y + 2 }, gray, 1)
-      line(bytes, { x: center.x + 2, y: center.y - 2 }, { x: center.x - 2, y: center.y + 2 }, gray, 1)
+      line(bytes, point(center.x - 2, center.y - 2), point(center.x + 2, center.y + 2), gray, thickness)
+      line(bytes, point(center.x + 2, center.y - 2), point(center.x - 2, center.y + 2), gray, thickness)
     }
   }
   const out = new Mat()

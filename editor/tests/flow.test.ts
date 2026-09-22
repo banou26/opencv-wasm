@@ -5,7 +5,7 @@ import { parseDocument } from '../src/engine/graph'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { ResultCache } from '../src/engine/cache'
 import { runKernel } from '../src/worker/kernels'
-import { flowKernel } from '../src/worker/flow-kernels'
+import { drawFlow, flowKernel } from '../src/worker/flow-kernels'
 import { image, payloadBundle, parameterValue, clonePayload } from '../src/worker/payload'
 import type { Frame, Flow, Payload } from '../src/worker/payload'
 import { defaultParams } from '../src/engine/specs'
@@ -49,6 +49,11 @@ test('the complete editable cookbook estimates a known pan and renders sparse ar
     // The final pair clamps to the last drawing even in interactive inspection.
     const last = await evaluate('ngrid', 'out:scalar:dx', 1)
     try { if (last.value.kind !== 'scalar') throw new Error('Missing delta'); expect(Math.abs(last.value.value)).toBeLessThan(0.1) } finally { last.release() }
+    doc.nodes.find(n => n.id === 'nworking')!.params.limit = 96
+    const working = await evaluate('nworking', 'a')
+    try { expect(image(working.value).mat.cols).toBe(96) } finally { working.release() }
+    const full = await evaluate('n5', null)
+    try { expect(image(full.value).mat.cols).toBe(192); expect(image(full.value).mat.rows).toBe(128) } finally { full.release() }
   } finally { cache.clear(); a.mat.delete(); b.mat.delete() }
 })
 
@@ -78,4 +83,27 @@ test('a flat image has no texture evidence and unsupported cells are explicit', 
       try { expect(image(grid.outputs['out:frame:image']).mat.data32F.every((v, i) => i % 4 === 3 || v === 0)).toBe(true); expect(grid.outputs['out:scalar:accepted']).toEqual({ kind: 'scalar', value: 0 }) } finally { grid.dispose() }
     } finally { texture.dispose() }
   } finally { flow.mat.delete(); base.mat.delete() }
+})
+
+test('small flow fields draw scaled vectors over untouched full-resolution background detail', () => {
+  const base = makeFrame(32, 24), background = makeFrame(96, 48)
+  const flow: Flow = { kind: 'flow', base, mat: new Mat(24, 32, CV_32FC2, [4, 3, 0, 0]) }
+  const mask: Frame = { kind: 'frame', range: 'unit', mat: new Mat(24, 32, CV_32FC4, [1, 1, 1, 1]) }
+  try {
+    const out = drawFlow(flow, background, 16, 1, 1, false, false, mask)
+    try {
+      expect(out.mat.cols).toBe(96); expect(out.mat.rows).toBe(48)
+      const pixels = out.mat.data32F, source = background.mat.data32F
+      // The top strip has no overlay, including one-pixel random texture that
+      // would disappear if we enlarged the smaller working image instead.
+      for (let x = 0; x < 96; x++) for (let c = 0; c < 4; c++) expect(pixels[x * 4 + c]).toBeCloseTo(source[x * 4 + c]!, 5)
+      // First cell center (8,8) maps to (25,17). Displacement (4,3)
+      // becomes (12,6), so the arrow must reach (37,23), not (29,20).
+      const tip = (23 * 96 + 37) * 4
+      expect(pixels[tip + 1]).toBeGreaterThan(0.75); expect(pixels[tip]).toBeLessThan(0.45)
+    } finally { out.mat.delete() }
+    mask.mat.setTo([0, 0, 0, 1])
+    const rejected = drawFlow(flow, background, 16, 1, 1, false, false, mask)
+    try { const center = (17 * 96 + 25) * 4; expect(rejected.mat.data32F[center]).toBeCloseTo(130 / 255, 5) } finally { rejected.mat.delete() }
+  } finally { flow.mat.delete(); base.mat.delete(); background.mat.delete(); mask.mat.delete() }
 })

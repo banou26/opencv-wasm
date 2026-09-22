@@ -85,6 +85,25 @@ Render its Output to see the vectors as a video. Adjust the shared cell-size
 Number, flow window, tolerance, texture threshold and arrow scale. Regional
 Median Flow's **residual** mode subtracts the dominant image translation.
 Gray crosses indicate insufficient evidence; dots indicate near-zero motion.
-The **Working frame pair** group limits the longest side to 640 pixels by
-default; increase **Max side** for more detail, or open the group to change its
-sizing arithmetic. Vectors are measured in these working-image pixels.
+The **Working frame pair** group limits analysis to a 640-pixel longest side by
+default. Increase **Max side** for finer motion analysis. The final drawing uses
+the original full-resolution frame, so this limit does not shrink the video.
+Draw Motion Vectors scales the grid and vectors onto that frame and labels
+displacement in original-image pixels. Numeric outputs upstream remain in
+working-image pixels.
+
+For a saved graph from before this change, connect the first **Extract Video
+Frame** (frame N) to **Draw Motion Vectors → Image**, keeping the field and mask
+connected, or reopen the updated prefab.
+
+## Output quality and resolution
+
+**Render → Quality** defaults to **High**. **Maximum** allocates more bitrate for
+fine lines and textured motion; **Compact** makes smaller files. All three keep
+the Output node's dimensions. Render again after changing quality or the graph.
+
+The rendered player shows the actual video resolution below its timeline. For
+procedural images, set the Width and Height Number nodes to the desired size;
+the stripe example starts at 192 × 128 to match the small reference texture.
+Video export requires even dimensions. Compression quality cannot restore detail
+that a Resize node has already removed.

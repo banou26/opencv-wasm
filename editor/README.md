@@ -253,7 +253,11 @@ It compares frame N with N+1 and repeats the final drawing at the end:
 5. **Regional Median Flow** summarizes accepted vectors in 48-pixel cells.
    A cell needs at least 8 samples and 5% support. Its residual mode subtracts
    the dominant translation to expose other motion.
-6. **Draw Motion Vectors** draws arrows and real dx/dy labels on the first frame.
+6. **Draw Motion Vectors** draws arrows and real dx/dy labels on the original,
+   full-resolution first frame. The smaller analysis field and validity mask
+   stay at working resolution; positions and vectors scale to the background.
+   Labels report displacement in original-image pixels, while upstream numeric
+   outputs remain in working-image pixels.
    Positive X is right; positive Y is down. Gray crosses mean insufficient
    support, while dots mean approximately zero motion. Arrow gain changes only
    the drawing scale, not the measurements.
@@ -262,6 +266,17 @@ The cell-size Number drives both aggregation and drawing. All controls accept
 wires. Inspect any node, enable its thumbnail, open the groups, or render the
 Output to see these measurements over time. Dense fields have sparse arrow
 previews enlarged 2×; the final overlay defaults to a 3× display multiplier.
+
+The 640-pixel analysis limit does not reduce output-video resolution. For an
+existing saved graph, connect the first **Extract Video Frame** (frame N)
+directly to **Draw Motion Vectors → Image**, or reopen the updated prefab. Keep its field and mask wires.
+
+Rendering defaults to **High** compression quality. **Maximum** gives fine lines
+and textured motion more bitrate; **Compact** uses the previous smaller budget.
+These settings preserve the Output node's dimensions. The player displays the
+actual encoded resolution below its timeline. A texture generated at 192 × 128
+stays that size; change the prefab's Width and Height Number nodes to generate a
+larger image. Changing quality requires rendering again.
 
 This follows the [motion-vectors cookbook](https://opencv.banou.dev/cookbook/motion-vectors/)
 with explicit intermediate values. Change **Working frame pair → Max side**

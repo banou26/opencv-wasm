@@ -21,6 +21,7 @@ const render = async (page, count = 8) => {
 /** A completely source-free graph generates the fixture pixels, advances Time and exports a movie. */
 export const generatedSmoke = async (page, { directory, fixture, choose, change, png, project }) => {
   await choose('texture')
+  assert.equal(await page.getByLabel('Render quality', { exact: true }).inputValue(), 'high')
   assert.equal(await page.locator('.react-flow__node').filter({ hasText: 'Video Source' }).count(), 0)
   assert.match(await page.locator('.time-heading').innerText(), /GENERATED TIME/)
   const raw = await readFile(resolve(directory, 'fixture.rgb')), { width, height } = fixture, stride = width * height * 3
@@ -38,6 +39,8 @@ export const generatedSmoke = async (page, { directory, fixture, choose, change,
   await render(page)
   const file = resolve(directory, 'generated-without-video.mp4'), info = await movieFile(page, file)
   assert.equal(info.nb_read_frames, '8'); assert.equal(info.r_frame_rate, '24/1')
+  assert.equal(await page.getByLabel('Output resolution', { exact: true }).innerText(), `${width} × ${height}`)
+  assert.deepEqual([info.width, info.height], [width, height], 'Compression preserves the graph output dimensions')
   const actual = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-sws_flags', 'bicubic+accurate_rnd+full_chroma_int', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { maxBuffer: 8 * 1024 ** 2 })
   for (let frame = 0; frame < 8; frame++) {
     const pixels = actual.subarray(frame * stride, (frame + 1) * stride)

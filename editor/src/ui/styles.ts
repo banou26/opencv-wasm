@@ -124,7 +124,7 @@ export const styles = css`
   .timeline-slider:disabled { cursor: default; }
   .render-section { display: flex; align-items: center; padding: 8px 16px; gap: 20px; border-bottom: 1px solid var(--cv-line); background: var(--cv-panel); }
   .render-settings { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 16px; flex: 1; min-width: 0; position: relative; }
-  .render-controls { display: flex; gap: 16px; } .render-controls label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--cv-muted); } .render-controls input, .render-controls select { width: 90px; } .render-controls select { padding: 6px; }
+  .render-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; } .render-controls label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--cv-muted); } .render-controls input, .render-controls select { width: 90px; } .render-controls select { padding: 6px; }
   .render-note { grid-column: 1 / -1; grid-row: 2; color: var(--cv-muted); font-size: 10px; } .render-action { display: flex; gap: 12px; align-items: center; } .render-action button { white-space: nowrap; } progress { position: absolute; bottom: -8px; width: 100%; height: 3px; margin: 0; accent-color: var(--cv-accent); }
   .render-preview { min-height: 0; flex: 1; background: var(--cv-canvas); overflow: hidden; display: flex; flex-direction: column; } .render-empty { display: flex; flex: 1; justify-content: center; align-items: center; flex-direction: column; gap: 12px; color: var(--cv-accent); text-align: center; padding: 25px; } .render-empty > span { font-size: 34px; } .render-empty strong { font-size: 13px; font-weight: 500; color: var(--cv-muted); } .render-empty p { font-size: 11px; line-height: 1.8; }
   .frame-player { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; background: var(--cv-canvas); }
@@ -248,7 +248,7 @@ export const styles = css`
     .subframe { width: auto; grid-column: 5; grid-row: 1 / 3; margin-left: 6px; gap: 7px; }
     .render-section { padding: 7px 10px; }
     .render-settings { grid-template-columns: minmax(0, 1fr); gap: 7px; }
-    .render-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .render-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .render-controls label { min-width: 0; }
     .render-controls input, .render-controls select { width: 100%; }
     .render-action { grid-row: 2; justify-content: space-between; }

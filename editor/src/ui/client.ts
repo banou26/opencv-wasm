@@ -121,12 +121,12 @@ export const openProjectFolder = async () => {
   for (const entry of restored.files) loads.push({ file: entry.file, asset: entry.id })
   nextLoad()
 }
-export const bake = (start: number, end: number, fps: number, target: string) => {
+export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high') => {
   const value = snapshot(), output = value.doc.nodes.find(n => n.id === target)
   if (output) { value.selected = output.id; value.port = null; value.path = [] }
   active = ++serial; bakeRequest = active; bakeLabel = nodeTitle(value.selected)
   useEditor.setState({ busy: 'bake', cancelling: false, progress: { done: 0, total: 0 }, error: '' })
-  send({ type: 'bake', request: active, value, start, end, fps })
+  send({ type: 'bake', request: active, value, start, end, fps, quality })
 }
 export const cancel = () => {
   active = ++serial

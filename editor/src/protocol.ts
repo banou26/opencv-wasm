@@ -1,5 +1,6 @@
 import type { GraphDocument, PortType } from './engine/types'
 import type { NodeStatus } from './engine/execute'
+import type { RenderQuality } from './engine/render-quality'
 
 /** Metadata for the currently attached clip. Frame numbers are presentation ranks. */
 export type SourceInfo = { id: string; name: string; width: number; height: number; frameCount: number; fps: number; codec: string; decoder: 'software' | 'hardware'; warnings: string[] }
@@ -14,7 +15,7 @@ export type WorkerCommand =
   | { type: 'cancel'; request: number }
   | { type: 'thumbnails'; generation: number; value: Inspection; nodes: string[] }
   | { type: 'budget'; bytes: number }
-  | { type: 'bake'; request: number; value: Inspection; start: number; end: number; fps: number }
+  | { type: 'bake'; request: number; value: Inspection; start: number; end: number; fps: number; quality: RenderQuality }
   | { type: 'pixel'; request: number; x: number; y: number }
   | { type: 'export'; request: number }
 /** Worker feedback, including explicit failure and bounded-memory statistics. */

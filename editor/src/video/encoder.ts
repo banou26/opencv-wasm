@@ -1,4 +1,6 @@
 import { createFile } from 'mp4box'
+import { renderBitrate } from '../engine/render-quality'
+import type { RenderQuality } from '../engine/render-quality'
 
 /** Stream generated frames into a silent H.264 MP4 without retaining raw baked frames. */
 export class MovieEncoder {
@@ -32,11 +34,13 @@ export class MovieEncoder {
   }
 
   /** Prefer a software encoder; an available hardware encoder uses the same pixel input. */
-  static async create(width: number, height: number, fps: number): Promise<MovieEncoder> {
+  static async create(width: number, height: number, fps: number, quality: RenderQuality = 'high'): Promise<MovieEncoder> {
     if (typeof VideoEncoder === 'undefined') throw new Error('VideoEncoder is unavailable in this browser')
     if (width % 2 || height % 2) throw new Error('H.264 export needs an even image width and height')
     for (const hardwareAcceleration of ['prefer-software', 'prefer-hardware'] as const) {
-      const config: VideoEncoderConfig = { codec: 'avc1.640033', width, height, bitrate: Math.max(2_000_000, width * height * fps * 0.12), framerate: fps, latencyMode: 'realtime', hardwareAcceleration, avc: { format: 'avc' } }
+      // Keep realtime ordering for the MP4 muxer, with a generous variable-rate
+      // budget for fine detail. This setting never resizes the graph's pixels.
+      const config: VideoEncoderConfig = { codec: 'avc1.640033', width, height, bitrate: renderBitrate(width, height, fps, quality), bitrateMode: 'variable', framerate: fps, latencyMode: 'realtime', hardwareAcceleration, avc: { format: 'avc' } }
       if ((await VideoEncoder.isConfigSupported(config)).supported) return new MovieEncoder(width, height, fps, config)
     }
     throw new Error('This Chrome session has no H.264 encoder. Enable its normal graphics session to export video.')

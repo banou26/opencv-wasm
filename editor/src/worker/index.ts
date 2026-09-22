@@ -114,6 +114,7 @@ const work = async (job: Job) => {
   const timelineFps = reference?.info.fps ?? GENERATED_FPS
   if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start || job.end >= (reference?.info.frameCount ?? 100000)) throw new Error('Choose a valid inclusive frame range')
   if (![24, 25, 30, 50, 60, 120].includes(job.fps)) throw new Error('Choose a supported output frame rate')
+  if (!['compact', 'high', 'maximum'].includes(job.quality)) throw new Error('Choose a supported render quality')
   const total = outputCount(job.start, job.end, timelineFps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
   parseDocument(job.value.doc)
@@ -128,7 +129,7 @@ const work = async (job: Job) => {
         if (job.request !== latest) break
         if (result.value.kind !== 'frame') throw new Error('Select an image output to bake. Scalar outputs are available in Inspect.')
         // Display gain is an inspection aid; encode the actual node output at unit gain.
-        encoder ??= await MovieEncoder.create(result.value.mat.cols, result.value.mat.rows, job.fps)
+        encoder ??= await MovieEncoder.create(result.value.mat.cols, result.value.mat.rows, job.fps, job.quality)
         await encoder.add(displayPixels(result.value, 1), index)
         count++
       } finally { result.release() }

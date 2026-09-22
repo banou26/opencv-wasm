@@ -12,7 +12,7 @@ type Transport = { index: number; playing: boolean; rate: number; loop: boolean 
 export const FramePlayer = ({ movie, ref }: { movie: Movie; ref: Ref<FramePlayerHandle> }) => {
   const canvas = useRef<HTMLCanvasElement>(null), player = useRef<HTMLDivElement>(null), worker = useRef<Worker | null>(null)
   const serial = useRef(0), ready = useRef(false), position = useRef<Transport>({ index: 0, playing: false, rate: 1, loop: true })
-  const [view, setView] = useState({ ...position.current, ready: false, seeking: true, displayed: -1, error: '' })
+  const [view, setView] = useState({ ...position.current, ready: false, seeking: true, displayed: -1, width: 0, height: 0, error: '' })
   const send = (command: PlayerCommand) => worker.current?.postMessage(command)
   const transport = (patch: Partial<Transport>) => {
     if (!ready.current) return false
@@ -47,7 +47,7 @@ export const FramePlayer = ({ movie, ref }: { movie: Movie; ref: Ref<FramePlayer
           context.drawImage(data.frame, 0, 0)
           surface.dataset.frame = String(data.index)
           position.current.index = data.index
-          setView(current => ({ ...current, index: data.index, displayed: data.index, seeking: false }))
+          setView(current => ({ ...current, index: data.index, displayed: data.index, width: surface.width, height: surface.height, seeking: false }))
         } catch (error) { fail(error instanceof Error ? error.message : String(error)) }
         finally { data.frame.close(); decoder.postMessage({ type: 'presented' } satisfies PlayerCommand) }
       } else if (data.request === serial.current) {
@@ -87,7 +87,7 @@ export const FramePlayer = ({ movie, ref }: { movie: Movie; ref: Ref<FramePlayer
       <button aria-label="Loop output" aria-pressed={view.loop} className={view.loop ? 'active' : ''} onClick={() => transport({ loop: !position.current.loop })} disabled={!view.ready}>Loop</button>
       <button aria-label="Fullscreen output" onClick={() => { void (document.fullscreenElement ? document.exitFullscreen() : player.current?.requestFullscreen())?.catch(() => {}) }}>⛶</button>
       <TimelineSlider label="Output timeline" max={movie.count - 1} step={1} value={view.index} disabled={!view.ready} onChange={seek} />
-      <span className="output-shortcut-hint">&lt; / &gt; step · Space play / pause</span>
+      <span className="output-shortcut-hint">{view.width > 0 && <><span aria-label="Output resolution">{view.width} × {view.height}</span> · </>}&lt; / &gt; step · Space play / pause</span>
     </div>
   </div>
 }

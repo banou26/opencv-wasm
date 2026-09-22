@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "lib": ["ESNext", "DOM", "DOM.Iterable"], "jsx": "react-jsx", "jsxImportSource": "@emotion/react", "types": ["vite/client"] },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/worker", "src/video", "src/gpu"]
+}

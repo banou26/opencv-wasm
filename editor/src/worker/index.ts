@@ -1,0 +1,211 @@
+import { initOpenCV } from '@banou/opencv-wasm'
+import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
+import { ResultCache } from '../engine/cache'
+import { evaluateGraph } from '../engine/evaluate'
+import { parseDocument } from '../engine/graph'
+import { outputCount, outputTime } from '../engine/time'
+import type { Lease } from '../engine/types'
+import { Presenter } from '../gpu/presenter'
+import { VideoSource } from '../video/source'
+import { MovieEncoder } from '../video/encoder'
+import type { Inspection, SourceDemand, WorkerCommand, WorkerEvent } from '../protocol'
+import { displayPixels, runKernel } from './kernels'
+import type { Payload } from './kernels'
+import { parameterValue, payloadSummary } from './payload'
+
+const scope = self as DedicatedWorkerGlobalScope
+const post = (event: WorkerEvent, transfer: Transferable[] = []) => scope.postMessage(event, transfer)
+let lastYield = 0
+// Give incoming seeks/cancellation a turn, without paying a nested timer delay per scalar node.
+const wait = async () => {
+  if (performance.now() - lastYield < 8) return
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
+  lastYield = performance.now()
+}
+const cache = new ResultCache<Payload>(512 * 1024 ** 2)
+let presenter: Presenter | undefined, source: VideoSource | undefined
+const sources = new Map<string, VideoSource>()
+const catalog = () => Object.fromEntries([...sources].map(([id, video]) => [id, video.info]))
+let displayed: Lease<Payload> | undefined
+let pixels: Uint8Array<ArrayBuffer> | undefined, width = 0, height = 0
+let latest = 0, running = false
+type Job = Extract<WorkerCommand, { type: 'load' | 'inspect' | 'bake' }>
+let pending: Job | undefined
+let pendingThumbnails: Extract<WorkerCommand, { type: 'thumbnails' }> | undefined
+let thumbnailGeneration = 0
+let initialization: Promise<void> | undefined
+
+const evaluate = async (value: Inspection, request: number, extraCancelled = () => false, silent = false, holdLastFrame = false) => {
+  const currentSource = sources.get(value.referenceAsset ?? '') ?? source, doc = parseDocument(value.doc)
+  const sourceById = (id: string) => { const video = sources.get(id); for (const other of sources.values()) if (other !== video) other.close(); return video }
+  const demands = new Map<string, SourceDemand>()
+  const result = await evaluateGraph(doc, value.selected, value.port, value.frame, value.path ?? [], {
+    cache, assets: catalog(), sourceId: currentSource?.info.id, parameter: parameterValue, holdLastFrame,
+    clipFrameCount: value => value.kind === 'video' ? value.info.frameCount : undefined,
+    cancelled: () => request !== latest || extraCancelled(), yield: wait, now: () => performance.now(),
+    status: status => { if (request === latest && !silent) post({ type: 'status', request, value: status }) },
+    trace: (step, inputs) => {
+      const video = inputs['in:video:clip']
+      const asset = step.node.type === 'source' ? step.asset : step.node.type === 'readFrame' && video?.kind === 'video' ? video.asset : undefined
+      if (asset) {
+        const frame = step.node.type === 'source' ? step.frame : Number(step.node.params.frame)
+        demands.set(`${asset}:${frame}`, { asset, frame })
+      }
+    },
+    kernel: (step, inputs) => runKernel(step, inputs, step.asset ? step.node.type === 'source' ? sourceById(step.asset) : sources.get(step.asset) : currentSource, () => request !== latest || extraCancelled(), doc, sourceById),
+  })
+  return { ...result, sources: [...demands.values()] }
+}
+
+/** Frame lists show a contact sheet; selecting Pyramid Level exposes its actual pixels. */
+const visualization = (value: Payload, gain: number): { rgba: Uint8Array<ArrayBuffer>; width: number; height: number } | undefined => {
+  const frame = value.kind === 'frame' ? value : value.kind === 'motion' ? value.preview : undefined
+  if (frame) return { rgba: displayPixels(frame, gain), width: frame.mat.cols, height: frame.mat.rows }
+  if (value.kind !== 'frames') return
+  const columns = Math.min(3, value.frames.length), width = columns * 240, height = Math.ceil(value.frames.length / columns) * 190
+  const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#182019'; ctx.fillRect(0, 0, width, height)
+  for (const [i, frame] of value.frames.entries()) {
+    const raw = new OffscreenCanvas(frame.mat.cols, frame.mat.rows)
+    raw.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(displayPixels(frame, gain)), raw.width, raw.height), 0, 0)
+    const scale = Math.min(220 / raw.width, 145 / raw.height), x = (i % columns) * 240 + 10, y = Math.floor(i / columns) * 190 + 30
+    ctx.drawImage(raw, x, y, raw.width * scale, raw.height * scale)
+    ctx.fillStyle = '#d0ddc6'; ctx.font = '12px sans-serif'; ctx.fillText(`Level ${i} · ${raw.width} × ${raw.height}`, x, y - 10)
+  }
+  return { rgba: new Uint8Array(ctx.getImageData(0, 0, width, height).data.buffer), width, height }
+}
+
+const work = async (job: Job) => {
+  await initialization
+  if (!presenter) throw new Error('The preview device is not ready')
+  if (job.type === 'load') {
+    const nextSource = await VideoSource.open(job.file)
+    if (job.request !== latest) { nextSource.close(); return }
+    displayed?.release(); displayed = undefined; pixels = undefined
+    nextSource.info.id = job.asset
+    if (sources.has(job.asset)) cache.clear()
+    sources.get(job.asset)?.close()
+    sources.set(job.asset, nextSource)
+    source ??= nextSource
+    post({ type: 'source', request: job.request, value: nextSource.info })
+    return
+  }
+  if (job.type === 'inspect') {
+    const started = performance.now(), result = await evaluate(job.value, job.request)
+    if (job.request !== latest) { result.release(); return }
+    try {
+      const value = result.value
+      const frame = value.kind === 'frame' ? value : value.kind === 'motion' ? value.preview : undefined
+      const visual = visualization(value, job.value.gain)
+      if (visual) { width = visual.width; height = visual.height; pixels = visual.rgba; presenter.show(pixels, width, height) }
+      else { width = 0; height = 0; pixels = undefined }
+      displayed?.release(); displayed = result
+      post({ type: 'result', request: job.request, selected: job.value.selected, path: job.value.path, frame: job.value.frame, width, height, kind: value.kind, sources: result.sources, summary: payloadSummary(value), scalar: value.kind === 'scalar' ? value.value : undefined, motion: value.kind === 'motion' ? { dx: value.dx, dy: value.dy, response: value.response } : undefined, range: frame?.range ?? 'unit', elapsed: performance.now() - started, cacheBytes: cache.bytes, cacheEntries: cache.size })
+    } catch (error) { if (displayed !== result) result.release(); throw error }
+    return
+  }
+  const reference = sources.get(job.value.referenceAsset ?? '') ?? source
+  if (!reference) throw new Error('Load a clip before baking')
+  if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start || job.end >= reference.info.frameCount) throw new Error('Choose a valid inclusive frame range')
+  if (![24, 25, 30, 50, 60, 120].includes(job.fps)) throw new Error('Choose a supported output frame rate')
+  const total = outputCount(job.start, job.end, reference.info.fps, job.fps)
+  if (total > 100_000) throw new Error('Choose a shorter output range')
+  parseDocument(job.value.doc)
+  let encoder: MovieEncoder | undefined
+  let count = 0
+  try {
+    for (let index = 0; index < total && job.request === latest; index++) {
+      const frame = outputTime(index, job.start, reference.info.fps, job.fps)
+      // Extend each input clip with its last drawing so N+1 dependencies include the final interval.
+      const result = await evaluate({ ...job.value, frame }, job.request, () => false, false, true)
+      try {
+        if (job.request !== latest) break
+        if (result.value.kind !== 'frame') throw new Error('Select an image output to bake. Scalar outputs are available in Inspect.')
+        // Display gain is an inspection aid; encode the actual node output at unit gain.
+        encoder ??= await MovieEncoder.create(result.value.mat.cols, result.value.mat.rows, job.fps)
+        await encoder.add(displayPixels(result.value, 1), index)
+        count++
+      } finally { result.release() }
+      post({ type: 'bake-progress', request: job.request, done: count, total })
+      await wait()
+    }
+  } catch (error) { if (job.request === latest) { encoder?.close(); throw error } }
+  try {
+    const blob = count ? await encoder!.finish() : undefined
+    post({ type: 'bake-done', request: job.request, count, start: job.start, fps: job.fps, cancelled: job.request !== latest, blob })
+  } finally { encoder?.close() }
+}
+
+/** Thumbnails use the same native cache, but never replace the main inspector surface. */
+const thumbnails = async (job: Extract<WorkerCommand, { type: 'thumbnails' }>) => {
+  await initialization
+  const request = latest, cancelled = () => job.generation !== thumbnailGeneration || request !== latest
+  for (const node of job.nodes) {
+    if (cancelled()) return
+    try {
+      const result = await evaluate({ ...job.value, selected: node, port: null }, request, cancelled, true)
+      try {
+        if (cancelled()) return
+        const value = result.value
+        const visual = visualization(value, job.value.gain)
+        if (!visual) post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, kind: value.kind, summary: payloadSummary(value), scalar: value.kind === 'scalar' ? value.value : undefined })
+        else {
+          const raw = new OffscreenCanvas(visual.width, visual.height), context = raw.getContext('2d')
+          if (!context) throw new Error('Cannot create node preview')
+          context.putImageData(new ImageData(new Uint8ClampedArray(visual.rgba), raw.width, raw.height), 0, 0)
+          const width = 320, height = Math.max(1, Math.round(width * raw.height / raw.width)), small = new OffscreenCanvas(width, height), ctx = small.getContext('2d')
+          if (!ctx) throw new Error('Cannot resize node preview')
+          ctx.drawImage(raw, 0, 0, width, height)
+          const bitmap = small.transferToImageBitmap()
+          if (cancelled()) { bitmap.close(); return }
+          post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, kind: value.kind, bitmap }, [bitmap])
+        }
+      } finally { result.release() }
+    } catch (error) {
+      if (cancelled()) return
+      post({ type: 'thumbnail', generation: job.generation, path: job.value.path, node, frame: job.value.frame, error: error instanceof Error ? error.message : String(error) })
+    }
+    await wait()
+  }
+}
+
+const pump = async () => {
+  if (running) return
+  running = true
+  try {
+    while (pending || pendingThumbnails) {
+      if (!pending && pendingThumbnails) { const job = pendingThumbnails; pendingThumbnails = undefined; try { await thumbnails(job) } catch (error) { post({ type: 'error', request: latest, message: String(error) }) } continue }
+      const job = pending!; pending = undefined
+      try { await work(job) }
+      catch (error) { if (job.request === latest || job.type === 'bake') post({ type: 'error', request: job.request, message: error instanceof Error ? error.message : String(error) }) }
+    }
+  } finally { running = false }
+}
+
+scope.onmessage = ({ data }: MessageEvent<WorkerCommand>) => {
+  if (data.type === 'init') {
+    if (initialization) return
+    initialization = (async () => {
+      const [gpu] = await Promise.all([Presenter.create(data.canvas, message => post({ type: 'error', request: latest, message, fatal: true })), initOpenCV({ wasmUrl })])
+      presenter = gpu.presenter; post({ type: 'ready', adapter: gpu.adapter })
+    })()
+    initialization.catch(error => post({ type: 'error', request: 0, message: String(error), fatal: true }))
+  } else if (data.type === 'load' || data.type === 'inspect' || data.type === 'bake') {
+    latest = data.request; pending = data; pendingThumbnails = undefined; void pump()
+  } else if (data.type === 'thumbnails') { thumbnailGeneration = data.generation; pendingThumbnails = data; void pump() }
+  else if (data.type === 'cancel') { latest = data.request; pending = undefined; pendingThumbnails = undefined }
+  else if (data.type === 'budget') { cache.budget = Math.max(64 * 1024 ** 2, Math.min(1024 ** 3, data.bytes)); cache.trim() }
+  else if (data.type === 'pixel') {
+    const x = Math.floor(data.x), y = Math.floor(data.y)
+    if (x < 0 || y < 0 || x >= width || y >= height || !pixels) return
+    const at = (y * width + x) * 4
+    const native = displayed?.value
+    const rgba = native?.kind === 'frame' ? Array.from(native.mat.data32F.subarray(at, at + 4)) : Array.from(pixels.subarray(at, at + 4), v => v / 255)
+    post({ type: 'pixel', request: data.request, x, y, rgba })
+  } else if (data.type === 'export' && pixels) {
+    const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0)
+    canvas.convertToBlob({ type: 'image/png' }).then(blob => post({ type: 'export', request: data.request, blob }), error => post({ type: 'error', request: data.request, message: String(error) }))
+  }
+}

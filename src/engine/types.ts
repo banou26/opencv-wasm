@@ -1,11 +1,11 @@
 /** Connection payload categories, shared by the editor and evaluator. */
 export type PortType = 'frame' | 'regions' | 'motion' | 'scalar'
 /** The processing nodes supported by the first editor milestone. */
-export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 'translateX' | 'translateY' | 'multiply' | 'constant' | 'group' | 'groupInput' | 'groupOutput' | 'output' | 'time' | 'offset' | 'threshold' | 'composite'
+export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 'translateX' | 'translateY' | 'multiply' | 'constant' | 'group' | 'groupInput' | 'groupOutput' | 'output' | 'time' | 'offset' | 'extractFrame' | 'threshold' | 'composite'
 /** Serializable parameters; finite numbers only. */
 export type Params = Record<string, string | number | boolean>
-/** A typed socket; offsetParam requests a different upstream frame. */
-export type Port = { id: string; label: string; type: PortType; offsetParam?: string; optional?: boolean; default?: number }
+/** A typed socket; frameParam pins upstream time, while offsetParam shifts it. */
+export type Port = { id: string; label: string; type: PortType; offsetParam?: string; frameParam?: string; optional?: boolean; default?: number }
 /** Declarative parameter controls and their validation constraints. */
 export type Parameter =
   | { kind: 'number'; key: string; label: string; default: number; min: number; max: number; step: number }

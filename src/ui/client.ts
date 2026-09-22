@@ -81,8 +81,8 @@ export const loadVideo = (file: File, target?: SourceTarget) => {
   const state = useEditor.getState()
   if (state.busy === 'bake') return
   if (!target) {
-    let node = state.view.nodes.find(n => n.id === state.selected && n.type === 'source') ?? state.view.nodes.find(n => n.type === 'source')
-    if (!node) { state.add('source', { x: 40, y: 80 }); node = useEditor.getState().view.nodes.find(n => n.id === useEditor.getState().selected && n.type === 'source') }
+    let node = state.view.nodes.find(n => n.id === state.focused && n.type === 'source') ?? state.view.nodes.find(n => n.type === 'source')
+    if (!node) { state.add('source', { x: 40, y: 80 }); node = useEditor.getState().view.nodes.find(n => n.id === useEditor.getState().focused && n.type === 'source') }
     if (!node) return
     target = { node: node.id, definition: state.view.interfaceId }
   }

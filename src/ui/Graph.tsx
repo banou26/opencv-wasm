@@ -12,7 +12,7 @@ import { SourceFile, videoFiles } from './SourceFile'
 import { loadVideo } from './client'
 
 type VisualNode = Node<{ model: GraphNode; spec: NodeSpec; connected: string[] }, 'operation'>
-const symbols: Record<NodeType, string> = { source: '▷', grayscale: '◐', blur: '≋', delta: 'Δ', motion: '↗', translateX: '↔', translateY: '↕', multiply: '×', constant: '#', group: '▧', groupInput: '⇥', groupOutput: '⇤', output: '▣', time: 't', offset: '±', threshold: '◩', composite: '⊞' }
+const symbols: Record<NodeType, string> = { source: '▷', grayscale: '◐', blur: '≋', delta: 'Δ', motion: '↗', translateX: '↔', translateY: '↕', multiply: '×', constant: '#', group: '▧', groupInput: '⇥', groupOutput: '⇤', output: '▣', time: 't', offset: '±', extractFrame: '#N', threshold: '◩', composite: '⊞' }
 
 /** Keep partial numeric edits locally so typing a minus sign or clearing a field is possible. */
 const NumberControl = ({ value, parameter, label, disabled, commit }: { value: number; parameter: Extract<Parameter, { kind: 'number' }>; label: string; disabled: boolean; commit: (value: number) => void }) => {
@@ -45,20 +45,20 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
     if (files.length !== 1) { useEditor.setState({ error: 'Drop one video onto a source node, or drop multiple videos onto the canvas.' }); return }
     loadVideo(files[0]!, { node: node.id, definition: useEditor.getState().view.interfaceId })
   }}>
-    <div className="node-preview-toolbar nodrag"><span>{enabled ? 'NODE PREVIEW' : 'PREVIEW HIDDEN'}</span><button aria-label={`${enabled ? 'Hide' : 'Show'} ${spec.title} preview`} onClick={() => toggle(node.id)}>{enabled ? 'Hide ◉' : 'Show ◉'}</button></div>
-    {enabled && <div className="node-thumbnail nodrag" data-testid={`preview-${node.id}`}>
+    <div className="node-preview-toolbar node-drag-handle"><span>{enabled ? 'NODE PREVIEW' : 'PREVIEW HIDDEN'}</span><button className="nodrag" aria-label={`${enabled ? 'Hide' : 'Show'} ${spec.title} preview`} onClick={() => toggle(node.id)}>{enabled ? 'Hide ◉' : 'Show ◉'}</button></div>
+    {enabled && <div className="node-thumbnail node-drag-handle" data-testid={`preview-${node.id}`}>
       <canvas ref={canvas} style={{ display: thumbnail?.bitmap ? 'block' : 'none' }} />
       {thumbnail?.scalar !== undefined && <strong>{thumbnail.scalar.toFixed(4)}</strong>}
       {thumbnail?.error && <span className="thumbnail-error">{thumbnail.error}</span>}
       {!thumbnail && <span>Load a clip and connect the inputs</span>}
       {thumbnail && !thumbnail.error && <code className="thumbnail-frame">#{thumbnail.frame.toFixed(2)}{frame !== thumbnail.frame ? ' · updating' : ''}</code>}
     </div>}
-    <div className="operation-head"><span className={`op-symbol ${node.type}`}>{symbols[node.type]}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
+    <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type]}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
     {node.type === 'source' && <SourceFile node={node} />}
     <div className="sockets">
       {spec.inputs.map(port => <div className="socket input" key={port.id}>
         <Handle type="target" id={port.id} position={Position.Left} style={{ background: PORT_COLORS[port.type] }} />
-        <span>{port.label}</span>{port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>}
+        <span>{port.label}</span>{port.frameParam ? <code>#{Number(node.params[port.frameParam])}</code> : port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>}
       </div>)}
       {spec.outputs.map(port => <div className="socket output" key={port.id}>
         <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} style={{ background: PORT_COLORS[port.type] }} />
@@ -91,7 +91,7 @@ const Canvas = () => {
     // interpolate a zero-size viewport into NaN transforms in a fresh browser.
     void flow.fitView({ padding: 0.15, maxZoom: 1 })
   }, [revision, nodesInitialized, flow])
-  const nodes: VisualNode[] = doc.nodes.map(model => ({ id: model.id, position: model.position, data: { model, spec: specFor(model, doc), connected: doc.edges.filter(e => e.target === model.id).map(e => e.targetHandle) }, type: 'operation', deletable: model.type !== 'groupInput' && model.type !== 'groupOutput', selected: highlighted.includes(model.id) }))
+  const nodes: VisualNode[] = doc.nodes.map(model => ({ id: model.id, position: model.position, data: { model, spec: specFor(model, doc), connected: doc.edges.filter(e => e.target === model.id).map(e => e.targetHandle) }, type: 'operation', dragHandle: '.node-drag-handle', deletable: model.type !== 'groupInput' && model.type !== 'groupOutput', selected: highlighted.includes(model.id) }))
   const edges: Edge[] = doc.edges.map(e => {
     const source = doc.nodes.find(n => n.id === e.source), type = source && specFor(source, doc).outputs.find(p => p.id === e.sourceHandle)?.type
     return { ...e, selected: selectedEdge === e.id, type: 'default', style: { stroke: PORT_COLORS[type ?? 'frame'], strokeWidth: 1.7 } }
@@ -112,7 +112,7 @@ const Canvas = () => {
     if (e.shiftKey && e.key.toLowerCase() === 'a') { e.preventDefault(); openMenu(point.x, point.y) }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') { useEditor.getState().makeGroup(); e.preventDefault() }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { if (e.shiftKey) useEditor.getState().redo(); else useEditor.getState().undo(); e.preventDefault() }
-    else if (e.key === 'Tab') { useEditor.getState().openGroup(useEditor.getState().selected); e.preventDefault() }
+    else if (e.key === 'Tab') { useEditor.getState().openGroup(useEditor.getState().focused); e.preventDefault() }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { clipboard.current = structuredClone(selectedGraph()); e.preventDefault() }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboard.current) { useEditor.getState().insert(clipboard.current, flow.screenToFlowPosition(point)); e.preventDefault() }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { useEditor.getState().insert(selectedGraph(), flow.screenToFlowPosition(point)); e.preventDefault() }
@@ -123,17 +123,17 @@ const Canvas = () => {
       const files = videoFiles(e.dataTransfer), position = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
       if (!files.length) { useEditor.setState({ error: 'Drop a video file here. MP4 and MOV containers are supported.' }); return }
       for (const [index, file] of files.entries()) {
-        const state = useEditor.getState(), before = state.selected
+        const state = useEditor.getState(), before = state.focused
         state.add('source', { x: position.x + index * 300, y: position.y })
         const next = useEditor.getState()
-        if (next.selected !== before) { next.togglePreview(next.selected); loadVideo(file, { node: next.selected, definition: next.view.interfaceId }) }
+        if (next.focused !== before) { next.togglePreview(next.focused); loadVideo(file, { node: next.focused, definition: next.view.interfaceId }) }
       }
       return
     }
     const type = e.dataTransfer.getData('application/cadence-node')
     if (Object.hasOwn(SPECS, type) && !locked) useEditor.getState().add(type as NodeType, flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
   }}>
-    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ selected: n.id, port: null }); setSelectedEdge(null) }} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); if (!highlighted.includes(n.id)) useEditor.getState().select(n.id); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
+    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ focused: n.id }); setSelectedEdge(null) }} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); if (!highlighted.includes(n.id)) useEditor.getState().focus(n.id); else useEditor.setState({ focused: n.id }); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesDraggable={!locked} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
       <Background variant={BackgroundVariant.Dots} color="#374239" gap={22} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>

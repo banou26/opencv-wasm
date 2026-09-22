@@ -34,7 +34,7 @@ export const runKernel = async (step: Step, inputs: Record<string, Payload>, sou
         using src = matFromArray(frame.displayHeight, frame.displayWidth, CV_8UC4, pixels)
         src.convertTo(out, CV_32F, 1 / 255)
       } finally { frame.close() }
-    } else if (step.node.type === 'offset') {
+    } else if (step.node.type === 'offset' || step.node.type === 'extractFrame') {
       const input = image(inputs['in:frame:image']); range = input.range; input.mat.copyTo(out)
     } else if (step.node.type === 'threshold') {
       using weights = matFromArray(1, 4, CV_32F, [0.2126, 0.7152, 0.0722, 0])

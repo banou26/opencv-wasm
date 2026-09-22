@@ -7,6 +7,7 @@ import { createServer } from 'node:net'
 import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
+import { dragSmoke, previewSelectionSmoke } from './interaction-smoke.mjs'
 
 const directory = resolve('build-smoke'), children = [], errors = []
 const pause = ms => new Promise(r => setTimeout(r, ms))
@@ -86,6 +87,8 @@ try {
   }
   assert.equal(await page.evaluate(() => window.pickerCalls), 1, 'The first export opens the folder picker exactly once')
   console.log('PASS: first-save folder picker and frame-exact forward/backward/open-GOP seeks against FFmpeg')
+  await dragSmoke(page, project)
+  await previewSelectionSmoke(page, change)
   const original = sourcePixels.get(0)
   await upload(pipeline('grayscale', { weights: 'rec709' }))
   const gray = await png()
@@ -104,6 +107,29 @@ try {
   const mask = await png()
   for (let at = 0; at < mask.length; at += 3) assert.equal(mask[at], original[at] * 0.2126 + original[at + 1] * 0.7152 + original[at + 2] * 0.0722 > 127.5 ? 255 : 0)
   await upload(pipeline('offset', { offset: 7 })); assert.deepEqual(await png(), sourcePixels.get(7))
+  await upload(pipeline('extractFrame', { frame: 7 }))
+  assert.deepEqual(await png(), sourcePixels.get(7))
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill('23'))
+  assert.deepEqual(await png(), sourcePixels.get(7))
+  const extractControl = page.getByLabel('Extract Frame Frame N (from 0)', { exact: true })
+  await change(async () => { await extractControl.fill('2'); await extractControl.press('Enter') })
+  assert.deepEqual(await png(), sourcePixels.get(2))
+  await upload(await project())
+  assert.deepEqual(await png(), sourcePixels.get(2))
+  const fixedPair = { version: 1, nodes: [node('n1', 'source'), node('n2', 'extractFrame', { frame: 2 }, 350), node('n3', 'extractFrame', { frame: 7 }, 350), node('n4', 'delta', { offset: 1, absolute: true }, 680), node('n5', 'output', {}, 990)], edges: [edge('n1', 'n2'), edge('n1', 'n3'), edge('n2', 'n4', 'in:frame:a'), edge('n3', 'n4', 'in:frame:b'), edge('n4', 'n5', 'in:frame:image', 'out:frame:delta')] }
+  fixedPair.nodes[2].position.y = 400
+  await upload(fixedPair)
+  const fixedDelta = await png(), frameTwo = sourcePixels.get(2), frameSeven = sourcePixels.get(7)
+  for (let at = 0; at < fixedDelta.length; at++) assert.ok(Math.abs(fixedDelta[at] - Math.abs(frameTwo[at] - frameSeven[at])) <= 1)
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill('0'))
+  assert.deepEqual(await png(), fixedDelta)
+  const paneForExtract = page.locator('.react-flow__pane')
+  await paneForExtract.click({ button: 'right', position: { x: 30, y: 40 } })
+  await page.getByLabel('Search nodes').fill('extract frame')
+  assert.match(await page.getByRole('listbox').innerText(), /Extract Frame/)
+  await page.keyboard.press('Escape')
+  console.log('PASS: Extract Frame pixels, absolute index editing, timeline independence, serialization and arbitrary-frame delta')
+
   const composite = { version: 1, nodes: [node('n1', 'source'), node('n2', 'offset', { offset: 7 }, 350), node('n3', 'threshold', { cutoff: 0.5, invert: false }, 350), node('n4', 'composite', {}, 680), node('n5', 'output', {}, 990)], edges: [edge('n1', 'n2'), edge('n1', 'n3'), edge('n1', 'n4', 'in:frame:background'), edge('n2', 'n4', 'in:frame:foreground'), edge('n3', 'n4', 'in:frame:mask'), edge('n4', 'n5')] }
   composite.nodes[2].position.y = 400
   await upload(composite); const composed = await png(), shifted = sourcePixels.get(7)

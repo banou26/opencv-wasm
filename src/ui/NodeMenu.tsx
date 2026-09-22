@@ -17,7 +17,7 @@ const categories = ['Input', 'Time', 'Color', 'Filter', 'Compare', 'Measure', 'M
 
 /** Copy only selected nodes and connections between them; disconnected boundary inputs stay editable. */
 export const selectedGraph = (): GraphDocument => {
-  const { view: doc, highlighted, selected } = useEditor.getState(), ids = new Set(highlighted.length ? highlighted : [selected])
+  const { view: doc, highlighted, focused } = useEditor.getState(), ids = new Set(highlighted.length ? highlighted : [focused])
   const nodes = doc.nodes.filter(n => ids.has(n.id) && !['groupInput', 'groupOutput'].includes(n.type)), kept = new Set(nodes.map(n => n.id))
   return { version: 1, definitions: doc.definitions, nodes, edges: doc.edges.filter(e => kept.has(e.source) && kept.has(e.target)) }
 }
@@ -51,7 +51,7 @@ export const NodeMenu = ({ position, close }: { position: MenuPosition; close: (
       <div className="menu-title"><span>Add to graph</span><code>Shift A</code><button aria-label="Close node menu" onClick={close}>×</button></div>
       <div className="menu-search"><span>⌕</span><input ref={input} aria-label="Search nodes" placeholder="Search nodes, algorithms or properties…" value={query} onChange={e => { setQuery(e.target.value); setIndex(0) }} /></div>
       {(node || position.edge) && <div className="menu-context">
-        {node && <><button onClick={() => { useEditor.getState().togglePreview(node.id); close() }}>Toggle preview</button><button onClick={() => { useEditor.getState().insert(selectedGraph(), { x: node.position.x + 40, y: node.position.y + 40 }); close() }}>Duplicate</button><button onClick={() => { useEditor.getState().makeGroup(); close() }}>Make custom node</button><button onClick={() => { saveBlob(new Blob([JSON.stringify(selectedGraph(), null, 2)], { type: 'application/json' }), 'cadence-prefab.json'); close() }}>Save prefab to folder</button><button onClick={() => { for (const n of selectedGraph().nodes) useEditor.getState().remove(n.id); close() }}>Delete</button></>}
+        {node && <><button onClick={() => { useEditor.getState().select(node.id); close() }}>Select for preview</button><button onClick={() => { useEditor.getState().togglePreview(node.id); close() }}>Toggle node preview</button><button onClick={() => { useEditor.getState().insert(selectedGraph(), { x: node.position.x + 40, y: node.position.y + 40 }); close() }}>Duplicate</button><button onClick={() => { useEditor.getState().makeGroup(); close() }}>Make custom node</button><button onClick={() => { saveBlob(new Blob([JSON.stringify(selectedGraph(), null, 2)], { type: 'application/json' }), 'cadence-prefab.json'); close() }}>Save prefab to folder</button><button onClick={() => { for (const n of selectedGraph().nodes) useEditor.getState().remove(n.id); close() }}>Delete</button></>}
         {position.edge && <button onClick={() => { useEditor.getState().edit(view => ({ ...view, edges: view.edges.filter(e => e.id !== position.edge) })); close() }}>Delete connection</button>}
       </div>}
       <div className={`menu-body ${query ? 'searching' : ''}`}>

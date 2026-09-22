@@ -26,6 +26,8 @@ export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph
   const secondNode = sources.find(n => n.assetName === 'second-clip.mp4'), copyNode = sources.find(n => n.assetName === 'first-copy.mp4')
   assert.ok(secondNode?.asset && copyNode?.asset)
   assert.notEqual(secondNode.asset, copyNode.asset)
+  assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'n5', 'Dropping media must not retarget the inspector')
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Video Source' }).nth(2).click())
   assert.match(await page.locator('.view-options code').innerText(), /96 × 64/)
   const originalFrame = async () => change(() => page.locator('.step-strip button').filter({ hasText: 'Video Source' }).nth(0).click())
   await originalFrame()

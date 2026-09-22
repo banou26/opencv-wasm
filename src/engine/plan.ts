@@ -72,14 +72,16 @@ export const planGraph = (root: GraphDocument, selected: string, port: string | 
       const edge = doc.edges.find(e => e.target === id && e.targetHandle === p.id)
       if (!edge && p.optional) continue
       if (!edge) throw new Error(`Connect ${spec.title}’s ${p.label} input`)
-      inputs[p.id] = visit(context, edge.source, edge.sourceHandle, time + (p.offsetParam ? Number(node.params[p.offsetParam]) : 0))
+      const upstreamTime = p.frameParam ? Number(node.params[p.frameParam]) : time + (p.offsetParam ? Number(node.params[p.offsetParam]) : 0)
+      if (!Number.isFinite(upstreamTime) || p.frameParam && (!Number.isInteger(upstreamTime) || upstreamTime < 0)) throw new Error('Frame N must be a non-negative whole number')
+      inputs[p.id] = visit(context, edge.source, edge.sourceHandle, upstreamTime)
     }
     const asset = node.type === 'source' ? node.asset ?? sourceId : undefined
     const count = asset && assets ? assets[asset]?.frameCount : frameCount
     if (node.type === 'source') {
       if (node.asset && assets && !assets[node.asset]) throw new Error(`Reattach ${node.assetName ?? 'the video'} to this Video Source node`)
       if (!asset) throw new Error('Load a video clip first')
-      if (time < 0 || Math.floor(time) >= count!) throw new Error(`Frame ${time} is outside this clip (0 to ${count! - 1}). Adjust the timeline or B offset.`)
+      if (time < 0 || Math.floor(time) >= count!) throw new Error(`Frame ${time} is outside this clip (0 to ${count! - 1}). Adjust the requested frame index or the branch’s time controls.`)
       minFrame = Math.min(minFrame, Math.floor(time)); maxFrame = Math.max(maxFrame, Math.floor(time))
     }
     const key = contentKey([node.type, spec.version, node.params, inputs, node.type === 'source' ? [asset, Math.floor(time)] : node.type === 'time' ? [sourceId, time] : null])

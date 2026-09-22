@@ -37,8 +37,13 @@ accept that asset size. The development preview runs on port 4561.
 - Drag between matching colored sockets. Image, number and motion connections
   are distinct. An input accepts one connection; a new connection replaces it.
   Type mismatches and cycles are rejected by both the UI and the execution engine.
-- Click a node to inspect its output and explanation. Select an output socket in
-  the inspector for nodes that produce several values.
+- Drag the node title, preview bar, or preview image to move it. Buttons and
+  parameter fields stay interactive.
+- Click a node to select it for editing. The large inspector keeps its current
+  target while you select, move, add or duplicate nodes. **Right-click → Select for
+  preview** changes that target. Select an output socket in the inspector for
+  nodes that produce several values. The inspector step buttons also explicitly
+  choose a preview; each editor tab remembers its own preview target.
 - **Show/Hide** on a node toggles its preview above its controls. **Show all
   previews** enables the active graph's previews together. They evaluate at the
   current source time and share the native result cache.
@@ -128,7 +133,7 @@ Old media copies are retained when you remove nodes, so you can recover earlier 
 
 | Purpose | Nodes |
 | --- | --- |
-| Inputs and time | Video Source, Number, Time, Frame Offset |
+| Inputs and time | Video Source, Number, Time, Frame Offset, Extract Frame |
 | Image preparation | Grayscale, Gaussian Blur |
 | Measurements | Frame Delta, Estimate Translation |
 | Numeric operations | Multiply |
@@ -138,6 +143,16 @@ Old media copies are retained when you remove nodes, so you can recover earlier 
 
 `Time` exposes source-frame time, its fractional remainder and seconds.
 `Frame Offset` changes the requested time throughout its upstream branch.
+`Extract Frame` pins its upstream branch to an absolute, zero-based frame index,
+independent of the timeline. Add it with **Right-click → Time → Extract Frame**
+or search for its name. Set **Frame N (from 0)** and press Enter to apply it.
+
+For an arbitrary frame-pair comparison, connect one Video Source to two Extract
+Frame nodes (for example, N = 2 and N = 7), then connect them to Frame Delta's A
+and B inputs. Both frames remain fixed as you scrub; even Delta's default B offset
+does not move a pinned frame. An out-of-range index produces an explicit error.
+Filters before extraction run at the chosen time, and upstream Frame Offset nodes
+still apply their own offsets.
 `Frame Delta` produces an image and mean absolute luma difference.
 `Estimate Translation` produces X/Y displacements, a diagnostic response and an
 arrow preview. Its arrows repeat a **single global vector**, enlarged 4× for

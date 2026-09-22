@@ -10,10 +10,10 @@ import type { SourceInfo, WorkerEvent } from '../protocol'
 export type Result = Extract<WorkerEvent, { type: 'result' }>
 export type Movie = { url: string; count: number; fps: number; cancelled: boolean; label: string }
 export type SourceTarget = { node: string; definition?: string }
-export type EditorTab = { id: string; path: string[]; definition?: string; selected?: string; port?: string | null }
+export type EditorTab = { id: string; path: string[]; definition?: string; focused?: string; selected?: string; port?: string | null }
 type State = {
   doc: GraphDocument; view: GraphDocument; path: string[]; tabs: EditorTab[]; activeTab: string
-  highlighted: string[]; selected: string; port: string | null; frame: number; gain: number
+  highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; gain: number
   ready: boolean; adapter: string; source: SourceInfo | null; assets: Record<string, SourceInfo>; loadingSource: SourceTarget | null; busy: 'idle' | 'load' | 'inspect' | 'bake'
   error: string; fatal: boolean; result: Result | null; statuses: Record<string, NodeStatus>
   progress: { done: number; total: number } | null; movie: Movie | null; cancelling: boolean
@@ -23,6 +23,7 @@ type State = {
   bindSource: (target: SourceTarget, info: SourceInfo) => void
   togglePreview: (id: string) => void
   insert: (value: unknown, position?: { x: number; y: number }) => void
+  focus: (id: string) => void
   select: (id: string, port?: string | null) => void
   parameter: (id: string, key: string, value: string | number | boolean) => void
   add: (type: NodeType, position: { x: number; y: number }, definition?: string) => void
@@ -59,12 +60,13 @@ export const useEditor = create<State>((set, get) => {
     const state = get(), tab = state.tabs.find(t => t.id === id)
     if (!tab || state.busy === 'bake') return
     const view = graphView(state.doc, tab.definition), selected = view.nodes.some(n => n.id === tab.selected) ? tab.selected! : target(view)
+    const focused = view.nodes.some(n => n.id === tab.focused) ? tab.focused! : selected
     clearThumbnails(state)
-    set({ view, path: tab.path, activeTab: id, selected, highlighted: [selected], port: tab.port ?? null, previews: defaults(view), thumbnails: {}, result: null, statuses: {}, revision: state.revision + 1, tabs: state.tabs.map(t => t.id === state.activeTab ? { ...t, selected: state.selected, port: state.port } : t) })
+    set({ view, path: tab.path, activeTab: id, selected, focused, highlighted: [focused], port: tab.port ?? null, previews: defaults(view), thumbnails: {}, result: null, statuses: {}, revision: state.revision + 1, tabs: state.tabs.map(t => t.id === state.activeTab ? { ...t, focused: state.focused, selected: state.selected, port: state.port } : t) })
   }
   return {
     doc: initial, view: initial, path: [], tabs: [{ id: 'main', path: [] }], activeTab: 'main',
-    highlighted: ['n5'], selected: 'n5', port: null, frame: 0, gain: 1,
+    highlighted: ['n5'], focused: 'n5', selected: 'n5', port: null, frame: 0, gain: 1,
     ready: false, adapter: '', source: null, assets: {}, loadingSource: null, busy: 'idle', error: '', fatal: false,
     result: null, statuses: {}, progress: null, movie: null, cancelling: false, pixel: null, revision: 0,
     previews: defaults(initial), thumbnails: {}, past: [], future: [],
@@ -88,9 +90,11 @@ export const useEditor = create<State>((set, get) => {
       edit(view => insertPrefab(view, value, position ?? { x: 40, y: Math.max(0, ...view.nodes.map(n => n.position.y)) + 600 }, freshId))
       const inserted = get().view.nodes.filter(n => !before.has(n.id))
       if (!inserted.length) return
-      set(s => ({ highlighted: inserted.map(n => n.id), selected: inserted.find(n => n.type === 'output')?.id ?? inserted[0]!.id, port: null, revision: s.revision + 1, previews: { ...s.previews, ...Object.fromEntries(inserted.map(n => [n.id, n.type === 'source' || n.type === 'output'])) } }))
+      set(s => ({ highlighted: inserted.map(n => n.id), focused: inserted[0]!.id, revision: s.revision + 1, previews: { ...s.previews, ...Object.fromEntries(inserted.map(n => [n.id, n.type === 'source' || n.type === 'output'])) } }))
     },
-    select: (selected, port = null) => set({ selected, highlighted: [selected], port, pixel: null }),
+    // Editing focus and the inspector target are deliberately independent.
+    focus: focused => set({ focused, highlighted: [focused] }),
+    select: (selected, port = null) => set({ selected, port, pixel: null }),
     parameter: (id, key, value) => edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === id ? { ...n, params: { ...n.params, [key]: value } } : n) })),
     add: (type, position, definition) => {
       if (get().view.nodes.length >= 100) { set({ error: 'A graph can contain up to 100 nodes.' }); return }
@@ -98,7 +102,7 @@ export const useEditor = create<State>((set, get) => {
       try {
         if (type === 'group') node.params = Object.fromEntries(specFor(node, get().view).parameters.map(p => [p.key, p.default]))
         edit(view => { const next = { ...view, nodes: [...view.nodes, node] }; parseDocument(replaceView(get().doc, view.interfaceId, next)); return next })
-        if (get().view.nodes.some(n => n.id === id)) set({ selected: id, highlighted: [id], port: null })
+        if (get().view.nodes.some(n => n.id === id)) set({ focused: id, highlighted: [id] })
       } catch (error) { set({ error: String(error) }) }
     },
     wire: connection => edit(view => connect(view, connection)),
@@ -107,13 +111,13 @@ export const useEditor = create<State>((set, get) => {
       if (node?.type === 'groupInput' || node?.type === 'groupOutput') { set({ error: 'Edit interface ports in the custom-node panel; its boundary nodes stay in place.' }); return }
       state.thumbnails[id]?.bitmap?.close()
       edit(view => removeNode(view, id))
-      set(s => ({ highlighted: s.highlighted.filter(key => key !== id), selected: s.selected === id ? '' : s.selected, previews: Object.fromEntries(Object.entries(s.previews).filter(([key]) => key !== id)), thumbnails: Object.fromEntries(Object.entries(s.thumbnails).filter(([key]) => key !== id)) }))
+      set(s => ({ highlighted: s.highlighted.filter(key => key !== id), focused: s.focused === id ? '' : s.focused, ...(s.selected === id ? { selected: '', result: null, pixel: null } : {}), previews: Object.fromEntries(Object.entries(s.previews).filter(([key]) => key !== id)), thumbnails: Object.fromEntries(Object.entries(s.thumbnails).filter(([key]) => key !== id)) }))
     },
     replace: value => {
       try {
         const doc = parseDocument(value), selected = target(doc)
         clearThumbnails(get()); commit(doc)
-        set(s => ({ view: doc, path: [], tabs: [{ id: 'main', path: [] }], activeTab: 'main', selected, highlighted: [selected], previews: defaults(doc), thumbnails: {}, port: null, statuses: {}, result: null, error: '', gain: 1, revision: s.revision + 1 }))
+        set(s => ({ view: doc, path: [], tabs: [{ id: 'main', path: [] }], activeTab: 'main', selected, focused: selected, highlighted: [selected], previews: defaults(doc), thumbnails: {}, port: null, statuses: {}, result: null, error: '', gain: 1, revision: s.revision + 1 }))
       } catch (error) { set({ error: error instanceof Error ? error.message : String(error) }) }
     },
     openGroup: id => {
@@ -127,18 +131,18 @@ export const useEditor = create<State>((set, get) => {
     makeGroup: (name = 'Custom Node') => {
       try {
         const state = get(), instance = freshId()
-        const doc = groupNodes(state.doc, state.view.interfaceId, state.highlighted.length ? state.highlighted : [state.selected], name, freshId('g'), instance)
-        commit(doc); set(s => ({ selected: instance, highlighted: [instance], port: null, revision: s.revision + 1 })); get().openGroup(instance)
+        const doc = groupNodes(state.doc, state.view.interfaceId, state.highlighted.length ? state.highlighted : [state.focused], name, freshId('g'), instance)
+        commit(doc); set(s => ({ selected: s.view.nodes.some(n => n.id === s.selected) ? s.selected : instance, focused: instance, highlighted: [instance], port: s.view.nodes.some(n => n.id === s.selected) ? s.port : null, revision: s.revision + 1 })); get().openGroup(instance)
       } catch (error) { set({ error: error instanceof Error ? error.message : String(error) }) }
     },
     changeInterface: (id, patch) => { try { commit(updateInterface(get().doc, id, patch)) } catch (error) { set({ error: String(error) }) } },
     undo: () => {
       const s = get(), doc = s.past.at(-1); if (!doc || s.busy === 'bake') return
-      clearThumbnails(s); commit(doc, false); set({ past: s.past.slice(0, -1), future: [s.doc, ...s.future], selected: target(get().view), port: null, thumbnails: {}, revision: s.revision + 1 })
+      clearThumbnails(s); commit(doc, false); set({ past: s.past.slice(0, -1), future: [s.doc, ...s.future], selected: get().view.nodes.some(n => n.id === s.selected) ? s.selected : target(get().view), focused: target(get().view), highlighted: [target(get().view)], port: get().view.nodes.some(n => n.id === s.selected) ? s.port : null, thumbnails: {}, revision: s.revision + 1 })
     },
     redo: () => {
       const s = get(), doc = s.future[0]; if (!doc || s.busy === 'bake') return
-      clearThumbnails(s); commit(doc, false); set({ past: [...s.past, s.doc], future: s.future.slice(1), selected: target(get().view), port: null, thumbnails: {}, revision: s.revision + 1 })
+      clearThumbnails(s); commit(doc, false); set({ past: [...s.past, s.doc], future: s.future.slice(1), selected: get().view.nodes.some(n => n.id === s.selected) ? s.selected : target(get().view), focused: target(get().view), highlighted: [target(get().view)], port: get().view.nodes.some(n => n.id === s.selected) ? s.port : null, thumbnails: {}, revision: s.revision + 1 })
     },
   }
 })

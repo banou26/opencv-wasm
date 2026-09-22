@@ -1,0 +1,42 @@
+---
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro'
+import Search from '@astrojs/starlight/components/Search.astro'
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro'
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro'
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro'
+---
+<div class="product-header">
+  <div class="product-title"><SiteTitle /></div>
+  <div class="product-search print:hidden"><Search /></div>
+  <a class="editor-launch print:hidden" href="/editor/" data-astro-reload>
+    <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="3" width="7" height="6" rx="1.5"/><rect x="15" y="15" width="7" height="6" rx="1.5"/><path d="M5.5 9v6a3 3 0 0 0 3 3H15M9 6h6.5a3 3 0 0 1 3 3v6"/></svg>
+    <span><span class="launch-verb">Open </span>editor</span><svg class="launch-arrow" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18 18 6M6 6h12v12"/></svg>
+  </a>
+  <div class="product-settings print:hidden"><div class="product-social"><SocialIcons /></div><ThemeSelect /><LanguageSelect /></div>
+</div>
+
+<style>
+  .product-header { height: 100%; display: flex; align-items: center; gap: 1.25rem; }
+  .product-title { min-width: 0; margin-inline-end: auto; padding: .2rem; margin-block: -.2rem; }
+  .product-search { min-width: 0; flex: 1; max-width: 28rem; }
+  .product-settings, .product-social { display: flex; align-items: center; gap: .75rem; }
+  .editor-launch { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: .7rem; min-height: 2.8rem; padding: .5rem 1.2rem; border: 1px solid var(--cv-accent); border-radius: .6rem; background: var(--cv-accent); color: var(--cv-on-accent); font-size: 1rem; font-weight: 750; text-decoration: none; white-space: nowrap; box-shadow: 0 3px 16px color-mix(in srgb, var(--cv-accent) 20%, transparent); transition: background .15s, box-shadow .15s; }
+  .editor-launch:hover { background: var(--cv-accent-high); box-shadow: 0 3px 22px color-mix(in srgb, var(--cv-accent) 35%, transparent); }
+  .editor-launch:focus-visible { outline: 3px solid var(--cv-mint); outline-offset: 4px; }
+  .launch-arrow { font-size: 1.2em; }
+  @media (max-width: 65rem) { .product-header { gap: .75rem; } .product-social { display: none; } }
+  @media (max-width: 49.99rem) {
+    .product-header { gap: .6rem; }
+    .product-settings { display: none; }
+    .product-search { display: flex; flex: 0 0 auto; }
+    .product-title :global(.site-title) { font-size: 1.2rem; }
+    .editor-launch { gap: .4rem; padding: .4rem .65rem; min-height: 2.5rem; font-size: .85rem; }
+    .editor-launch svg { width: 19px; height: 19px; }
+    .launch-verb, .launch-arrow { display: none; }
+  }
+  @media (max-width: 24rem) {
+    .product-header { gap: .4rem; }
+    .product-title :global(.site-title) { font-size: 1.1rem; }
+    .editor-launch svg { display: none; }
+  }
+</style>

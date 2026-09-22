@@ -2,7 +2,7 @@ import type { GraphDocument, GraphNode, NodeSpec, NodeType, Params, PortType, Pa
 import { CATALOG } from './catalog'
 
 /** Port colors remain consistent in the menu, sockets, edges and preview. */
-export const PORT_COLORS: Record<PortType, string> = { frame: '#a6cb9d', video: '#e3c1ff', scalar: '#efbc7b', boolean: '#ea8195', string: '#6edbce', vector: '#99b8ff', rect: '#e0be73', frames: '#76c6a9', custom: '#c89aef', motion: '#9caef4', regions: '#d495bd' }
+export const PORT_COLORS: Record<PortType, string> = { frame: 'var(--cv-port-frame)', video: 'var(--cv-port-video)', scalar: 'var(--cv-port-scalar)', boolean: 'var(--cv-port-boolean)', string: 'var(--cv-port-string)', vector: 'var(--cv-port-vector)', rect: 'var(--cv-port-rect)', frames: 'var(--cv-port-frames)', custom: 'var(--cv-port-custom)', motion: 'var(--cv-port-motion)', regions: 'var(--cv-port-regions)' }
 /** Node contracts are the single source of truth for controls and graph validation. */
 const BASE: Partial<Record<NodeType, NodeSpec>> = {
   group: { type: 'group', title: 'Custom Node', category: 'Custom', description: 'A reusable graph with named, typed inputs and outputs. Double-click to edit its basic nodes.', algorithm: 'Internal node graph', version: 1, inputs: [], outputs: [], parameters: [] },

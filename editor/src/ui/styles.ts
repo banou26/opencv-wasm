@@ -218,6 +218,9 @@ export const styles = css`
     .graph-panel .panel-heading h1 { display: block; }
     .graph-panel .panel-heading { flex-wrap: nowrap; }
     .render-section > .eyebrow { display: none; }
+    .render-controls { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+    .render-controls label { min-width: 0; }
+    .render-controls input, .render-controls select { width: 100%; }
     .render-action { gap: 6px; }
     .render-action code { font-size: 9px; }
     .clip-info span { display: none; }
@@ -248,7 +251,7 @@ export const styles = css`
     .subframe { width: auto; grid-column: 5; grid-row: 1 / 3; margin-left: 6px; gap: 7px; }
     .render-section { padding: 7px 10px; }
     .render-settings { grid-template-columns: minmax(0, 1fr); gap: 7px; }
-    .render-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+    .render-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
     .render-controls label { min-width: 0; }
     .render-controls input, .render-controls select { width: 100%; }
     .render-action { grid-row: 2; justify-content: space-between; }

@@ -2,18 +2,20 @@ import { initOpenCV } from '@banou/opencv-wasm'
 import manifest from '../wasm.generated.json'
 import { loadWasmChunks } from '../../../shared/wasm-chunks'
 import { ResultCache } from '../engine/cache'
-import { evaluateGraph } from '../engine/evaluate'
+import { orderedParallel, renderWorkerCount } from '../engine/parallel-render'
+import { evaluateInspection } from './evaluate'
+import { RenderPool } from './render-pool'
 import { parseDocument } from '../engine/graph'
 import { GENERATED_FPS, outputCount, outputTime } from '../engine/time'
 import type { Lease } from '../engine/types'
 import { Presenter } from '../gpu/presenter'
 import { VideoSource } from '../video/source'
 import { MovieEncoder } from '../video/encoder'
-import type { Inspection, SourceDemand, WorkerCommand, WorkerEvent } from '../protocol'
-import { displayPixels, runKernel } from './kernels'
+import type { Inspection, WorkerCommand, WorkerEvent } from '../protocol'
+import { displayPixels } from './kernels'
 import type { Payload } from './kernels'
 import { drawFlow } from './flow-kernels'
-import { parameterValue, payloadSummary } from './payload'
+import { payloadSummary } from './payload'
 
 const scope = self as DedicatedWorkerGlobalScope
 const post = (event: WorkerEvent, transfer: Transferable[] = []) => scope.postMessage(event, transfer)
@@ -27,7 +29,6 @@ const wait = async () => {
 const cache = new ResultCache<Payload>(512 * 1024 ** 2)
 let presenter: Presenter | undefined, source: VideoSource | undefined
 const sources = new Map<string, VideoSource>()
-const catalog = () => Object.fromEntries([...sources].map(([id, video]) => [id, video.info]))
 let displayed: Lease<Payload> | undefined
 let pixels: Uint8Array<ArrayBuffer> | undefined, width = 0, height = 0
 let latest = 0, running = false
@@ -36,28 +37,12 @@ let pending: Job | undefined
 let pendingThumbnails: Extract<WorkerCommand, { type: 'thumbnails' }> | undefined
 let thumbnailGeneration = 0
 let initialization: Promise<void> | undefined
+let wasmBinary: Uint8Array<ArrayBuffer> | undefined, renderAbort: AbortController | undefined
 
-const evaluate = async (value: Inspection, request: number, extraCancelled = () => false, silent = false, holdLastFrame = false) => {
-  const currentSource = sources.get(value.referenceAsset ?? '') ?? source, doc = parseDocument(value.doc)
-  const sourceById = (id: string) => { const video = sources.get(id); for (const other of sources.values()) if (other !== video) other.close(); return video }
-  const demands = new Map<string, SourceDemand>()
-  const result = await evaluateGraph(doc, value.selected, value.port, value.frame, value.path ?? [], {
-    cache, assets: catalog(), sourceId: currentSource?.info.id, parameter: parameterValue, holdLastFrame,
-    clipFrameCount: value => value.kind === 'video' ? value.info.frameCount : undefined,
-    cancelled: () => request !== latest || extraCancelled(), yield: wait, now: () => performance.now(),
-    status: status => { if (request === latest && !silent) post({ type: 'status', request, value: status }) },
-    trace: (step, inputs) => {
-      const video = inputs['in:video:clip']
-      const asset = step.node.type === 'source' ? step.asset : step.node.type === 'readFrame' && video?.kind === 'video' ? video.asset : undefined
-      if (asset) {
-        const frame = step.node.type === 'source' ? step.frame : Number(step.node.params.frame)
-        demands.set(`${asset}:${frame}`, { asset, frame })
-      }
-    },
-    kernel: (step, inputs) => runKernel(step, inputs, step.asset ? step.node.type === 'source' ? sourceById(step.asset) : sources.get(step.asset) : currentSource, () => request !== latest || extraCancelled(), doc, sourceById),
-  })
-  return { ...result, sources: [...demands.values()] }
-}
+const evaluate = (value: Inspection, request: number, extraCancelled = () => false, silent = false, holdLastFrame = false) => evaluateInspection(value, {
+  cache, sources, source, cancelled: () => request !== latest || extraCancelled(), yield: wait, holdLastFrame,
+  status: silent ? undefined : status => { if (request === latest) post({ type: 'status', request, value: status }) },
+})
 
 /** Frame lists show a contact sheet; selecting Pyramid Level exposes its actual pixels. */
 const visualization = (value: Payload, gain: number): { rgba: Uint8Array<ArrayBuffer>; width: number; height: number } | undefined => {
@@ -118,29 +103,47 @@ const work = async (job: Job) => {
   const total = outputCount(job.start, job.end, timelineFps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
   parseDocument(job.value.doc)
-  let encoder: MovieEncoder | undefined
-  let count = 0
+  const started = performance.now(), workers = renderWorkerCount(job.workers, total, navigator.hardwareConcurrency, (navigator as WorkerNavigator & { deviceMemory?: number }).deviceMemory)
+  const controller = new AbortController(); renderAbort = controller
+  let encoder: MovieEncoder | undefined, pool: RenderPool | undefined
+  let count = 0, outputWidth = 0, outputHeight = 0
+  post({ type: 'bake-progress', request: job.request, done: 0, total, workers })
+  const consume = async (rgba: Uint8Array<ArrayBuffer>, width: number, height: number, index: number) => {
+    if (job.request !== latest) return
+    if (!encoder) { encoder = await MovieEncoder.create(width, height, job.fps, job.quality); outputWidth = width; outputHeight = height }
+    if (width !== outputWidth || height !== outputHeight) throw new Error('Output dimensions changed during rendering. Use a fixed Resize before Output.')
+    await encoder.add(rgba, index); count++
+    post({ type: 'bake-progress', request: job.request, done: count, total, workers })
+  }
   try {
-    for (let index = 0; index < total && job.request === latest; index++) {
-      const frame = outputTime(index, job.start, timelineFps, job.fps)
-      // Extend each input clip with its last drawing so N+1 dependencies include the final interval.
-      const result = await evaluate({ ...job.value, frame }, job.request, () => false, false, true)
-      try {
-        if (job.request !== latest) break
-        if (result.value.kind !== 'frame') throw new Error('Select an image output to bake. Scalar outputs are available in Inspect.')
-        // Display gain is an inspection aid; encode the actual node output at unit gain.
-        encoder ??= await MovieEncoder.create(result.value.mat.cols, result.value.mat.rows, job.fps, job.quality)
-        await encoder.add(displayPixels(result.value, 1), index)
-        count++
-      } finally { result.release() }
-      post({ type: 'bake-progress', request: job.request, done: count, total })
-      await wait()
-    }
-  } catch (error) { if (job.request === latest) { encoder?.close(); throw error } }
-  try {
+    try {
+      if (workers > 1) {
+        if (!wasmBinary) throw new Error('The native runtime is not ready')
+        pool = new RenderPool(workers, controller.signal)
+        await pool.initialize({ type: 'init', wasm: wasmBinary, files: [...sources].map(([asset, video]) => ({ asset, file: video.inputFile })), source: source?.info.id, value: job.value, budget: cache.budget })
+        await orderedParallel(total, workers,
+          (index, slot) => pool!.frame(slot, index, outputTime(index, job.start, timelineFps, job.fps)),
+          (frame, index) => consume(frame.pixels, frame.width, frame.height, index), () => job.request !== latest)
+      } else {
+        for (let index = 0; index < total && job.request === latest; index++) {
+          const frame = outputTime(index, job.start, timelineFps, job.fps)
+          // Extend each input clip with its final drawing, including N+1 dependencies.
+          const result = await evaluate({ ...job.value, frame }, job.request, () => false, false, true)
+          try {
+            if (job.request !== latest) break
+            if (result.value.kind !== 'frame') throw new Error('Select an image output to bake. Scalar outputs are available in Inspect.')
+            // Display gain never changes the encoded pixels, in either execution mode.
+            await consume(displayPixels(result.value, 1), result.value.mat.cols, result.value.mat.rows, index)
+          } finally { result.release() }
+          await wait()
+        }
+      }
+    } catch (error) { if (job.request === latest) throw error }
+    finally { pool?.close() }
     const blob = count ? await encoder!.finish() : undefined
-    post({ type: 'bake-done', request: job.request, count, start: job.start, fps: job.fps, cancelled: job.request !== latest, blob })
-  } finally { encoder?.close() }
+    post({ type: 'bake-done', request: job.request, count, start: job.start, fps: job.fps, workers, elapsed: performance.now() - started, cancelled: job.request !== latest, blob })
+  } finally { encoder?.close(); if (renderAbort === controller) renderAbort = undefined }
+
 }
 
 /** Thumbnails use the same native cache, but never replace the main inspector surface. */
@@ -193,14 +196,14 @@ scope.onmessage = ({ data }: MessageEvent<WorkerCommand>) => {
   if (data.type === 'init') {
     if (initialization) return
     initialization = (async () => {
-      const [gpu] = await Promise.all([Presenter.create(data.canvas, message => post({ type: 'error', request: latest, message, fatal: true })), loadWasmChunks(manifest).then(wasmBinary => initOpenCV({ wasmBinary }))])
+      const [gpu] = await Promise.all([Presenter.create(data.canvas, message => post({ type: 'error', request: latest, message, fatal: true })), loadWasmChunks(manifest).then(binary => { wasmBinary = binary; return initOpenCV({ wasmBinary }) })])
       presenter = gpu.presenter; post({ type: 'ready', adapter: gpu.adapter })
     })()
     initialization.catch(error => post({ type: 'error', request: 0, message: String(error), fatal: true }))
   } else if (data.type === 'load' || data.type === 'inspect' || data.type === 'bake') {
-    latest = data.request; pending = data; pendingThumbnails = undefined; void pump()
+    renderAbort?.abort(); latest = data.request; pending = data; pendingThumbnails = undefined; void pump()
   } else if (data.type === 'thumbnails') { thumbnailGeneration = data.generation; pendingThumbnails = data; void pump() }
-  else if (data.type === 'cancel') { latest = data.request; pending = undefined; pendingThumbnails = undefined }
+  else if (data.type === 'cancel') { renderAbort?.abort(); latest = data.request; pending = undefined; pendingThumbnails = undefined }
   else if (data.type === 'budget') { cache.budget = Math.max(64 * 1024 ** 2, Math.min(1024 ** 3, data.bytes)); cache.trim() }
   else if (data.type === 'pixel') {
     const x = Math.floor(data.x), y = Math.floor(data.y)

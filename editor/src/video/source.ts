@@ -19,6 +19,9 @@ export class VideoSource {
   private minimumRank = 0
   readonly ordered: Sample[]
 
+  /** Cloneable local-file reference for independent render-worker decoders. */
+  get inputFile() { return this.file }
+
   private constructor(private file: File, private samples: Sample[], private config: VideoDecoderConfig, readonly info: SourceInfo) {
     this.ordered = presentationOrder(samples)
     this.ordered.forEach((s, rank) => this.ranks.set(s.number, rank))

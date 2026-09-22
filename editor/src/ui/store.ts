@@ -10,7 +10,7 @@ import type { NodeStatus } from '../engine/execute'
 import type { SourceInfo, WorkerEvent } from '../protocol'
 
 export type Result = Extract<WorkerEvent, { type: 'result' }>
-export type Movie = { url: string; count: number; fps: number; cancelled: boolean; label: string }
+export type Movie = { url: string; count: number; fps: number; cancelled: boolean; label: string; workers: number; elapsed: number }
 export type SourceTarget = { node: string; definition?: string }
 export type EditorTab = { id: string; path: string[]; definition?: string; focused?: string; selected?: string; port?: string | null }
 type State = {
@@ -18,7 +18,7 @@ type State = {
   highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; generatedFrames: number; gain: number; inspectorView: 'frame' | 'movie'
   ready: boolean; adapter: string; source: SourceInfo | null; assets: Record<string, SourceInfo>; loadingSource: SourceTarget | null; busy: 'idle' | 'load' | 'inspect' | 'bake'
   error: string; fatal: boolean; result: Result | null; statuses: Record<string, NodeStatus>
-  progress: { done: number; total: number } | null; movie: Movie | null; cancelling: boolean
+  progress: { done: number; total: number; workers?: number } | null; movie: Movie | null; cancelling: boolean
   pixel: Extract<WorkerEvent, { type: 'pixel' }> | null; revision: number
   previews: Record<string, boolean>; thumbnails: Record<string, Extract<WorkerEvent, { type: 'thumbnail' }>>
   past: GraphDocument[]; future: GraphDocument[]

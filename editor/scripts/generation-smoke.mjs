@@ -1,38 +1,42 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { writeFile, readFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { proceduralReference } from './procedural-reference.mjs'
 
-const movieFile = async (page, file) => {
+export const movieFile = async (page, file) => {
   const bytes = await page.locator('.frame-player').evaluate(async p => [...new Uint8Array(await (await fetch(p.dataset.src)).arrayBuffer())])
   await writeFile(file, Buffer.from(bytes))
   return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-of', 'json', file], { encoding: 'utf8' })).streams[0]
 }
-const render = async (page, count = 8) => {
+export const render = async (page, count = 8) => {
+  await page.getByLabel('Render first frame').fill('0')
   await page.getByLabel('Render last frame').fill(String(count - 1)); await page.getByLabel('Render fps').selectOption('24')
   const previous = await page.locator('.frame-player').evaluateAll(players => players[0]?.getAttribute('data-src') ?? null)
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   await page.waitForFunction(old => {
     const p = document.querySelector('.frame-player')
-    return p && p.dataset.src !== old && p.dataset.ready === 'true' && p.dataset.frame === '0'
+    return document.querySelector('[role=alert]') || p && p.dataset.src !== old && p.dataset.ready === 'true' && p.dataset.frame === '0'
   }, previous, { timeout: 60000 })
+  assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
 }
 
-/** A completely source-free graph generates the fixture pixels, advances Time and exports a movie. */
+/** A source-free graph generates a periodic field, crosses its seams and exports a movie. */
 export const generatedSmoke = async (page, { directory, fixture, choose, change, png, project }) => {
   await choose('texture')
   assert.equal(await page.getByLabel('Render quality', { exact: true }).inputValue(), 'high')
   assert.equal(await page.locator('.react-flow__node').filter({ hasText: 'Video Source' }).count(), 0)
   assert.match(await page.locator('.time-heading').innerText(), /GENERATED TIME/)
-  const raw = await readFile(resolve(directory, 'fixture.rgb')), { width, height } = fixture, stride = width * height * 3
-  for (const frame of [0, 1]) {
+  const { width, height } = fixture, stride = width * height * 3
+  const raw = Buffer.concat(Array.from({ length: 8 }, (_, time) => proceduralReference(width, height, time)))
+  for (const frame of [0, 120]) {
     if (frame) await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(frame)))
-    const actual = await png(), expected = raw.subarray(frame * stride, (frame + 1) * stride)
+    const actual = await png(), expected = proceduralReference(width, height, frame)
     assert.equal(actual.length, expected.length)
-    assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) <= 1), 'Generated pixels must recreate the raw fixture, without opening it as media')
+    assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) <= 1), 'Generated pixels must match the seamless field, including translated tile boundaries')
   }
   await page.getByLabel('Image preview', { exact: true }).focus(); await page.keyboard.press('>')
-  assert.equal(await page.getByLabel('Source frame', { exact: true }).inputValue(), '2')
+  assert.equal(await page.getByLabel('Source frame', { exact: true }).inputValue(), '121')
   const saved = await project()
   assert.equal(saved.nodes.some(n => ['clip', 'source', 'readFrame'].includes(n.type)), false)
   assert.ok(saved.definitions.some(d => d.graph.nodes.some(n => n.type === 'pixelMath')), 'Color groups must remain editable arithmetic')
@@ -50,7 +54,7 @@ export const generatedSmoke = async (page, { directory, fixture, choose, change,
   await page.screenshot({ path: resolve(directory, 'procedural-video.png') })
   await page.getByRole('button', { name: 'Node preview', exact: true }).click()
   await page.getByLabel('Render fps').selectOption('60')
-  console.log('PASS: source-free editable texture, fixture-identical PNGs, generated-time shortcuts and 8-frame animated MP4')
+  console.log('PASS: source-free seamless texture, reference-checked boundaries, generated-time shortcuts and 8-frame animated MP4')
 }
 
 /** Check the cookbook through the actual editor, including dense-flow previews and video output. */

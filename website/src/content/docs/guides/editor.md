@@ -63,10 +63,19 @@ covers the separate OpenCV graph API available to TypeScript applications.
 
 ## Generate without a video
 
-Open **Procedural stripe texture** in the editor's prefab library. Image
-Coordinates and Seeded Noise feed three editable color-channel groups made of
-Pixel Math nodes. Combine RGB creates the image; Time drives wrapped X/Y
-translations to animate it. Open a channel group to inspect the arithmetic.
+Open **Procedural stripe texture** in the editor's prefab library. Normalized
+Image Coordinates U/V and Seeded Noise feed three editable color-channel groups
+made of Pixel Math nodes. Each group rounds the X/Y cycle counts, applies sine,
+and maps the wave to a color range. Whole cycles make opposite edges line up.
+Combine RGB creates the image; Time drives wrapped X/Y translations to animate
+it. Open a channel group to inspect every operation.
+
+The loop-length Number defaults to **240 generated frames**. The pattern moves
+exactly one image width and height during that time. Render **0 through 239** at
+**24 fps** for a seamless 10-second video loop. Frame 240 repeats frame zero.
+Changing the image dimensions preserves the loop duration; changing its duration
+requires updating both the loop-length Number and the render range. Existing
+saved graphs are preserved, so reopen the prefab to get the seamless version.
 
 The generated timeline runs at 24 fps. Set **Through frame** for its length,
 then save a PNG or **Render video** at your chosen output fps. You can build
@@ -100,10 +109,31 @@ connected, or reopen the updated prefab.
 
 **Render → Quality** defaults to **High**. **Maximum** allocates more bitrate for
 fine lines and textured motion; **Compact** makes smaller files. All three keep
-the Output node's dimensions. Render again after changing quality or the graph.
+the Output node's dimensions. Tiny images cap the target bitrate to keep the
+encoder stable, so higher presets can reach the same cap. Render again after
+changing quality or the graph.
 
 The rendered player shows the actual video resolution below its timeline. For
 procedural images, set the Width and Height Number nodes to the desired size;
-the stripe example starts at 192 × 128 to match the small reference texture.
+the stripe example starts at 192 × 128 for a small editable example.
 Video export requires even dimensions. Compression quality cannot restore detail
 that a Resize node has already removed.
+
+## Parallel rendering
+
+**Render → Workers** selects how many frames can be computed at once. **Auto**
+uses up to two workers for longer renders on machines with enough CPU cores and
+memory; choose **1**, **2**, or **4** to compare on your graph. The finished video
+shows its render time and actual worker count. Resolution, algorithms, output
+frame rate, and encoding quality stay the same.
+
+Each worker evaluates the graph for a different output timestamp with its own
+OpenCV runtime, decoder and result cache. Completed frames enter the encoder in
+order. Stop keeps the completed prefix, and the extra workers are released after
+the render. Generated textures and graphs with several source clips work too.
+
+More workers use more memory: each has its own native heap and a result-cache
+budget of 512 MiB. Startup and repeated decoding can outweigh the gains on short
+clips or simple graphs. This accelerates video rendering; inspecting a single
+frame still evaluates its graph in one worker. No cross-origin isolation headers
+are needed for this worker pool.

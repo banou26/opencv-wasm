@@ -1,6 +1,7 @@
 import type { GraphDocument, PortType } from './engine/types'
 import type { NodeStatus } from './engine/execute'
 import type { RenderQuality } from './engine/render-quality'
+import type { RenderWorkers } from './engine/parallel-render'
 
 /** Metadata for the currently attached clip. Frame numbers are presentation ranks. */
 export type SourceInfo = { id: string; name: string; width: number; height: number; frameCount: number; fps: number; codec: string; decoder: 'software' | 'hardware'; warnings: string[] }
@@ -15,7 +16,7 @@ export type WorkerCommand =
   | { type: 'cancel'; request: number }
   | { type: 'thumbnails'; generation: number; value: Inspection; nodes: string[] }
   | { type: 'budget'; bytes: number }
-  | { type: 'bake'; request: number; value: Inspection; start: number; end: number; fps: number; quality: RenderQuality }
+  | { type: 'bake'; request: number; value: Inspection; start: number; end: number; fps: number; quality: RenderQuality; workers: RenderWorkers }
   | { type: 'pixel'; request: number; x: number; y: number }
   | { type: 'export'; request: number }
 /** Worker feedback, including explicit failure and bounded-memory statistics. */
@@ -26,7 +27,7 @@ export type WorkerEvent =
   | { type: 'status'; request: number; value: NodeStatus }
   | { type: 'result'; request: number; selected: string; path?: string[]; frame: number; width: number; height: number; kind: PortType; sources: SourceDemand[]; summary?: string; scalar?: number; motion?: { dx: number; dy: number; response: number }; range: 'unit' | 'signed'; elapsed: number; cacheBytes: number; cacheEntries: number }
   | { type: 'error'; request: number; message: string; fatal?: boolean }
-  | { type: 'bake-progress'; request: number; done: number; total: number }
-  | { type: 'bake-done'; request: number; count: number; start: number; fps: number; cancelled: boolean; blob?: Blob }
+  | { type: 'bake-progress'; request: number; done: number; total: number; workers: number }
+  | { type: 'bake-done'; request: number; count: number; start: number; fps: number; workers: number; elapsed: number; cancelled: boolean; blob?: Blob }
   | { type: 'pixel'; request: number; x: number; y: number; rgba: number[] }
   | { type: 'export'; request: number; blob: Blob }

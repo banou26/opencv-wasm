@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { waitForBrowser } from './browser-poll.mjs'
+import { compareWorkerMovies } from './parallel-smoke.mjs'
 
 /** Real file drops and real browser filesystem IO; only the OS folder picker is substituted. */
 export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph, change, png, project }) => {
@@ -48,6 +49,19 @@ export const mediaSmoke = async (page, { fixture, directory, upload, sourceGraph
   assert.match(await page.locator('.view-options code').innerText(), /192 × 128/)
   await originalFrame()
   console.log('PASS: multi-file canvas drop, independent clip bindings, node-local replacement and source cache isolation')
+
+  const combined = structuredClone(saved)
+  combined.nodes.push({ id: 'nmixsources', type: 'delta', params: { absolute: true, offset: 0 }, position: { x: 1100, y: 300 } })
+  combined.edges = combined.edges.filter(edge => edge.target !== 'n5')
+  combined.edges.push(
+    { id: 'mix-a', source: 'n1', sourceHandle: 'out:frame:image', target: 'nmixsources', targetHandle: 'in:frame:a' },
+    { id: 'mix-b', source: 'nmediaframe', sourceHandle: 'out:frame:image', target: 'nmixsources', targetHandle: 'in:frame:b' },
+    { id: 'mix-out', source: 'nmixsources', sourceHandle: 'out:frame:delta', target: 'n5', targetHandle: 'in:frame:image' },
+  )
+  await upload(combined)
+  await compareWorkerMovies(page, directory, 'multiple-video-sources', [1, 2])
+  await upload(saved); await originalFrame()
+  console.log('PASS: parallel rendering preserves explicit bindings and pixels from multiple video sources')
 
   // OPFS supplies genuine FileSystemDirectoryHandle/FileSystemWritableFileStream objects.
   // The native OS chooser still requires a human click; the rest is production IO code.

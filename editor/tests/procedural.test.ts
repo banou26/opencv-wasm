@@ -14,29 +14,42 @@ import type { NodeType, Params } from '../src/engine/types'
 beforeAll(async () => { await initOpenCV() }, 60000)
 const invoke = (type: NodeType, params: Params, inputs: Record<string, Payload> = {}) => proceduralKernel({ key: 'test', node: { id: 'n1', type, params: { ...defaultParams(type), ...params }, position: { x: 0, y: 0 } }, inputs: {}, frame: 0 }, inputs)!
 
-test('generated RGB arithmetic exactly recreates the uncompressed smoke texture and wraps its animation', async () => {
+test('procedural stripes follow a periodic field across the translated seams and the full animation loop', async () => {
   const doc = parseDocument(proceduralTextureGraph()), cache = new ResultCache<Payload>(128 * 1024 ** 2), width = 192, height = 128
   expect(doc.nodes.some(n => n.type === 'clip' || n.type === 'source' || n.type === 'readFrame')).toBe(false)
-  const expected = new Float32Array(width * height * 4)
+  // Fractional controls are explicitly rounded inside the group, preserving
+  // whole cycles at opposite boundaries even when a user wires a decimal value.
+  doc.nodes.find(n => n.id === 'nr')!.params.sx = 3.4
+  doc.nodes.find(n => n.id === 'nr')!.params.sy = 2.6
+  const noise = new Float64Array(width * height)
   let seed = 412947
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
-    const noise = seed >>> 26, i = (y * width + x) * 4
-    expected.set([(35 + (x * 3 + y * 5 + noise) % 185) / 255, (25 + (x * 5 + y * 2 + noise) % 185) / 255, (45 + (x * 2 + y * 7 + noise) % 185) / 255, 1], i)
-  }
+  for (let i = 0; i < noise.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; noise[i] = (seed >>> 26) / 185 }
+  const wrap = (v: number, size: number) => ((v % size) + size) % size
+  const evaluate = (frame: number) => evaluateGraph(doc, 'n5', null, frame, [], { cache, assets: {}, parameter: parameterValue, cancelled: () => false, yield: async () => {}, now: () => 0, status: () => {}, kernel: (step, inputs) => runKernel(step, inputs, undefined, () => false, doc) })
   try {
-    for (const frame of [0, 1, 7, 0]) {
-      const result = await evaluateGraph(doc, 'n5', null, frame, [], { cache, assets: {}, parameter: parameterValue, cancelled: () => false, yield: async () => {}, now: () => 0, status: () => {}, kernel: (step, inputs) => runKernel(step, inputs, undefined, () => false, doc) })
+    for (const time of [0, 120, 240, 480]) {
+      const result = await evaluate(time)
       try {
         const actual = image(result.value).mat.data32F
         let maxError = 0
-        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) for (let c = 0; c < 4; c++) {
-          const source = (((y - frame + height) % height) * width + (x - frame * 2 + width) % width) * 4 + c
-          maxError = Math.max(maxError, Math.abs(actual[(y * width + x) * 4 + c]! - expected[source]!))
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+          // Evaluate an infinite periodic field at coordinates OUTSIDE the
+          // original tile. A mismatched finite tile cannot satisfy this check.
+          const worldX = x - time * width / 240, worldY = y - time * height / 240
+          const grain = noise[wrap(worldY, height) * width + wrap(worldX, width)]!
+          for (const [c, cx, cy, bias] of [[0, 3, 3, 35], [1, 5, 1, 25], [2, 2, 5, 45]] as const) {
+            const expected = (bias + 185 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (worldX / width * cx + worldY / height * cy + grain)))) / 255
+            maxError = Math.max(maxError, Math.abs(actual[(y * width + x) * 4 + c]! - expected))
+          }
         }
-        expect(maxError).toBeLessThan(0.00001)
+        expect(maxError).toBeLessThan(0.00002)
       } finally { result.release() }
     }
+    const first = await evaluate(0.5), repeated = await evaluate(240.5)
+    try {
+      const a = image(first.value).mat.data32F, b = image(repeated.value).mat.data32F
+      expect(b.every((value, index) => value === a[index])).toBe(true)
+    } finally { first.release(); repeated.release() }
   } finally { cache.clear() }
 })
 

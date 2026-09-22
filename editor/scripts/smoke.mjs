@@ -10,6 +10,7 @@ import { primitivesSmoke } from './primitives-smoke.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
 import { dragSmoke, previewSelectionSmoke, timelineSmoke, frameShortcutsSmoke } from './interaction-smoke.mjs'
 import { generatedSmoke, motionVectorsSmoke } from './generation-smoke.mjs'
+import { parallelSmoke } from './parallel-smoke.mjs'
 import { movieShortcutsSmoke } from './output-player-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
 import { waitForBrowser } from './browser-poll.mjs'
@@ -93,6 +94,8 @@ try {
   const pipeline = (type, params) => ({ version: 1, nodes: [node('n1', 'source'), node('n2', type, params, 350), node('n5', 'output', {}, 680)], edges: [edge('n1', 'n2'), edge('n2', 'n5')] })
   const sourceGraph = { version: 1, nodes: [node('n1', 'source'), node('n5', 'output', {}, 350)], edges: [edge('n1', 'n5')] }
   await generatedSmoke(page, { directory, fixture, choose, change, png, project })
+  await parallelSmoke(page, { directory, project, upload })
+  assert.equal(runtimeRequests.filter(url => url.endsWith('.bin')).length, 3, 'Render workers reuse the verified binary without extra downloads')
   await change(() => page.locator('input[type=file][accept*="video"]').first().setInputFiles(fixture.video))
   assert.equal(await page.getByLabel('Render first frame').inputValue(), '0')
   assert.equal(await page.getByLabel('Render last frame').inputValue(), '31', 'A newly loaded clip defaults to all frames')
@@ -286,7 +289,7 @@ try {
   await mediaSmoke(page, { fixture, directory, upload, sourceGraph, change, png, project })
   await assertViewport(page, ['.workspace-notices', '.timeline', '.render-controls', '.render-action', 'footer'])
   assert.deepEqual(errors, [])
-  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['procedural RGB fixture without video', 'regional motion vectors', 'exact output seek paints', 'source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY', 'computed frame index', 'crop/process/paste', 'editable Laplacian reconstruction', 'typed record frame roundtrip'], output: { count: 80, fps: 60 }, cancelledFrames: count, errors }, null, 2))
+  await writeFile(resolve(directory, 'results.json'), JSON.stringify({ passed: true, nativePixelChecks: ['seamless procedural RGB without video', 'regional motion vectors', 'exact output seek paints', 'source seek', 'grayscale', 'GaussianBlur', 'threshold', 'offset', 'copyTo mask', 'absdiff', 'mean luma', 'phaseCorrelate', 'translateX', 'translateY', 'computed frame index', 'crop/process/paste', 'editable Laplacian reconstruction', 'typed record frame roundtrip'], output: { count: 80, fps: 60 }, cancelledFrames: count, errors }, null, 2))
   await page.screenshot({ path: resolve(directory, 'editor.png'), fullPage: true, timeout: 15000 })
   await page.close()
   console.log(`Browser smoke passed. Artifacts: ${directory}`)

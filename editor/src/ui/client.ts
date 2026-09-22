@@ -69,11 +69,11 @@ export const initialize = (canvas: HTMLCanvasElement) => {
       }
       else if (event.type === 'status' && event.request === active && JSON.stringify(event.value.path ?? []) === JSON.stringify(state.path)) queueStatus(event.request, event.value)
       else if (event.type === 'result' && event.request === active && event.selected === state.selected && JSON.stringify(event.path ?? []) === JSON.stringify(state.path)) useEditor.setState({ result: event, busy: 'idle', error: '', statuses: { ...state.statuses, ...drainStatuses() } })
-      else if (event.type === 'bake-progress' && event.request === bakeRequest) useEditor.setState({ progress: { done: event.done, total: event.total } })
+      else if (event.type === 'bake-progress' && event.request === bakeRequest) useEditor.setState({ progress: { done: event.done, total: event.total, workers: event.workers } })
       else if (event.type === 'bake-done' && event.request === bakeRequest) {
         if (event.blob) {
           if (state.movie) URL.revokeObjectURL(state.movie.url)
-          useEditor.setState({ movie: { url: URL.createObjectURL(event.blob), count: event.count, fps: event.fps, cancelled: event.cancelled, label: bakeLabel } })
+          useEditor.setState({ movie: { url: URL.createObjectURL(event.blob), count: event.count, fps: event.fps, cancelled: event.cancelled, label: bakeLabel, workers: event.workers, elapsed: event.elapsed } })
         }
         useEditor.setState({ busy: 'idle', cancelling: false })
         bakeRequest = 0
@@ -121,12 +121,12 @@ export const openProjectFolder = async () => {
   for (const entry of restored.files) loads.push({ file: entry.file, asset: entry.id })
   nextLoad()
 }
-export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high') => {
+export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high', workers: import('../engine/parallel-render').RenderWorkers = 0) => {
   const value = snapshot(), output = value.doc.nodes.find(n => n.id === target)
   if (output) { value.selected = output.id; value.port = null; value.path = [] }
   active = ++serial; bakeRequest = active; bakeLabel = nodeTitle(value.selected)
   useEditor.setState({ busy: 'bake', cancelling: false, progress: { done: 0, total: 0 }, error: '' })
-  send({ type: 'bake', request: active, value, start, end, fps, quality })
+  send({ type: 'bake', request: active, value, start, end, fps, quality, workers })
 }
 export const cancel = () => {
   active = ++serial

@@ -28,7 +28,7 @@ export const layoutSmoke = async (page, directory) => {
   const original = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
   const canvas = await page.locator('.image-viewport canvas').elementHandle()
   const selected = await page.locator('.inspect-panel').getAttribute('data-selected')
-  const fixed = ['.app-header', '.source-strip', '.workspace', '.timeline', '.render-controls', '[aria-label="Render quality"]', '.render-action', 'footer']
+  const fixed = ['.app-header', '.source-strip', '.workspace', '.timeline', '.render-controls', '[aria-label="Render quality"]', '[aria-label="Render workers"]', '.render-action', 'footer']
   for (const [width, height] of [[1920, 1080], [1366, 768], [1280, 720], [1280, 600], [800, 700], [390, 844]]) {
     await page.setViewportSize({ width, height })
     if (width <= 900) await page.getByRole('button', { name: 'Node graph', exact: true }).click()

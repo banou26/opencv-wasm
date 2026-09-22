@@ -201,21 +201,29 @@ Old media copies are retained when you remove nodes, so you can recover earlier 
 
 ## Generate images and videos without a source
 
-Open **Procedural stripe texture** in the prefab library. It recreates the smoke
-fixture from arithmetic, without reading the fixture or any other image:
+Open **Procedural stripe texture** in the prefab library. It builds a seamless,
+looping texture from arithmetic without reading any image:
 
 ```text
-Image Coordinates.X/Y + Seeded Noise
+Image Coordinates.U/V + Seeded Noise
   → three editable Striped color channel groups
   → Combine RGB → Translate X/Y (wrap) → Output
-                         ↑ Time × speed
+                         ↑ Time × (image dimension / loop length)
 ```
 
-Each channel is `((X × slopeX + Y × slopeY + noise) % 185 + bias) / 255`.
-Open a channel group to edit every multiply, addition, modulo and division.
-The default seed is 412947; the width/height Number nodes feed both generators.
-Frame zero matches the uncompressed test fixture. Time moves the result right
-2 pixels and down 1 pixel per timeline frame, wrapping at its borders.
+Each channel computes a sine wave from `U × round(X cycles) + V × round(Y cycles)`
+plus seeded noise phase. Whole cycles make the stripes meet at opposite image
+boundaries; the continuous sine wave avoids a color jump where its phase wraps.
+Open a channel group to edit every rounding, multiply, addition and sine node.
+The default seed is 412947; shared width/height Number nodes feed both generators.
+Changing resolution preserves the number of stripes and the animation duration.
+
+The loop-length Number defaults to 240 generated frames. Motion travels exactly
+one image width and height during that period. Render frames **0 through 239**
+at **24 fps** for a seamless 10-second loop; frame 240 repeats frame zero and
+should not be included. To change the duration, change both the loop length and
+the render range. Previously saved graphs keep their original nodes; open a
+fresh copy of the prefab to get this version.
 
 The **Generate** category contains **Image Coordinates** and **Seeded Noise**.
 **Pixel Math** provides image arithmetic, sine/cosine, fraction, floor, modulo,
@@ -273,7 +281,8 @@ directly to **Draw Motion Vectors → Image**, or reopen the updated prefab. Kee
 
 Rendering defaults to **High** compression quality. **Maximum** gives fine lines
 and textured motion more bitrate; **Compact** uses the previous smaller budget.
-These settings preserve the Output node's dimensions. The player displays the
+Tiny outputs cap the target bitrate to keep the browser encoder stable; the
+higher presets can reach the same cap. These settings preserve the Output node's dimensions. The player displays the
 actual encoded resolution below its timeline. A texture generated at 192 × 128
 stays that size; change the prefab's Width and Height Number nodes to generate a
 larger image. Changing quality requires rendering again.
@@ -393,6 +402,30 @@ Current limits:
 - The native result cache is 512 MiB. That is not a total process-memory limit:
   decoder frames, scratch matrices, WebGPU textures and the WASM heap also use
   memory. Encoded exports have a separate 512 MiB budget.
+
+### Parallel render workers
+
+**Render → Workers** offers Auto, 1, 2 and 4. Auto uses two on machines reporting
+at least four CPU cores and 4 GiB of memory (when that hint is available), and one
+for renders shorter than 24 output frames. Explicit counts are capped by the
+reported CPU count and number of frames. Compare the time shown below the movie.
+
+Workers independently evaluate complete output frames, including Time, custom
+groups, generated textures and multiple source clips. A bounded scheduler keeps
+results in presentation order and transfers RGBA buffers to one encoder. At most
+one pending result per worker plus the frame being encoded is retained by that
+scheduler. Cancellation stops all workers and exports the completed prefix.
+
+Each worker uses its own OpenCV heap, decoder and 512 MiB result cache. Workers
+are created for a render and terminated on completion, cancellation or error;
+the verified WASM binary is reused without downloading it again. This needs no
+SharedArrayBuffer or COOP/COEP headers. The package itself remains a single-thread
+SIMD build. Interactive evaluation stays on the existing processing worker.
+
+More workers can help expensive frame calculations, but initialization, duplicate
+decoding, memory bandwidth and the single encoder limit the gain. One worker
+also benefits from the existing interactive cache. Short or simple graphs can be
+faster with one worker; resolution and compression are independent controls.
 
 ## Verify
 

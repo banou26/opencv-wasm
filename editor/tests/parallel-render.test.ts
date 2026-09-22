@@ -1,5 +1,6 @@
 import { expect, test } from 'vite-plus/test'
-import { orderedParallel, renderWorkerCount } from '../src/engine/parallel-render'
+import { orderedParallel, renderFrameBatches, renderWorkerCount } from '../src/engine/parallel-render'
+import { outputTime } from '../src/engine/time'
 
 test('parallel results preserve frame order with bounded buffers and exclusive worker slots', async () => {
   const active = new Set<number>(), consumed: number[] = [], completion: number[] = []
@@ -45,4 +46,22 @@ test('automatic concurrency respects short renders, small machines and explicit 
   expect(renderWorkerCount(16, 3, 32, 8)).toBe(3)
   expect(renderWorkerCount(4, 2, 32, 8)).toBe(2)
   expect(renderWorkerCount(1, 100, 32, 8)).toBe(1)
+})
+
+test('60 fps output reuses source-frame work without losing fractional timestamps or order', () => {
+  const batches = renderFrameBatches(141, 0, 24000 / 1001, 60)
+  expect(batches.length).toBe(56)
+  expect(batches.flat()).toEqual(Array.from({ length: 141 }, (_, i) => i))
+  for (const batch of batches) {
+    expect(batch.length).toBeLessThanOrEqual(3)
+    expect(new Set(batch.map(i => Math.floor(outputTime(i, 0, 24000 / 1001, 60)))).size).toBe(1)
+  }
+  expect(batches[0]!.map(i => outputTime(i, 0, 24000 / 1001, 60))).toEqual([0, 0.3996003996003996, 0.7992007992007992])
+})
+
+test('batches remain bounded at high output rates and preserve nonzero start times', () => {
+  const batches = renderFrameBatches(10, 7, 24, 120)
+  expect(batches).toEqual([[0, 1, 2], [3, 4], [5, 6, 7], [8, 9]])
+  expect(renderFrameBatches(4, 7, 60, 24)).toEqual([[0], [1], [2], [3]])
+  expect(renderFrameBatches(0, 0, 24, 60)).toEqual([])
 })

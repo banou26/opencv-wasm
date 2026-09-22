@@ -2,9 +2,10 @@ import { initOpenCV } from '@banou/opencv-wasm'
 import manifest from '../wasm.generated.json'
 import { loadWasmChunks } from '../../../shared/wasm-chunks'
 import { ResultCache } from '../engine/cache'
-import { orderedParallel, renderWorkerCount } from '../engine/parallel-render'
+import { orderedParallel, renderFrameBatches, renderWorkerCount } from '../engine/parallel-render'
 import { evaluateInspection } from './evaluate'
 import { RenderPool } from './render-pool'
+import type { RenderFrame } from './render-protocol'
 import { parseDocument } from '../engine/graph'
 import { GENERATED_FPS, outputCount, outputTime } from '../engine/time'
 import type { Lease } from '../engine/types'
@@ -121,9 +122,14 @@ const work = async (job: Job) => {
         if (!wasmBinary) throw new Error('The native runtime is not ready')
         pool = new RenderPool(workers, controller.signal)
         await pool.initialize({ type: 'init', wasm: wasmBinary, files: [...sources].map(([asset, video]) => ({ asset, file: video.inputFile })), source: source?.info.id, value: job.value, budget: cache.budget })
-        await orderedParallel(total, workers,
-          (index, slot) => pool!.frame(slot, index, outputTime(index, job.start, timelineFps, job.fps)),
-          (frame, index) => consume(frame.pixels, frame.width, frame.height, index), () => job.request !== latest)
+        const batches = renderFrameBatches(total, job.start, timelineFps, job.fps)
+        await orderedParallel(batches.length, workers, async (batch, slot) => {
+          const frames: RenderFrame[] = []
+          for (const index of batches[batch]!) frames.push(await pool!.frame(slot, index, outputTime(index, job.start, timelineFps, job.fps)))
+          return frames
+        }, async frames => {
+          for (const frame of frames) await consume(frame.pixels, frame.width, frame.height, frame.index)
+        }, () => job.request !== latest)
       } else {
         for (let index = 0; index < total && job.request === latest; index++) {
           const frame = outputTime(index, job.start, timelineFps, job.fps)

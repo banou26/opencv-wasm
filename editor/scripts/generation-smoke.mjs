@@ -9,9 +9,9 @@ export const movieFile = async (page, file) => {
   await writeFile(file, Buffer.from(bytes))
   return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-show_streams', '-of', 'json', file], { encoding: 'utf8' })).streams[0]
 }
-export const render = async (page, count = 8) => {
+export const render = async (page, count = 8, fps = 24) => {
   await page.getByLabel('Render first frame').fill('0')
-  await page.getByLabel('Render last frame').fill(String(count - 1)); await page.getByLabel('Render fps').selectOption('24')
+  await page.getByLabel('Render last frame').fill(String(count - 1)); await page.getByLabel('Render fps').selectOption(String(fps))
   const previous = await page.locator('.frame-player').evaluateAll(players => players[0]?.getAttribute('data-src') ?? null)
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   await page.waitForFunction(old => {

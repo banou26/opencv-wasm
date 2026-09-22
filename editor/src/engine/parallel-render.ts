@@ -1,3 +1,5 @@
+import { outputTime } from './time'
+
 /** Zero chooses a conservative automatic worker count; explicit choices allow comparison. */
 export type RenderWorkers = 0 | 1 | 2 | 4 | 8 | 16
 
@@ -7,6 +9,22 @@ export const renderWorkerCount = (requested: RenderWorkers, total: number, cores
   const available = Math.max(1, Math.floor(cores || 1))
   const automatic = total >= 24 && available >= 4 && (memoryGiB === undefined || memoryGiB >= 4) ? 2 : 1
   return Math.max(1, Math.min(total, available, requested || automatic))
+}
+
+/**
+ * Keep output timestamps in the same source-frame interval on one worker, so
+ * integer-frame branches can reuse decoding and optical flow across subframes.
+ * Every timestamp is still evaluated. Limit each batch to three pixel buffers.
+ */
+export const renderFrameBatches = (total: number, start: number, sourceFps: number, outputFps: number): number[][] => {
+  const batches: number[][] = []
+  let previous = -1, batch: number[] | undefined
+  for (let index = 0; index < total; index++) {
+    const frame = Math.floor(outputTime(index, start, sourceFps, outputFps))
+    if (!batch || batch.length === 3 || frame !== previous) { batch = []; batches.push(batch) }
+    batch.push(index); previous = frame
+  }
+  return batches
 }
 
 /**

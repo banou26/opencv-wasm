@@ -415,10 +415,16 @@ for renders shorter than 24 output frames. Explicit counts are capped by the
 reported CPU count and number of frames. Compare the time shown below the movie.
 
 Workers independently evaluate complete output frames, including Time, custom
-groups, generated textures and multiple source clips. A bounded scheduler keeps
-results in presentation order and transfers RGBA buffers to one encoder. At most
-one pending result per worker plus the frame being encoded is retained by that
-scheduler. Cancellation stops all workers and exports the completed prefix.
+groups, generated textures and multiple source clips. Neighboring output times
+within the same source-frame interval stay on one worker in batches of up to
+three. For example, 23.976 fps video rendered at 60 fps can reuse decoding and
+optical flow for the same source pair. Every fractional timestamp still evaluates
+its own graph, so animation and interpolation retain their full output rate.
+
+A bounded scheduler keeps results in presentation order and transfers RGBA
+buffers to one encoder. It retains at most one pending batch per worker plus the
+batch being encoded, each containing at most three frames. Cancellation stops
+all workers and exports the completed prefix.
 
 Each worker uses its own OpenCV heap, decoder and 512 MiB result cache. Workers
 are created for a render and terminated on completion, cancellation or error;

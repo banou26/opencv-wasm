@@ -131,9 +131,13 @@ shows its render time and actual worker count. Resolution, algorithms, output
 frame rate, and encoding quality stay the same.
 
 Each worker evaluates the graph for a different output timestamp with its own
-OpenCV runtime, decoder and result cache. Completed frames enter the encoder in
-order. Stop keeps the completed prefix, and the extra workers are released after
-the render. Generated textures and graphs with several source clips work too.
+OpenCV runtime, decoder and result cache. Neighboring timestamps within the same
+source-frame interval stay together in batches of up to three frames. This lets
+60 fps output from a 24 fps source reuse decoding and optical flow. Every
+fractional timestamp still gets evaluated, including animation and interpolation.
+Completed frames enter the encoder in order. Stop keeps the completed prefix,
+and the extra workers are released after the render. Generated textures and
+graphs with several source clips work too.
 
 More workers use more memory: each has its own native heap and a result-cache
 budget of 512 MiB. Startup and repeated decoding can outweigh the gains on short

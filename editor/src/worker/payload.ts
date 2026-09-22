@@ -4,7 +4,10 @@ import type { Bundle } from '../engine/types'
 
 /** Normalized float RGBA pixels; signed results retain negative values. */
 export type Frame = { kind: 'frame'; mat: Mat; range: 'unit' | 'signed' }
+/** Dense CV_32FC2 displacements in image pixels, plus an owned image for sparse previews. */
+export type Flow = { kind: 'flow'; mat: Mat; base: Frame }
 export type Payload = Frame
+  | Flow
   | { kind: 'scalar'; value: number }
   | { kind: 'string'; value: string }
   | { kind: 'boolean'; value: boolean }
@@ -23,18 +26,25 @@ export const parameterValue = (value: Payload): string | number | boolean => {
   if (value.kind !== 'scalar' && value.kind !== 'boolean' && value.kind !== 'string') throw new Error('A parameter expects a Number, Boolean or Text value')
   return value.value
 }
-const walk = (value: Payload, visit: (frame: Frame) => void) => {
-  if (value.kind === 'frame') visit(value)
-  else if (value.kind === 'motion') visit(value.preview)
-  else if (value.kind === 'frames') value.frames.forEach(visit)
+const walk = (value: Payload, visit: (mat: Mat) => void) => {
+  if (value.kind === 'frame') visit(value.mat)
+  else if (value.kind === 'flow') { visit(value.mat); visit(value.base.mat) }
+  else if (value.kind === 'motion') visit(value.preview.mat)
+  else if (value.kind === 'frames') value.frames.forEach(frame => visit(frame.mat))
   else if (value.kind === 'custom') Object.values(value.fields).forEach(field => walk(field, visit))
+}
+/** Copy pixel storage; opencv-wasm 0.0.6 inherits Embind clone(), which only retains the same handle. */
+export const copyMat = (source: Mat): Mat => {
+  const out = new Mat()
+  try { source.copyTo(out); return out } catch (error) { out.delete(); throw error }
 }
 /** A record or selected pyramid level owns copies, so cache eviction cannot invalidate a field. */
 export const clonePayload = (value: Payload): Payload => {
   const allocated: Mat[] = []
-  const copyFrame = (frame: Frame): Frame => { const mat = frame.mat.clone(); allocated.push(mat); return { ...frame, mat } }
+  const copyFrame = (frame: Frame): Frame => { const mat = copyMat(frame.mat); allocated.push(mat); return { ...frame, mat } }
   const copy = (value: Payload): Payload => {
     if (value.kind === 'frame') return copyFrame(value)
+    if (value.kind === 'flow') { const mat = copyMat(value.mat); allocated.push(mat); return { ...value, mat, base: copyFrame(value.base) } }
     if (value.kind === 'motion') return { ...value, preview: copyFrame(value.preview) }
     if (value.kind === 'frames') return { ...value, frames: value.frames.map(copyFrame) }
     if (value.kind === 'custom') return { ...value, fields: Object.fromEntries(Object.entries(value.fields).map(([key, field]) => [key, copy(field)])) }
@@ -44,11 +54,12 @@ export const clonePayload = (value: Payload): Payload => {
 }
 export const payloadBundle = (outputs: Record<string, Payload>): Bundle<Payload> => {
   const matrices = new Set<Mat>()
-  Object.values(outputs).forEach(value => walk(value, frame => matrices.add(frame.mat)))
+  Object.values(outputs).forEach(value => walk(value, mat => matrices.add(mat)))
   return { outputs, bytes: [...matrices].reduce((sum, mat) => sum + mat.rows * mat.cols * mat.elemSize(), matrices.size ? 0 : 128), dispose: () => matrices.forEach(mat => mat.delete()) }
 }
 /** Summaries cross the worker boundary; native handles and full-resolution pixels stay in the worker. */
 export const payloadSummary = (value: Payload): string => {
+  if (value.kind === 'flow') return `${value.mat.cols} × ${value.mat.rows} displacement field\nX right / Y down · pixels per frame pair`
   if (value.kind === 'frame') return `${value.mat.cols} × ${value.mat.rows} frame`
   if (value.kind === 'scalar') return String(value.value)
   if (value.kind === 'boolean' || value.kind === 'string') return String(value.value)

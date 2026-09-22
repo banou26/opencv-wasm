@@ -15,7 +15,7 @@ export type SourceTarget = { node: string; definition?: string }
 export type EditorTab = { id: string; path: string[]; definition?: string; focused?: string; selected?: string; port?: string | null }
 type State = {
   doc: GraphDocument; view: GraphDocument; path: string[]; tabs: EditorTab[]; activeTab: string
-  highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; gain: number; inspectorView: 'frame' | 'movie'
+  highlighted: string[]; focused: string; selected: string; port: string | null; frame: number; generatedFrames: number; gain: number; inspectorView: 'frame' | 'movie'
   ready: boolean; adapter: string; source: SourceInfo | null; assets: Record<string, SourceInfo>; loadingSource: SourceTarget | null; busy: 'idle' | 'load' | 'inspect' | 'bake'
   error: string; fatal: boolean; result: Result | null; statuses: Record<string, NodeStatus>
   progress: { done: number; total: number } | null; movie: Movie | null; cancelling: boolean
@@ -69,7 +69,7 @@ export const useEditor = create<State>((set, get) => {
   }
   return {
     doc: initial, view: initial, path: [], tabs: [{ id: 'main', path: [] }], activeTab: 'main',
-    highlighted: ['n5'], focused: 'n5', selected: 'n5', port: null, frame: 0, gain: 1, inspectorView: 'frame',
+    highlighted: ['n5'], focused: 'n5', selected: 'n5', port: null, frame: 0, generatedFrames: 240, gain: 1, inspectorView: 'frame',
     ready: false, adapter: '', source: null, assets: {}, loadingSource: null, busy: 'idle', error: '', fatal: false,
     result: null, statuses: {}, progress: null, movie: null, cancelling: false, pixel: null, revision: 0,
     previews: defaults(initial), thumbnails: {}, past: [], future: [],

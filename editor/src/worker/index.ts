@@ -4,7 +4,7 @@ import { loadWasmChunks } from '../../../shared/wasm-chunks'
 import { ResultCache } from '../engine/cache'
 import { evaluateGraph } from '../engine/evaluate'
 import { parseDocument } from '../engine/graph'
-import { outputCount, outputTime } from '../engine/time'
+import { GENERATED_FPS, outputCount, outputTime } from '../engine/time'
 import type { Lease } from '../engine/types'
 import { Presenter } from '../gpu/presenter'
 import { VideoSource } from '../video/source'
@@ -12,6 +12,7 @@ import { MovieEncoder } from '../video/encoder'
 import type { Inspection, SourceDemand, WorkerCommand, WorkerEvent } from '../protocol'
 import { displayPixels, runKernel } from './kernels'
 import type { Payload } from './kernels'
+import { drawFlow } from './flow-kernels'
 import { parameterValue, payloadSummary } from './payload'
 
 const scope = self as DedicatedWorkerGlobalScope
@@ -60,6 +61,10 @@ const evaluate = async (value: Inspection, request: number, extraCancelled = () 
 
 /** Frame lists show a contact sheet; selecting Pyramid Level exposes its actual pixels. */
 const visualization = (value: Payload, gain: number): { rgba: Uint8Array<ArrayBuffer>; width: number; height: number } | undefined => {
+  if (value.kind === 'flow') {
+    const preview = drawFlow(value, value.base, 48, 2, 0.55, false, false)
+    try { return { rgba: displayPixels(preview, gain), width: preview.mat.cols, height: preview.mat.rows } } finally { preview.mat.delete() }
+  }
   const frame = value.kind === 'frame' ? value : value.kind === 'motion' ? value.preview : undefined
   if (frame) return { rgba: displayPixels(frame, gain), width: frame.mat.cols, height: frame.mat.rows }
   if (value.kind !== 'frames') return
@@ -106,17 +111,17 @@ const work = async (job: Job) => {
     return
   }
   const reference = sources.get(job.value.referenceAsset ?? '') ?? source
-  if (!reference) throw new Error('Load a clip before baking')
-  if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start || job.end >= reference.info.frameCount) throw new Error('Choose a valid inclusive frame range')
+  const timelineFps = reference?.info.fps ?? GENERATED_FPS
+  if (!Number.isInteger(job.start) || !Number.isInteger(job.end) || job.start < 0 || job.end < job.start || job.end >= (reference?.info.frameCount ?? 100000)) throw new Error('Choose a valid inclusive frame range')
   if (![24, 25, 30, 50, 60, 120].includes(job.fps)) throw new Error('Choose a supported output frame rate')
-  const total = outputCount(job.start, job.end, reference.info.fps, job.fps)
+  const total = outputCount(job.start, job.end, timelineFps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
   parseDocument(job.value.doc)
   let encoder: MovieEncoder | undefined
   let count = 0
   try {
     for (let index = 0; index < total && job.request === latest; index++) {
-      const frame = outputTime(index, job.start, reference.info.fps, job.fps)
+      const frame = outputTime(index, job.start, timelineFps, job.fps)
       // Extend each input clip with its last drawing so N+1 dependencies include the final interval.
       const result = await evaluate({ ...job.value, frame }, job.request, () => false, false, true)
       try {

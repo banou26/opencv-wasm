@@ -45,7 +45,7 @@ test('every builtin parameter has a socket of the correct type and retains its f
   }
 })
 test('all explicit prefabs validate and Video cannot wire directly into an image transform', () => {
-  for (const mode of ['filter', 'difference', 'motion', 'mask', 'crop', 'pyramid'] as const) expect(() => parseDocument(explicitGraph(mode))).not.toThrow()
+  for (const mode of ['filter', 'difference', 'motion', 'mask', 'crop', 'pyramid', 'motionVectors', 'texture'] as const) expect(() => parseDocument(explicitGraph(mode))).not.toThrow()
   const graph = doc(n('nclip', 'clip'), n('ngray', 'grayscale'))
   expect(validateConnection(graph, { source: 'nclip', sourceHandle: 'out:video:clip', target: 'ngray', targetHandle: 'in:frame:image' })).toMatch(/video.*frame/)
 })

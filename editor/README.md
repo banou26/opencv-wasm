@@ -199,6 +199,76 @@ folder; an existing project must be opened explicitly instead of overwritten.
 Autosave keeps graph edits; it does not automatically rerender or export a movie.
 Old media copies are retained when you remove nodes, so you can recover earlier work.
 
+## Generate images and videos without a source
+
+Open **Procedural stripe texture** in the prefab library. It recreates the smoke
+fixture from arithmetic, without reading the fixture or any other image:
+
+```text
+Image Coordinates.X/Y + Seeded Noise
+  → three editable Striped color channel groups
+  → Combine RGB → Translate X/Y (wrap) → Output
+                         ↑ Time × speed
+```
+
+Each channel is `((X × slopeX + Y × slopeY + noise) % 185 + bias) / 255`.
+Open a channel group to edit every multiply, addition, modulo and division.
+The default seed is 412947; the width/height Number nodes feed both generators.
+Frame zero matches the uncompressed test fixture. Time moves the result right
+2 pixels and down 1 pixel per timeline frame, wrapping at its borders.
+
+The **Generate** category contains **Image Coordinates** and **Seeded Noise**.
+**Pixel Math** provides image arithmetic, sine/cosine, fraction, floor, modulo,
+powers, comparisons and clamping. B can be another image or a scalar input.
+For example, modulo + Step makes stripes; combine X and Y for checkerboards;
+subtract a center, square and add the axes for circular distance fields.
+Coordinates expose both normalized U/V ramps and pixel-unit X/Y fields.
+Values outside 0…1 remain available to later nodes; normalize before displaying
+an unbounded field if necessary.
+
+With no clip loaded, **Generated time** runs at 24 fps. **Through frame** sets
+its length (240 frames initially). Change Time-dependent parameters, scrub,
+save a PNG, or **Render video** at the chosen output fps. The encoder still
+requires even output dimensions. No input-video node is required.
+
+## Motion-vector cookbook as a video
+
+Open **Regional motion vectors**, then attach a clip to its Video Source.
+It compares frame N with N+1 and repeats the final drawing at the end:
+
+1. **Working frame pair** limits the longest side to 640 pixels, preserves
+   aspect ratio and rounds down to even dimensions for encoding. Grayscale
+   removes color so matching follows brightness structure.
+2. **Coarse camera pan** estimates translation with phase correlation and
+   rejects a weak response or displacement beyond 45% of the image dimensions.
+   Open it to inspect the comparisons and numeric switches.
+3. Two **Pan-compensated dense flow** instances remove that pan with Translate
+   X/Y using reflected borders, run Farneback, then restore the full displacement.
+   The second instance swaps frames and negates the pan for reverse flow.
+4. **Corner Texture Strength → Threshold Mask** rejects regions without useful
+   structure in two directions. **Check Reverse Flow** follows each forward
+   vector and checks that its reverse returns within 1.5 pixels. Multiplying
+   those masks retains samples passing both checks.
+5. **Regional Median Flow** summarizes accepted vectors in 48-pixel cells.
+   A cell needs at least 8 samples and 5% support. Its residual mode subtracts
+   the dominant translation to expose other motion.
+6. **Draw Motion Vectors** draws arrows and real dx/dy labels on the first frame.
+   Positive X is right; positive Y is down. Gray crosses mean insufficient
+   support, while dots mean approximately zero motion. Arrow gain changes only
+   the drawing scale, not the measurements.
+
+The cell-size Number drives both aggregation and drawing. All controls accept
+wires. Inspect any node, enable its thumbnail, open the groups, or render the
+Output to see these measurements over time. Dense fields have sparse arrow
+previews enlarged 2×; the final overlay defaults to a 3× display multiplier.
+
+This follows the [motion-vectors cookbook](https://opencv.banou.dev/cookbook/motion-vectors/)
+with explicit intermediate values. Change **Working frame pair → Max side**
+or bypass that group to choose another resolution. Displacements use working
+image pixels, just as in the cookbook lab. Rotation, parallax, occlusion,
+lighting changes and repeated patterns can still defeat the estimates. The
+validity masks are useful checks, not a probability of correctness.
+
 ## Explicit values and frame flow
 
 ```text

@@ -1,10 +1,11 @@
 /** Connection payload categories, shared by the editor and evaluator. */
-export type PortType = 'frame' | 'video' | 'regions' | 'motion' | 'scalar' | 'boolean' | 'string' | 'vector' | 'rect' | 'frames' | 'custom'
+export type PortType = 'frame' | 'video' | 'regions' | 'flow' | 'motion' | 'scalar' | 'boolean' | 'string' | 'vector' | 'rect' | 'frames' | 'custom'
 /** Native operations, typed values and reusable graph interfaces. */
 export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 'translateX' | 'translateY' | 'multiply' | 'constant' | 'group' | 'groupInput' | 'groupOutput' | 'output' | 'time' | 'offset' | 'extractFrame' | 'threshold' | 'composite'
   | 'clip' | 'readFrame' | 'videoInfo' | 'imageInfo' | 'text' | 'boolean' | 'vector' | 'rectangle' | 'splitVector' | 'splitRectangle' | 'math' | 'compare' | 'logic' | 'selectNumber'
   | 'coverage' | 'crop' | 'paste' | 'resize' | 'rotate' | 'flip' | 'boxBlur' | 'medianBlur' | 'bilateral' | 'sobel' | 'scharr' | 'laplacian' | 'canny' | 'normalize' | 'invert' | 'brightness' | 'adaptiveThreshold' | 'erode' | 'dilate' | 'morphology' | 'equalize' | 'clahe' | 'distanceTransform'
   | 'frameList' | 'pyrDown' | 'pyrUp' | 'gaussianPyramid' | 'laplacianPyramid' | 'pyramidLevel' | 'reconstructPyramid' | 'addImages' | 'subtractImages' | 'multiplyImages' | 'blendImages' | 'channel' | 'mergeChannels' | 'magnitude' | 'phaseCorrelation' | 'makeRecord' | 'breakRecord'
+  | 'farneback' | 'offsetFlow' | 'flowConsistency' | 'cornerStrength' | 'flowGrid' | 'drawFlow' | 'coordinates' | 'noise' | 'pixelMath'
 /** Serializable parameters; finite numbers only. */
 export type Params = Record<string, string | number | boolean>
 /** A typed socket; frameParam pins upstream time, while offsetParam shifts it. */

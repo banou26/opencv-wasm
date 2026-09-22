@@ -1,3 +1,6 @@
+/** A video-free graph uses a 24 fps clock; output encoding can use another frame rate. */
+export const GENERATED_FPS = 24
+
 /** A rational source rate keeps 23.976-to-60 sampling on its intended frame boundaries. */
 export const rationalRate = (fps: number): { numerator: number; denominator: number } => {
   for (const [numerator, denominator] of [[24000, 1001], [30000, 1001], [60000, 1001], [24, 1], [25, 1], [30, 1], [50, 1], [60, 1]]) {

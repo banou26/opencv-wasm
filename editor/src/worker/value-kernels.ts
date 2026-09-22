@@ -1,3 +1,4 @@
+import { GENERATED_FPS } from '../engine/time'
 import type { Step } from '../engine/plan'
 import { specFor } from '../engine/specs'
 import type { GraphDocument } from '../engine/types'
@@ -11,7 +12,7 @@ export const valueKernel = (step: Step, inputs: Record<string, Payload>, source:
   const number = (key: string, value: number) => { if (!Number.isFinite(value)) throw new Error('The numeric operation produced a non-finite value'); outputs[`out:scalar:${key}`] = { kind: 'scalar', value } }
   const bool = (value: boolean) => { outputs['out:boolean:value'] = { kind: 'boolean', value } }
   if (type === 'time') {
-    number('fraction', step.frame - Math.floor(step.frame)); number('frame', step.frame); number('index', Math.floor(step.frame)); number('seconds', step.frame / (source?.info.fps ?? 24))
+    number('fraction', step.frame - Math.floor(step.frame)); number('frame', step.frame); number('index', Math.floor(step.frame)); number('seconds', step.frame / (source?.info.fps ?? GENERATED_FPS))
   } else if (type === 'clip') {
     if (!source) throw new Error('Attach a video clip to this source')
     outputs['out:video:clip'] = { kind: 'video', asset: source.info.id, info: source.info }

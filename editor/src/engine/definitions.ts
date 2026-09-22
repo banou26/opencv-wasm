@@ -7,8 +7,8 @@ export const translateDefinition = (): NodeDefinition => ({
   outputs: [{ id: 'image', label: 'Image', type: 'frame' }],
   graph: { version: 1, nodes: [
     { id: 'ninput', type: 'groupInput', params: {}, position: { x: 40, y: 130 } },
-    { id: 'nx', type: 'translateX', params: { pixels: 0 }, position: { x: 350, y: 60 } },
-    { id: 'ny', type: 'translateY', params: { pixels: 0 }, position: { x: 660, y: 60 } },
+    { id: 'nx', type: 'translateX', params: { pixels: 0, border: 'constant' }, position: { x: 350, y: 60 } },
+    { id: 'ny', type: 'translateY', params: { pixels: 0, border: 'constant' }, position: { x: 660, y: 60 } },
     { id: 'noutput', type: 'groupOutput', params: {}, position: { x: 980, y: 130 } },
   ], edges: [
     { id: 'e:ximage', source: 'ninput', sourceHandle: 'image', target: 'nx', targetHandle: 'in:frame:image' },

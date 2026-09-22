@@ -27,7 +27,7 @@ const evaluate = (doc: GraphDocument, sourceFrames: Record<string, Frame>, selec
 
 test('every image catalog entry executes the actual WASM API and returns finite pixels', async () => {
   const original = fixture(96, 64), frames = { 'in:frame:image': original, 'in:frame:a': original, 'in:frame:b': original, 'in:frame:base': original, 'in:frame:patch': original, 'in:frame:red': original, 'in:frame:green': original, 'in:frame:blue': original, 'in:frame:x': original, 'in:frame:y': original, 'in:rect:region': { kind: 'rect' as const, x: 3, y: 4, width: 19, height: 13 } }
-  const skip = new Set(['clip', 'readFrame', 'videoInfo', 'imageInfo', 'text', 'boolean', 'vector', 'rectangle', 'splitVector', 'splitRectangle', 'math', 'compare', 'logic', 'selectNumber', 'pyramidLevel', 'reconstructPyramid', 'frameList', 'makeRecord', 'breakRecord'])
+  const skip = new Set(['clip', 'readFrame', 'videoInfo', 'imageInfo', 'text', 'boolean', 'vector', 'rectangle', 'splitVector', 'splitRectangle', 'math', 'compare', 'logic', 'selectNumber', 'pyramidLevel', 'reconstructPyramid', 'frameList', 'makeRecord', 'breakRecord', 'farneback', 'offsetFlow', 'flowConsistency', 'flowGrid', 'drawFlow', 'coordinates', 'noise', 'pixelMath'])
   try {
     for (const spec of CATALOG.filter(s => !skip.has(s.type))) {
       const result = await invoke(spec.type, {}, frames)

@@ -1,4 +1,4 @@
-import { Mat, matFromArray, CV_8UC4, CV_32F, CV_64F, COLOR_GRAY2RGBA, COLOR_RGBA2GRAY, GaussianBlur, cvtColor, transform, subtract, absdiff, mean, phaseCorrelate, createHanningWindow, warpAffine, INTER_LINEAR, BORDER_CONSTANT, arrowedLine, LINE_AA, threshold, THRESH_BINARY, THRESH_BINARY_INV, CV_8U } from '@banou/opencv-wasm'
+import { Mat, matFromArray, CV_8UC4, CV_32F, CV_64F, COLOR_GRAY2RGBA, COLOR_RGBA2GRAY, GaussianBlur, cvtColor, transform, subtract, absdiff, mean, phaseCorrelate, createHanningWindow, warpAffine, INTER_LINEAR, BORDER_CONSTANT, BORDER_REFLECT_101, BORDER_WRAP, BORDER_REPLICATE, arrowedLine, LINE_AA, threshold, THRESH_BINARY, THRESH_BINARY_INV, CV_8U } from '@banou/opencv-wasm'
 import type { Step } from '../engine/plan'
 import type { Bundle, GraphDocument } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -7,13 +7,15 @@ import { image } from './payload'
 import type { Frame, Payload } from './payload'
 import { valueKernel } from './value-kernels'
 import { imageKernel } from './image-kernels'
+import { flowKernel } from './flow-kernels'
+import { proceduralKernel } from './procedural-kernels'
 export type { Frame, Payload } from './payload'
 
 /** Execute the starter algorithms through the package's named TypeScript API. */
 export const runKernel = async (step: Step, inputs: Record<string, Payload>, source: VideoSource | undefined, cancelled: () => boolean, doc: GraphDocument = { version: 1, nodes: [], edges: [] }, sourceById: (asset: string) => VideoSource | undefined = () => source): Promise<Bundle<Payload>> => {
   const primitive = valueKernel(step, inputs, source, doc)
   if (primitive) return primitive
-  const operation = imageKernel(step, inputs)
+  const operation = proceduralKernel(step, inputs) ?? flowKernel(step, inputs) ?? imageKernel(step, inputs)
   if (operation) return operation
   const out = new Mat(), outputs: Record<string, Payload> = {}
   let range: Frame['range'] = 'unit'
@@ -48,7 +50,7 @@ export const runKernel = async (step: Step, inputs: Record<string, Payload>, sou
       bg.mat.copyTo(out); fg.mat.copyTo(out, bytes); range = fg.range === 'signed' || bg.range === 'signed' ? 'signed' : 'unit'
     } else if (step.node.type === 'grayscale') {
       const input = image(inputs['in:frame:image']); range = input.range
-      using weights = matFromArray(1, 4, CV_32F, step.node.params.weights === 'average' ? [1 / 3, 1 / 3, 1 / 3, 0] : [0.2126, 0.7152, 0.0722, 0])
+      using weights = matFromArray(1, 4, CV_32F, step.node.params.weights === 'average' ? [1 / 3, 1 / 3, 1 / 3, 0] : step.node.params.weights === 'rec601' ? [0.299, 0.587, 0.114, 0] : [0.2126, 0.7152, 0.0722, 0])
       using gray = new Mat()
       transform(input.mat, gray, weights)
       cvtColor(gray, out, COLOR_GRAY2RGBA)
@@ -76,7 +78,7 @@ export const runKernel = async (step: Step, inputs: Record<string, Payload>, sou
       const displacement = amount?.kind === 'scalar' ? amount.value : Number(step.node.params.pixels)
       if (!Number.isFinite(displacement) || Math.abs(displacement) > 1000000) throw new Error('Translation must be finite and within one million pixels')
       using matrix = matFromArray(2, 3, CV_64F, [1, 0, step.node.type === 'translateX' ? displacement : 0, 0, 1, step.node.type === 'translateY' ? displacement : 0])
-      warpAffine(input.mat, out, matrix, { width: input.mat.cols, height: input.mat.rows }, INTER_LINEAR, BORDER_CONSTANT, [0, 0, 0, 1])
+      warpAffine(input.mat, out, matrix, { width: input.mat.cols, height: input.mat.rows }, INTER_LINEAR, ({ constant: BORDER_CONSTANT, reflect: BORDER_REFLECT_101, wrap: BORDER_WRAP, replicate: BORDER_REPLICATE }[String(step.node.params.border)] ?? BORDER_CONSTANT), [0, 0, 0, 1])
       range = input.range
     } else if (step.node.type === 'delta') {
       const a = image(inputs['in:frame:a']), b = image(inputs['in:frame:b'])

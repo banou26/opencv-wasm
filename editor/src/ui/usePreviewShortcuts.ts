@@ -17,10 +17,10 @@ export const usePreviewShortcuts = (player: RefObject<FramePlayerHandle | null>)
         if (!player.current?.step(direction)) return
         event.preventDefault()
         event.stopPropagation()
-      } else if (state.source && state.ready && !state.fatal && state.busy !== 'load' && state.busy !== 'bake') {
+      } else if (state.ready && !state.fatal && state.busy !== 'load' && state.busy !== 'bake') {
         event.preventDefault()
         const next = direction < 0 ? Math.ceil(state.frame) - 1 : Math.floor(state.frame) + 1
-        useEditor.setState({ frame: Math.max(0, Math.min(state.source.frameCount - 1, next)) })
+        useEditor.setState({ frame: Math.max(0, Math.min((state.source?.frameCount ?? state.generatedFrames) - 1, next)) })
       }
     }
     window.addEventListener('keydown', keydown, { capture: true })

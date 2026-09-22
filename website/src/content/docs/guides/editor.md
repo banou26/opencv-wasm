@@ -60,3 +60,31 @@ The available nodes cover a subset of the library, not every OpenCV API.
 
 This editor's typed graph is its own execution system. The [G-API guide](/guides/graphs/)
 covers the separate OpenCV graph API available to TypeScript applications.
+
+## Generate without a video
+
+Open **Procedural stripe texture** in the editor's prefab library. Image
+Coordinates and Seeded Noise feed three editable color-channel groups made of
+Pixel Math nodes. Combine RGB creates the image; Time drives wrapped X/Y
+translations to animate it. Open a channel group to inspect the arithmetic.
+
+The generated timeline runs at 24 fps. Set **Through frame** for its length,
+then save a PNG or **Render video** at your chosen output fps. You can build
+other patterns from the **Generate** category, Pixel Math, and ordinary image
+operations without attaching any video.
+
+## Render the motion-vectors cookbook
+
+Choose **Regional motion vectors** and attach a video. The prefab follows the
+[motion-vectors cookbook](/cookbook/motion-vectors/): coarse pan compensation,
+forward and reverse Farneback fields, texture and round-trip checks, regional
+medians, and sparse arrows over the footage. Every stage is an editable node;
+open the groups to inspect their internal arithmetic and transforms.
+
+Render its Output to see the vectors as a video. Adjust the shared cell-size
+Number, flow window, tolerance, texture threshold and arrow scale. Regional
+Median Flow's **residual** mode subtracts the dominant image translation.
+Gray crosses indicate insufficient evidence; dots indicate near-zero motion.
+The **Working frame pair** group limits the longest side to 640 pixels by
+default; increase **Max side** for more detail, or open the group to change its
+sizing arithmetic. Vectors are measured in these working-image pixels.

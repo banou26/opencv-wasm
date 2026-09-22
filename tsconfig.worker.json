@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "lib": ["ESNext", "WebWorker"], "types": ["vite/client", "@webgpu/types"] },
+  "include": ["src/worker", "src/video", "src/gpu", "src/engine", "src/protocol.ts"]
+}

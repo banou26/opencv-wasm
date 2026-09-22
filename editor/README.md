@@ -409,7 +409,7 @@ Current limits:
 
 ### Parallel render workers
 
-**Render → Workers** offers Auto, 1, 2 and 4. Auto uses two on machines reporting
+**Render → Workers** offers Auto, 1, 2, 4, 8 and 16. Auto uses two on machines reporting
 at least four CPU cores and 4 GiB of memory (when that hint is available), and one
 for renders shorter than 24 output frames. Explicit counts are capped by the
 reported CPU count and number of frames. Compare the time shown below the movie.

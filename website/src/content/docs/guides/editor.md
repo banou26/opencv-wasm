@@ -126,7 +126,7 @@ that a Resize node has already removed.
 
 **Render → Workers** selects how many frames can be computed at once. **Auto**
 uses up to two workers for longer renders on machines with enough CPU cores and
-memory; choose **1**, **2**, or **4** to compare on your graph. The finished video
+memory; choose **1**, **2**, **4**, **8**, or **16** to compare on your graph. The finished video
 shows its render time and actual worker count. Resolution, algorithms, output
 frame rate, and encoding quality stay the same.
 

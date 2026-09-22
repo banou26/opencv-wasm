@@ -1,9 +1,9 @@
 /** Zero chooses a conservative automatic worker count; explicit choices allow comparison. */
-export type RenderWorkers = 0 | 1 | 2 | 4
+export type RenderWorkers = 0 | 1 | 2 | 4 | 8 | 16
 
 /** Avoid extra native heaps on small devices and startup overhead on short renders. */
 export const renderWorkerCount = (requested: RenderWorkers, total: number, cores: number, memoryGiB?: number) => {
-  if (![0, 1, 2, 4].includes(requested)) throw new Error('Choose Auto, 1, 2 or 4 render workers')
+  if (![0, 1, 2, 4, 8, 16].includes(requested)) throw new Error('Choose Auto, 1, 2, 4, 8 or 16 render workers')
   const available = Math.max(1, Math.floor(cores || 1))
   const automatic = total >= 24 && available >= 4 && (memoryGiB === undefined || memoryGiB >= 4) ? 2 : 1
   return Math.max(1, Math.min(total, available, requested || automatic))

@@ -223,8 +223,9 @@ powers, comparisons and clamping. B can be another image or a scalar input.
 For example, modulo + Step makes stripes; combine X and Y for checkerboards;
 subtract a center, square and add the axes for circular distance fields.
 Coordinates expose both normalized U/V ramps and pixel-unit X/Y fields.
-Values outside 0…1 remain available to later nodes; normalize before displaying
-an unbounded field if necessary.
+Values outside 0…1 remain available to later nodes. Use **View gain → 1/255×**
+to inspect a 0…255 field, or add Normalize Frame for another range; view gain
+never changes computation or exported pixels.
 
 With no clip loaded, **Generated time** runs at 24 fps. **Through frame** sets
 its length (240 frames initially). Change Time-dependent parameters, scrub,

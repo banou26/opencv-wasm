@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { connect, parseDocument, removeNode, starterGraph, insertPrefab, groupNodes } from '../engine/graph'
+import { connect, parseDocument, starterGraph, insertPrefab, groupNodes } from '../engine/graph'
 import { defaultParams, specFor } from '../engine/specs'
 import { graphView, pathDefinition, replaceView } from '../engine/definitions'
 import { updateInterface } from '../engine/interfaces'
@@ -28,7 +28,7 @@ type State = {
   parameter: (id: string, key: string, value: string | number | boolean) => void
   add: (type: NodeType, position: { x: number; y: number }, definition?: string) => void
   wire: (connection: Connection) => void
-  remove: (id: string) => void
+  remove: (ids: string | string[], edges?: string[]) => void
   replace: (value: unknown) => void
   edit: (change: (view: GraphDocument) => GraphDocument, remember?: boolean) => void
   openGroup: (id: string) => void
@@ -106,12 +106,15 @@ export const useEditor = create<State>((set, get) => {
       } catch (error) { set({ error: String(error) }) }
     },
     wire: connection => edit(view => connect(view, connection)),
-    remove: id => {
-      const state = get(), node = state.view.nodes.find(n => n.id === id)
-      if (node?.type === 'groupInput' || node?.type === 'groupOutput') { set({ error: 'Edit interface ports in the custom-node panel; its boundary nodes stay in place.' }); return }
-      state.thumbnails[id]?.bitmap?.close()
-      edit(view => removeNode(view, id))
-      set(s => ({ highlighted: s.highlighted.filter(key => key !== id), focused: s.focused === id ? '' : s.focused, ...(s.selected === id ? { selected: '', result: null, pixel: null } : {}), previews: Object.fromEntries(Object.entries(s.previews).filter(([key]) => key !== id)), thumbnails: Object.fromEntries(Object.entries(s.thumbnails).filter(([key]) => key !== id)) }))
+    remove: (ids, edges = []) => {
+      const state = get(), requested = new Set(typeof ids === 'string' ? [ids] : ids), edgeIds = new Set(edges)
+      if (state.busy === 'bake') return
+      const removed = new Set(state.view.nodes.filter(n => requested.has(n.id) && n.type !== 'groupInput' && n.type !== 'groupOutput').map(n => n.id))
+      if (!removed.size && !state.view.edges.some(e => edgeIds.has(e.id))) return
+      // One graph edit keeps the whole selection and its connections together in Undo.
+      edit(view => ({ ...view, nodes: view.nodes.filter(n => !removed.has(n.id)), edges: view.edges.filter(e => !edgeIds.has(e.id) && !removed.has(e.source) && !removed.has(e.target)) }))
+      for (const id of removed) state.thumbnails[id]?.bitmap?.close()
+      set(s => ({ highlighted: s.highlighted.filter(id => !removed.has(id)), focused: removed.has(s.focused) ? '' : s.focused, ...(removed.has(s.selected) ? { selected: '', port: null, result: null, pixel: null } : {}), previews: Object.fromEntries(Object.entries(s.previews).filter(([id]) => !removed.has(id))), thumbnails: Object.fromEntries(Object.entries(s.thumbnails).filter(([id]) => !removed.has(id))), statuses: Object.fromEntries(Object.entries(s.statuses).filter(([id]) => !removed.has(id))) }))
     },
     replace: value => {
       try {

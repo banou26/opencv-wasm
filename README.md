@@ -45,6 +45,8 @@ accept that asset size. The development preview runs on port 4561.
 - Drag between matching colored sockets. Image, number and motion connections
   are distinct. An input accepts one connection; a new connection replaces it.
   Type mismatches and cycles are rejected by both the UI and the execution engine.
+  Sockets have enlarged hit areas: hovering lights up the dot and its row. While
+  wiring, a green destination accepts the connection; a red one rejects it.
 - Drag the node title, preview bar, or preview image to move it. Buttons and
   parameter fields stay interactive.
 - Click a node to select it for editing. The large inspector keeps its current
@@ -62,6 +64,10 @@ accept that asset size. The development preview runs on port 4561.
   pastes a subgraph within the editor; **Ctrl D** duplicates it. **Ctrl Z** and
   **Ctrl Shift Z** undo and redo graph edits. Layout dragging is not recorded in
   the undo history.
+- After Shift-clicking nodes or Shift-dragging a selection box, right-click a
+  selected node, the selection box, or empty canvas for **Delete selected nodes**,
+  duplicate, grouping and prefab actions. Deletion removes attached wires too;
+  one **Ctrl Z** restores the whole batch. Custom-node boundary nodes stay in place.
 
 ## Make reusable custom nodes
 

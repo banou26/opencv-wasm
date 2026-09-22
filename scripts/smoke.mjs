@@ -10,6 +10,7 @@ import { mediaSmoke } from './media-smoke.mjs'
 import { dragSmoke, previewSelectionSmoke } from './interaction-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
 import { waitForBrowser } from './browser-poll.mjs'
+import { graphActionsSmoke } from './graph-actions-smoke.mjs'
 
 const directory = resolve('build-smoke'), children = [], errors = []
 const pause = ms => new Promise(r => setTimeout(r, ms))
@@ -97,6 +98,7 @@ try {
   console.log('PASS: first-save folder picker and frame-exact forward/backward/open-GOP seeks against FFmpeg')
   await dragSmoke(page, project)
   await previewSelectionSmoke(page, change)
+  await graphActionsSmoke(page, { upload, project, sourceGraph, directory })
   const original = sourcePixels.get(0)
   await upload(pipeline('grayscale', { weights: 'rec709' }))
   const gray = await png()
@@ -233,6 +235,13 @@ try {
   assert.ok(from && to)
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down(); await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 }); await page.mouse.up()
   const wired = await project()
+  if (!wired.definitions.find(d => d.id === nested.id).graph.edges.some(e => e.targetHandle === outputId && e.sourceHandle === inputId)) {
+    await page.screenshot({ path: resolve(directory, 'custom-wire-failure.png') })
+    console.log('Custom wire hit targets', await page.evaluate(({ from, to }) => [from, to].map(box => {
+      const el = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      return { box, target: el?.outerHTML.slice(0, 700) }
+    }), { from, to }))
+  }
   assert.ok(wired.definitions.find(d => d.id === nested.id).graph.edges.some(e => e.targetHandle === outputId && e.sourceHandle === inputId), 'Custom scalar ports should be wired')
   await page.locator('.step-strip button').filter({ hasText: 'Group Outputs' }).click()
   await change(() => page.getByLabel('Output socket').selectOption(outputId))

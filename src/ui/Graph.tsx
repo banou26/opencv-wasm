@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useUpdateNodeInternals, useNodesInitialized } from '@xyflow/react'
 import type { Edge, Node, NodeProps, NodeChange, EdgeChange, Connection } from '@xyflow/react'
 import { SPECS, PORT_COLORS, specFor } from '../engine/specs'
@@ -56,12 +57,12 @@ const Operation = memo(({ data, selected }: NodeProps<VisualNode>) => {
     <div className="operation-head node-drag-handle"><span className={`op-symbol ${node.type}`}>{symbols[node.type]}</span><div><small>{spec.category}</small><strong>{spec.title}</strong></div><span className={`status-dot ${status?.state ?? ''}`} title={status ? `${status.state} · frame ${status.frame}` : 'Not evaluated for this selection'} /></div>
     {node.type === 'source' && <SourceFile node={node} />}
     <div className="sockets">
-      {spec.inputs.map(port => <div className="socket input" key={port.id}>
-        <Handle type="target" id={port.id} position={Position.Left} style={{ background: PORT_COLORS[port.type] }} />
+      {spec.inputs.map(port => <div className="socket input" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
+        <Handle type="target" id={port.id} position={Position.Left} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} input · Drag to connect`} />
         <span>{port.label}</span>{port.frameParam ? <code>#{Number(node.params[port.frameParam])}</code> : port.offsetParam && <code>{(frame + Number(node.params[port.offsetParam])).toFixed(2)}</code>}
       </div>)}
-      {spec.outputs.map(port => <div className="socket output" key={port.id}>
-        <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} style={{ background: PORT_COLORS[port.type] }} />
+      {spec.outputs.map(port => <div className="socket output" key={port.id} style={{ '--socket-color': PORT_COLORS[port.type] } as CSSProperties}>
+        <span>{port.label}</span><Handle type="source" id={port.id} position={Position.Right} title={`${port.label} · ${port.type === 'frame' ? 'Image' : port.type === 'scalar' ? 'Number' : port.type} output · Drag to connect`} />
       </div>)}
     </div>
     {spec.parameters.length > 0 && <div className="parameters nodrag nowheel">
@@ -100,11 +101,10 @@ const Canvas = () => {
     for (const c of changes) {
       if (c.type === 'position' && c.position) useEditor.getState().edit(view => ({ ...view, nodes: view.nodes.map(n => n.id === c.id ? { ...n, position: c.position! } : n) }), false)
       else if (c.type === 'select') useEditor.setState(s => ({ highlighted: c.selected ? [...new Set([...s.highlighted, c.id])] : s.highlighted.filter(id => id !== c.id) }))
-      else if (c.type === 'remove' && useEditor.getState().busy !== 'bake') useEditor.getState().remove(c.id)
     }
   }, [])
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    for (const c of changes) { if (c.type === 'select') setSelectedEdge(c.selected ? c.id : null); if (c.type === 'remove' && useEditor.getState().busy !== 'bake') useEditor.getState().edit(view => ({ ...view, edges: view.edges.filter(e => e.id !== c.id) })) }
+    for (const c of changes) if (c.type === 'select') setSelectedEdge(c.selected ? c.id : null)
   }, [])
   return <div ref={container} className="graph-surface" tabIndex={0} aria-label="Node editor" onKeyDown={e => {
     if (locked || menu || (e.target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName))) return
@@ -133,7 +133,7 @@ const Canvas = () => {
     const type = e.dataTransfer.getData('application/cadence-node')
     if (Object.hasOwn(SPECS, type) && !locked) useEditor.getState().add(type as NodeType, flow.screenToFlowPosition({ x: e.clientX, y: e.clientY }))
   }}>
-    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ focused: n.id }); setSelectedEdge(null) }} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); if (!highlighted.includes(n.id)) useEditor.getState().focus(n.id); else useEditor.setState({ focused: n.id }); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesDraggable={!locked} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
+    <ReactFlow<VisualNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onDelete={({ nodes, edges }) => { useEditor.getState().remove(nodes.map(n => n.id), edges.map(e => e.id)); setSelectedEdge(null) }} onConnect={wire} onNodeDoubleClick={(_e, n) => useEditor.getState().openGroup(n.id)} onNodeClick={(_e, n) => { useEditor.setState({ focused: n.id }); setSelectedEdge(null) }} onPaneContextMenu={e => { e.preventDefault(); openMenu(e.clientX, e.clientY) }} onSelectionContextMenu={(e, nodes) => { e.preventDefault(); e.stopPropagation(); useEditor.setState({ highlighted: nodes.map(n => n.id) }); openMenu(e.clientX, e.clientY) }} onNodeContextMenu={(e, n) => { e.preventDefault(); e.stopPropagation(); if (!useEditor.getState().highlighted.includes(n.id)) useEditor.getState().focus(n.id); else useEditor.setState({ focused: n.id }); openMenu(e.clientX, e.clientY, n.id) }} onEdgeContextMenu={(e, edge) => { e.preventDefault(); setSelectedEdge(edge.id); openMenu(e.clientX, e.clientY, undefined, edge.id) }} isValidConnection={(c: Connection | Edge) => !validateConnection(useEditor.getState().view, c)} minZoom={0.2} maxZoom={1.6} multiSelectionKeyCode={['Shift', 'Control', 'Meta']} nodesDraggable={!locked} nodesConnectable={!locked} deleteKeyCode={locked ? null : ['Backspace', 'Delete']} colorMode="dark" >
       <Background variant={BackgroundVariant.Dots} color="#374239" gap={22} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>

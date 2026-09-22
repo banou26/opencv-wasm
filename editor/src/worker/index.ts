@@ -1,5 +1,6 @@
 import { initOpenCV } from '@banou/opencv-wasm'
-import wasmUrl from '@banou/opencv-wasm/opencv_js.wasm?url'
+import manifest from '../wasm.generated.json'
+import { loadWasmChunks } from '../../../shared/wasm-chunks'
 import { ResultCache } from '../engine/cache'
 import { evaluateGraph } from '../engine/evaluate'
 import { parseDocument } from '../engine/graph'
@@ -186,7 +187,7 @@ scope.onmessage = ({ data }: MessageEvent<WorkerCommand>) => {
   if (data.type === 'init') {
     if (initialization) return
     initialization = (async () => {
-      const [gpu] = await Promise.all([Presenter.create(data.canvas, message => post({ type: 'error', request: latest, message, fatal: true })), initOpenCV({ wasmUrl })])
+      const [gpu] = await Promise.all([Presenter.create(data.canvas, message => post({ type: 'error', request: latest, message, fatal: true })), loadWasmChunks(manifest).then(wasmBinary => initOpenCV({ wasmBinary }))])
       presenter = gpu.presenter; post({ type: 'ready', adapter: gpu.adapter })
     })()
     initialization.catch(error => post({ type: 'error', request: 0, message: String(error), fatal: true }))

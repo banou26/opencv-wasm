@@ -4,6 +4,11 @@ import { algorithmGroups } from './src/data/algorithms.ts'
 import { cookbookGroups } from './src/data/cookbook.ts'
 
 export default defineConfig({
+  site: 'https://opencv.banou.dev',
+  vite: {
+    server: { proxy: { '/editor': { target: 'http://127.0.0.1:4560', ws: true } } },
+    preview: { proxy: {} },
+  },
   integrations: [starlight({
     title: 'opencv-wasm',
     description: 'Computer vision in TypeScript. Learn the algorithms, inspect the API, and run OpenCV 5 in a browser or Node.js.',
@@ -21,7 +26,7 @@ export default defineConfig({
         })),
       ] },
       { label: 'Cookbook', collapsed: true, items: [{label:'All recipes',link:'/cookbook/'}, ...cookbookGroups.map(({category,recipes})=>({label:category,collapsed:true,items:recipes.map(({id,title})=>({label:title,link:`/cookbook/${id}/`}))}))] },
-      { label: 'Learn by seeing', items: [{ label: 'Image laboratory', link: '/lab/' }, 'guides/choose', 'guides/detect-and-track'] },
+      { label: 'Learn by seeing', items: [{ label: 'Open visual editor', link: '/editor/' }, 'guides/editor', { label: 'Image laboratory', link: '/lab/' }, 'guides/choose', 'guides/detect-and-track'] },
       { label: 'Build with OpenCV', items: ['guides/workers', 'guides/dnn', 'guides/graphs', 'guides/files'] },
       { label: 'Reference', items: [{ label: 'API browser', link: '/api/' }, { label: 'Modules and features', link: '/modules/' }, 'reference/compatibility', 'reference/troubleshooting', 'reference/build'] },
     ],

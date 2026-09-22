@@ -10,7 +10,7 @@ import { algorithms } from '../../data/algorithms'
 
 <p class="lead">From pixels to an understanding of the scene. Bring OpenCV to the browser and Node.js, with typed APIs and a visual guide to the ideas behind them.</p>
 
-<div class="hero-actions"><a href="/start/quickstart/">Start building →</a><a href="/algorithms/">Explore the algorithms</a><a href="/lab/">Open the image lab</a></div>
+<div class="hero-actions"><a href="/start/quickstart/">Start building →</a><a href="/algorithms/">Explore the algorithms</a><a href="/editor/">Open the visual editor</a><a href="/lab/">Open the image lab</a></div>
 
 <AlgorithmDiagram algorithm={algorithms.find(a => a.id === 'homography')} />
 
@@ -32,6 +32,7 @@ console.log(binary.data.slice()) // [0, 0, 0, 255, 255, 255]
 This example runs in Node with the installed build. Browser bundlers should pass the WASM asset URL explicitly; the [quickstart](/start/quickstart/) shows the complete setup.
 
 <div class="atlas-grid">
+  <a class="atlas-card" href="/editor/"><small>Compose</small><h3>The visual node editor</h3><p>Connect typed operations, inspect intermediate pixels, create reusable nodes, and generate video from your own files.</p><span>Build a processing graph →</span></a>
   <a class="atlas-card" href="/algorithms/"><small>Understand</small><h3>The algorithm atlas</h3><p>Annotated diagrams, practical uses, tuning parameters and failure cases. Follow the data through each method.</p><span>Learn by seeing →</span></a>
   <a class="atlas-card" href="/api/"><small>Look up</small><h3>The complete reference</h3><p>Generated from the declarations you install. Search functions, classes and types, then inspect their exact signatures.</p><span>Browse the API →</span></a>
   <a class="atlas-card" href="/lab/"><small>Experiment</small><h3>Real pixels, real WASM</h3><p>Explore filters, edges, thresholds and morphology. Change parameters and see the result in a browser worker.</p><span>Try an algorithm →</span></a>

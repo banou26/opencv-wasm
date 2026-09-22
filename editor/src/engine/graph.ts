@@ -69,7 +69,7 @@ const checkPorts = (ports: Port[], schemas: Set<string>) => {
 
 /** Validate a graph and every reusable definition, including nested definition recursion. */
 export const parseDocument = (value: unknown): GraphDocument => {
-  if (!value || typeof value !== 'object') throw new Error('Not a Cadence project')
+  if (!value || typeof value !== 'object') throw new Error('Not an opencv-wasm editor project')
   const root = value as GraphDocument
   if (root.definitions !== undefined && (!Array.isArray(root.definitions) || root.definitions.length > 100)) throw new Error('Invalid custom-node library')
   if (root.dataTypes !== undefined && (!Array.isArray(root.dataTypes) || root.dataTypes.length > 64)) throw new Error('Invalid custom data-type library')

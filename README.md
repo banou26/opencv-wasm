@@ -221,3 +221,19 @@ For browser tests, set `CHROMIUM_EXECUTABLE` to a local Chromium/Chrome executab
 The generator consumes the same annotated C++ declarations as Python. It generates wrappers for classes, overloads, value types, vectors and output results. Emscripten emits declarations from those registered bindings; a finishing step supplies exact types for memory views and the filesystem, preserves C++ method hiding, and rejects unresolved `any` declarations. The build fails when a registered native type has no binding. Coverage records generation exclusions and omitted modules separately.
 
 See [architecture](docs/architecture.md) for the boundary implementation and [third-party notices](THIRD_PARTY_NOTICES.md) for the sources included in the binary.
+
+## Visual editor
+
+The [opencv-wasm editor](https://opencv.banou.dev/editor/) composes typed operations,
+previews intermediate images, and generates video from local clips. Its source is
+in [`editor/`](editor/README.md), including the original Cadence Editor Git history.
+
+```sh
+npm ci --prefix editor
+npm run editor:dev  # http://localhost:4560/editor/
+```
+
+The combined docs/editor deployment still uses
+`npm ci --prefix website && npm run docs:build`, with output `website/dist`.
+`npm run editor:check` runs type, lint and native tests; `npm run editor:smoke`
+checks video, graph interactions and folder persistence in system Chrome.

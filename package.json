@@ -52,7 +52,11 @@
     "docs:dev": "npm --prefix website run dev",
     "docs:build": "npm --prefix website run build",
     "docs:check": "npm --prefix website run check",
-    "docs:test": "npm --prefix website test"
+    "docs:test": "npm --prefix website test",
+    "editor:dev": "npm --prefix editor run dev",
+    "editor:build": "npm --prefix editor run build",
+    "editor:check": "npm --prefix editor run typecheck && npm --prefix editor run lint && npm --prefix editor test",
+    "editor:smoke": "npm --prefix editor run smoke"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

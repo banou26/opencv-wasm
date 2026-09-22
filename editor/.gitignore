@@ -6,3 +6,6 @@ fixtures/
 test-results/
 *.tsbuildinfo
 .DS_Store
+public/runtime/
+public/samples.json
+src/wasm.generated.json

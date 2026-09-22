@@ -28,7 +28,7 @@ export class Presenter {
 
   /** Fail explicitly instead of silently changing the rendering backend. */
   static async create(canvas: OffscreenCanvas, lost: (message: string) => void): Promise<{ presenter: Presenter; adapter: string }> {
-    if (!navigator.gpu) throw new Error('WebGPU is unavailable. Open Cadence in desktop Chrome on your graphics session.')
+    if (!navigator.gpu) throw new Error('WebGPU is unavailable. Open the editor in desktop Chrome on your graphics session.')
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
     if (!adapter) throw new Error('No WebGPU adapter is available in this browser session')
     const device = await adapter.requestDevice()

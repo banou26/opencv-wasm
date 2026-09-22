@@ -1,19 +1,23 @@
 {
-  "name": "cadence-editor",
+  "name": "opencv-wasm-editor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "dev": "vp dev --host 127.0.0.1 --port 4560 --strictPort",
-    "build": "vp build",
+    "dev": "npm run generate && vp dev --host 127.0.0.1 --port 4560 --strictPort",
+    "build": "npm run generate && vp build",
     "preview": "vp preview --host 127.0.0.1 --port 4561 --strictPort",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.engine.json && tsc -p tsconfig.tests.json",
     "test": "vp test run",
     "lint": "vp check --no-fmt",
     "check:manifest": "node -e \"process.exit(Object.hasOwn(JSON.parse(require('node:fs').readFileSync('package.json')), 'devEngines') ? 1 : 0)\"",
     "samples": "node scripts/copy-samples.mjs",
-    "smoke": "npm run build && node scripts/smoke.mjs"
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "generate": "node scripts/generate-runtime.mjs",
+    "build:site": "node scripts/generate-runtime.mjs --site && vp build --mode site"
   },
   "dependencies": {
     "@banou/opencv-wasm": "0.0.6",
@@ -38,5 +42,7 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@0.3.1",
     "vite-plus": "0.3.1"
   },
-  "overrides": { "vite": "npm:@voidzero-dev/vite-plus-core@0.3.1" }
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.1"
+  }
 }

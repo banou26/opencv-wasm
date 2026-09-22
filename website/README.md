@@ -7,6 +7,8 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 - 94 visual guides with persistent input comparisons, distinct intermediate/result
   drawings, keyboard-accessible stages and optional step playback.
 - 94 focused OpenCV experiments, embedded in every algorithm guide and available in `/lab/`.
+- A visual node editor at `/editor/` for video/frame processing, editable custom
+  nodes, intermediate previews, timeline scrubbing and video generation.
 - 23 runnable cookbook workflows with custom images, draggable regions, intermediate
   previews and typed code examples. Browse `/cookbook/` or its grouped sidebar.
 - Image and model uploads, algorithm-specific parameters, synchronized zoom, exact
@@ -18,13 +20,14 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 
 ## Run
 
-Use Node 22.12 or newer for the documentation tooling.
+Use Node 24 or newer for the combined documentation and editor tooling.
 
 Install the documentation dependencies, including the pinned published OpenCV
 package:
 
 ```sh
 npm ci
+npm ci --prefix ../editor
 npm run dev
 ```
 
@@ -35,9 +38,9 @@ npm run build
 npm run preview -- --port 4321
 ```
 
-The site is available at `http://localhost:4321`. A production hostname is not
-assumed. Set Astro's `site` option before deploying so canonical URLs and a sitemap
-use the intended hostname.
+The site is available at `http://localhost:4321`, with the editor at `/editor/`.
+Development starts both Astro and the editor Vite server; Astro proxies `/editor/`
+to port 4560. Production uses `https://opencv.banou.dev`.
 
 For local package development, build the parent repository first. Generation
 prefers `../lib/` when it exists; otherwise it reads the installed
@@ -54,6 +57,10 @@ With the repository root as the Pages root directory:
 | Build command | `npm ci --prefix website && npm run docs:build` |
 | Output directory | `website/dist` |
 | Environment variable | `NODE_VERSION=24` |
+
+The build installs the editor dependencies, builds both apps, and stages the editor
+under `website/dist/editor/`. No Pages settings change is needed. Local sample
+clips and project files are excluded. The editor has a Docs link back to the site.
 
 The site generator splits the native binary into 16 MiB chunks. The lab downloads
 all chunks on its first run, checks their lengths and the complete SHA-256 digest,

@@ -31,8 +31,9 @@ export const Preview = () => {
   useEffect(() => { if (pinned && pinnedPosition.current && nativePixels) inspectPixel(pinnedPosition.current.x, pinnedPosition.current.y) }, [pinned, result?.request, nativePixels])
   return <>
     <div className="preview-tools"><div><span className="eyebrow">VIEW</span><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>Fit</button><button onClick={() => { setZoom(1 / fit); setPan({ x: 0, y: 0 }) }}>1:1</button><code>{Math.round(scale * 100)}%</code></div><div><span className="muted">Scroll to zoom · drag to pan</span><button onClick={exportFrame} disabled={!nativePixels || busy !== 'idle'} title="Save the displayed image with the current view gain">Save PNG</button></div></div>
-    <div ref={viewport} className={`image-viewport ${drag.current ? 'dragging' : ''}`} onDoubleClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} onPointerDown={e => {
+    <div ref={viewport} tabIndex={0} aria-label="Image preview" title="Scroll to zoom, drag to pan. Press < or > (comma or period) to step through source frames." className={`image-viewport ${drag.current ? 'dragging' : ''}`} onDoubleClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} onPointerDown={e => {
       if (e.button !== 0) return
+      e.currentTarget.focus({ preventScroll: true })
       drag.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }; e.currentTarget.setPointerCapture(e.pointerId)
     }} onPointerUp={e => { drag.current = null; e.currentTarget.releasePointerCapture(e.pointerId) }} onPointerCancel={() => { drag.current = null }} onPointerMove={e => {
       if (drag.current) setPan({ x: drag.current.panX + e.clientX - drag.current.x, y: drag.current.panY + e.clientY - drag.current.y })

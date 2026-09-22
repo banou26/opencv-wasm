@@ -78,7 +78,7 @@ export const initialize = (canvas: HTMLCanvasElement) => {
         useEditor.setState({ busy: 'idle', cancelling: false })
         bakeRequest = 0
       } else if (event.type === 'pixel' && event.request === active) useEditor.setState({ pixel: event })
-      else if (event.type === 'export') saveBlob(event.blob, 'cadence-frame.png')
+      else if (event.type === 'export') saveBlob(event.blob, 'opencv-frame.png')
     }
     const surface = canvas.transferControlToOffscreen()
     send({ type: 'init', canvas: surface }, [surface])

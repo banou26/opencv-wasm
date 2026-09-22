@@ -1,5 +1,45 @@
 import assert from 'node:assert/strict'
 
+/** Preview shortcuts must seek live frames without consuming punctuation in fields. */
+export const frameShortcutsSmoke = async page => {
+  const frame = page.getByLabel('Source frame', { exact: true })
+  await page.getByLabel('Image preview', { exact: true }).focus()
+  for (const [key, expected] of [['>', '1'], ['.', '2'], ['<', '1'], [',', '0'], [',', '0']]) {
+    await page.keyboard.press(key)
+    assert.equal(await frame.inputValue(), expected)
+  }
+  await page.keyboard.press('Control+.'); assert.equal(await frame.inputValue(), '0')
+  await frame.focus(); await page.keyboard.press('.'); assert.equal(await frame.inputValue(), '0')
+  await page.getByLabel('Image preview', { exact: true }).focus()
+  await page.keyboard.press('>')
+  await page.waitForFunction(() => document.querySelector('.inspect-panel')?.getAttribute('data-computed-frame') === '1' && document.querySelector('[data-testid=engine-status]')?.getAttribute('data-state') === 'idle')
+  await page.keyboard.press('<')
+  await page.waitForFunction(() => document.querySelector('.inspect-panel')?.getAttribute('data-computed-frame') === '0' && document.querySelector('[data-testid=engine-status]')?.getAttribute('data-state') === 'idle')
+  console.log('PASS: source preview punctuation shortcuts, frame bounds, live computation and editable-field isolation')
+}
+
+/** Output stepping follows its own fps, pauses playback and never moves source time. */
+export const movieShortcutsSmoke = async (page, fps, count) => {
+  const video = page.getByLabel('Rendered output video'), sourceTime = await page.getByLabel('Source frame', { exact: true }).inputValue()
+  await video.evaluate(v => { v.pause(); v.currentTime = 0 })
+  await video.focus()
+  for (const [key, expected] of [['>', 1], ['.', 2], ['<', 1], [',', 0], [',', 0]]) {
+    await page.keyboard.press(key)
+    await page.waitForFunction(() => !document.querySelector('video')?.seeking)
+    const actual = await video.evaluate((v, fps) => ({ frame: Math.floor(v.currentTime * fps), paused: v.paused }), fps)
+    assert.deepEqual(actual, { frame: expected, paused: true })
+  }
+  await video.evaluate(v => { v.currentTime = v.duration })
+  await page.keyboard.press('>')
+  assert.equal(await video.evaluate((v, fps) => Math.floor(v.currentTime * fps), fps), count - 1)
+  await video.evaluate(v => { v.currentTime = 0 })
+  await video.evaluate(v => v.play())
+  await page.keyboard.press('>')
+  assert.equal(await video.evaluate(v => v.paused), true)
+  assert.equal(await page.getByLabel('Source frame', { exact: true }).inputValue(), sourceTime)
+  console.log('PASS: output preview frame stepping at rendered fps, playback pause and bounds, source time unchanged')
+}
+
 /** A held gesture must keep seeking across re-renders, even outside the slider. */
 export const timelineSmoke = async page => {
   const slider = page.getByRole('slider', { name: 'Timeline', exact: true }), inspector = page.locator('.inspect-panel')

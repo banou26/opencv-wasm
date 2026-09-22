@@ -1,6 +1,6 @@
-# Cadence Editor
+# opencv-wasm editor
 
-A local visual workbench for building anime layer-interpolation experiments from
+A browser visual workbench for building OpenCV and video-interpolation experiments from
 small, typed operations. Open a video, inspect frames and intermediate results,
 compose your own processing graph, generate frames at a different rate, then
 watch and save the resulting video.
@@ -12,18 +12,29 @@ an isolated worker. WebGPU displays the large preview; OpenCV runs on the CPU.
 
 ```sh
 npm ci
-npm run samples  # optional: copy the six recovered clips from ../cadence/work/peek
+npm run samples  # optional: copy local clips from a neighboring cadence checkout
 npm run dev
 ```
 
-Open **http://localhost:4560** in desktop Chrome on your normal graphics session.
+Open **http://localhost:4560/editor/** in desktop Chrome on your normal graphics session.
 Node 24+ is required for the toolchain. The browser needs WebGPU and WebCodecs.
 Files stay on your machine. Recovered scenes, uploaded media and generated outputs
 are not included in Git.
 
-For a production build, use `npm run build` and `npm run preview`. The static
-output is `dist/`. Its OpenCV WASM asset is approximately 46 MiB, so the host must
-accept that asset size. The development preview runs on port 4561.
+The deployed editor is **https://opencv.banou.dev/editor/**, beside the docs.
+From the repository root, `npm run docs:build` builds both into `website/dist/`.
+The existing Cloudflare Pages build command and output directory stay the same.
+Native WASM is downloaded in verified 16 MiB chunks, shared with the documentation
+runtime when their package versions match. Hosted builds exclude all local samples.
+
+For a standalone build, use `npm run build` and `npm run preview`, then visit
+`http://localhost:4561/editor/`. Serve `dist/` under `/editor/`, not at the site root.
+`npm run build:site` is for the combined docs build and expects `/runtime/` at the
+site root; `website/scripts/stage-editor.mjs` assembles that layout.
+
+The full original Cadence Editor history is preserved as a merge parent. Use
+`git log --all --graph` from the repository root to browse both histories. The
+original standalone checkout can remain as a backup; development now happens here.
 
 ## Work in the graph
 
@@ -78,10 +89,17 @@ accept that asset size. The development preview runs on port 4561.
   duplicate, grouping and prefab actions. Deletion removes attached wires too;
   one **Ctrl Z** restores the whole batch. Custom-node boundary nodes stay in place.
 
+Hover the **ⓘ** button on any node to read its description. Click to pin it open,
+or press Escape to dismiss it. Text stays readable when zooming out.
+
+Press **< / >** (or **comma / period**) to step backward or forward in the active
+preview. Node previews advance the source timeline; rendered videos pause and step
+at their own output frame rate. Typing in a field keeps the shortcuts inactive.
+
 ## Make reusable custom nodes
 
 Select operations and press **Ctrl G**, or right-click and choose **Make custom
-node**. Cadence replaces the selection with an instance, exposes its boundary
+node**. The editor replaces the selection with an instance, exposes its boundary
 connections as typed ports, and opens its implementation in another editor tab.
 
 Inside the custom node, **Group Inputs** supplies the instance's external values;
@@ -152,10 +170,10 @@ and filenames; reattach missing clips in their source nodes after opening it.
 
 In desktop Chrome, choose **Project folder…** once and grant folder access. Saving
 a graph, PNG, prefab or MP4 also opens this picker when no folder is selected. New
-folders save the current graph; a folder containing `cadence-graph.json` opens
+folders save the current graph; a folder containing `opencv-graph.json` opens
 that project and reloads its media before autosave starts.
 
-- `cadence-graph.json` includes the graph, layout, custom-node definitions and
+- `opencv-graph.json` includes the graph, layout, custom-node definitions and
   media references. Edits autosave after a short pause; **Save now** flushes them.
 - `media/` contains one copy of each attached clip used by the saved graph. Clips
   are streamed to disk, without reading the entire file into JavaScript memory.
@@ -328,3 +346,6 @@ its interface expands into ordinary operations before execution.
 
 `PLAN.md` is the original archived design. `IMPLEMENTATION.md` records the owner's
 subsequent changes to that design.
+
+Existing projects named `cadence-graph.json` still open and save under that name.
+New projects use `opencv-graph.json`; the graph format is unchanged.

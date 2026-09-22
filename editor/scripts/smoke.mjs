@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
 import { primitivesSmoke } from './primitives-smoke.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
-import { dragSmoke, previewSelectionSmoke, timelineSmoke } from './interaction-smoke.mjs'
+import { dragSmoke, previewSelectionSmoke, timelineSmoke, frameShortcutsSmoke, movieShortcutsSmoke } from './interaction-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
 import { waitForBrowser } from './browser-poll.mjs'
 import { graphActionsSmoke } from './graph-actions-smoke.mjs'
@@ -36,10 +36,16 @@ try {
   await reachable(`${cdp}/json/version`)
   browser = await chromium.connectOverCDP(cdp)
   const page = await browser.contexts()[0].newPage(); await page.bringToFront()
+  const runtimeRequests = []
+  browser.contexts()[0].on('request', request => { if (/\.(bin|wasm)(?:\?|$)/.test(request.url())) runtimeRequests.push(request.url()) })
   page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message) })
   page.on('console', m => { if (m.type() === 'error') { errors.push(m.text()); console.error('CONSOLE', m.text()) } })
-  await page.goto(url)
+  await page.goto(new URL('editor/', url.endsWith('/') ? url : url + '/').href)
   await page.getByText('Engine ready', { exact: true }).waitFor({ timeout: 60000 })
+  assert.match(await page.title(), /opencv-wasm/)
+  assert.equal(runtimeRequests.filter(url => url.endsWith('.bin')).length, 3, 'Native startup fetches all three verified WASM chunks')
+  assert.equal(runtimeRequests.some(url => url.endsWith('.wasm')), false, 'Native startup must not request a single oversized WASM asset')
+  console.log('PASS: branded editor starts its native engine from the chunked runtime')
   await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory()
     window.testFolderName = `cadence-initial-${crypto.randomUUID()}`
@@ -58,7 +64,7 @@ try {
   const choose = async name => { await page.getByLabel('Prefab library').selectOption(name); await change(() => page.getByRole('button', { name: 'Open', exact: true }).click()) }
   let exportIndex = 0
   const png = async () => {
-    const name = `cadence-frame${exportIndex ? `-${exportIndex + 1}` : ''}.png`
+    const name = `opencv-frame${exportIndex ? `-${exportIndex + 1}` : ''}.png`
     await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
     // Autosave may replace the export status immediately; wait for the actual completed file.
     await waitForBrowser(page, async file => {
@@ -78,7 +84,7 @@ try {
   const project = async () => {
     await page.getByRole('button', { name: 'Save graph', exact: true }).click()
     await page.waitForFunction(() => { const state = document.querySelector('[data-testid=folder-state]'); return state?.getAttribute('data-pending') === '0' && state?.textContent.includes('Saved') })
-    return page.evaluate(async () => JSON.parse(await (await (await window.testFolder.getFileHandle('cadence-graph.json')).getFile()).text()))
+    return page.evaluate(async () => JSON.parse(await (await (await window.testFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
   }
   const node = (id, type, params = {}, x = 40) => ({ id, type, params, position: { x, y: 80 } })
   const edge = (source, target, targetHandle = 'in:frame:image', sourceHandle = 'out:frame:image') => ({ id: `e:${target}:${targetHandle}`, source, target, sourceHandle, targetHandle })
@@ -100,6 +106,7 @@ try {
   assert.equal(await page.evaluate(() => window.pickerCalls), 1, 'The first export opens the folder picker exactly once')
   console.log('PASS: first-save folder picker and frame-exact forward/backward/open-GOP seeks against FFmpeg')
   await timelineSmoke(page)
+  await frameShortcutsSmoke(page)
   await dragSmoke(page, project)
   await previewSelectionSmoke(page, change)
   await graphActionsSmoke(page, { upload, project, sourceGraph, directory })
@@ -212,6 +219,7 @@ try {
   const info = await movie('generated.mp4'); assert.equal(info.streams.length, 1); assert.equal(info.streams[0].nb_read_frames, '80'); assert.equal(info.streams[0].r_frame_rate, '60/1')
   const duration = await page.locator('video').evaluate(async v => { if (v.readyState < 1) await new Promise(r => v.addEventListener('loadedmetadata', r, { once: true })); await v.play(); return v.duration })
   assert.ok(Math.abs(duration - 80 / 60) < 0.01); await page.locator('video').evaluate(v => v.pause())
+  await movieShortcutsSmoke(page, 60, 80)
   const generated = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(directory, 'generated.mp4'), '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], { maxBuffer: 16 * 1024 ** 2 })
   const pixelsPerFrame = width * height * 3, last = generated.subarray(generated.length - pixelsPerFrame)
   // Encoding is lossy (including chroma resampling), so check frame identity against

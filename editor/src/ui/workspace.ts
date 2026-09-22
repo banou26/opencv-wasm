@@ -12,6 +12,7 @@ export const useWorkspace = create<{ name: string; status: string; error: string
 const media = new Map<string, File>()
 let folder: FileSystemDirectoryHandle | undefined
 let manifest = new Map<string, MediaEntry>()
+let projectName = 'opencv-graph.json'
 let diskText: string | null = null
 let queue = Promise.resolve()
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -30,8 +31,8 @@ const write = async (handle: FileSystemFileHandle, blob: Blob) => {
   // Stream original clips instead of copying their whole contents into JS memory.
   await blob.stream().pipeTo(stream)
 }
-const textIn = async (directory: FileSystemDirectoryHandle): Promise<string | null> => {
-  try { return await (await (await directory.getFileHandle('cadence-graph.json')).getFile()).text() }
+const textIn = async (directory: FileSystemDirectoryHandle, name = projectName): Promise<string | null> => {
+  try { return await (await (await directory.getFileHandle(name)).getFile()).text() }
   catch (error) { if (error instanceof DOMException && error.name === 'NotFoundError') return null; throw error }
 }
 const safeName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-160) || 'video.mp4'
@@ -48,7 +49,7 @@ export const syncProject = () => {
   useWorkspace.setState({ status: 'Saving…', error: '', dirty: true })
   return enqueue(async () => {
     if (folder !== destination) return
-    if (await textIn(destination) !== diskText) throw new Error('cadence-graph.json changed outside this editor. Reopen the project folder to read it before saving again.')
+    if (await textIn(destination) !== diskText) throw new Error(`${projectName} changed outside this editor. Reopen the project folder to read it before saving again.`)
     const used = new Set([source?.id, ...doc.nodes.map(n => n.asset), ...(doc.definitions ?? []).flatMap(d => d.graph.nodes.map(n => n.asset))].filter((id): id is string => !!id))
     for (const id of used) {
       const file = media.get(id)
@@ -59,8 +60,8 @@ export const syncProject = () => {
     }
     const value: ProjectFile = { ...doc, media: [...manifest.values()].filter(entry => used.has(entry.id)), ...(source ? { referenceAsset: source.id } : {}) }
     const text = JSON.stringify(value, null, 2)
-    if (await textIn(destination) !== diskText) throw new Error('cadence-graph.json changed outside this editor. Reopen the project folder before saving again.')
-    await write(await destination.getFileHandle('cadence-graph.json', { create: true }), new Blob([text], { type: 'application/json' }))
+    if (await textIn(destination) !== diskText) throw new Error(`${projectName} changed outside this editor. Reopen the project folder before saving again.`)
+    await write(await destination.getFileHandle(projectName, { create: true }), new Blob([text], { type: 'application/json' }))
     diskText = text
     const current = useEditor.getState(), dirty = current.doc !== doc || current.source?.id !== source?.id
     useWorkspace.setState({ status: dirty ? 'Unsaved changes' : 'Saved', error: '', dirty })
@@ -72,12 +73,16 @@ export const chooseProjectFolder = async (mode: 'open' | 'save' = 'open'): Promi
   const picker = (window as DirectoryWindow).showDirectoryPicker
   if (!picker) { report(new Error('Project folders require desktop Chrome on localhost or HTTPS.')); return }
   try {
-    const selected = await picker.call(window, { id: 'cadence-project', mode: 'readwrite' })
+    const selected = await picker.call(window, { id: 'opencv-wasm-project', mode: 'readwrite' })
     selecting = true
     clearTimeout(timer)
     await queue
-    const text = await textIn(selected)
-    if (mode === 'save' && text !== null) throw new Error('This folder already contains a Cadence project. Open it with Project folder…, or choose a new folder to save the current graph.')
+    let name = 'opencv-graph.json', text = await textIn(selected, name)
+    if (text === null) {
+      const legacy = await textIn(selected, 'cadence-graph.json')
+      if (legacy !== null) { name = 'cadence-graph.json'; text = legacy }
+    }
+    if (mode === 'save' && text !== null) throw new Error('This folder already contains an editor project. Open it with Project folder…, or choose a new folder to save the current graph.')
     const raw = text === null ? undefined : JSON.parse(text) as ProjectFile
     const doc = raw ? parseDocument(raw) : undefined
     const entries = raw?.media ?? []
@@ -90,7 +95,7 @@ export const chooseProjectFolder = async (mode: 'open' | 'save' = 'open'): Promi
         files.push({ id: entry.id, file }); rememberMedia(entry.id, file)
       } catch { missing.push(entry.name) }
     }
-    folder = selected; diskText = text; manifest = new Map(entries.filter(e => !missing.includes(e.name)).map(e => [e.id, e]))
+    folder = selected; projectName = name; diskText = text; manifest = new Map(entries.filter(e => !missing.includes(e.name)).map(e => [e.id, e]))
     if (doc) {
       useEditor.getState().replace(doc)
       useEditor.setState({ source: null, assets: {}, frame: 0, result: null })

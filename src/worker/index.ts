@@ -15,7 +15,13 @@ import { parameterValue, payloadSummary } from './payload'
 
 const scope = self as DedicatedWorkerGlobalScope
 const post = (event: WorkerEvent, transfer: Transferable[] = []) => scope.postMessage(event, transfer)
-const wait = () => new Promise<void>(resolve => setTimeout(resolve, 0))
+let lastYield = 0
+// Give incoming seeks/cancellation a turn, without paying a nested timer delay per scalar node.
+const wait = async () => {
+  if (performance.now() - lastYield < 8) return
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
+  lastYield = performance.now()
+}
 const cache = new ResultCache<Payload>(512 * 1024 ** 2)
 let presenter: Presenter | undefined, source: VideoSource | undefined
 const sources = new Map<string, VideoSource>()

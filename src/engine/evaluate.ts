@@ -26,6 +26,9 @@ export type GraphEvaluation<T> = ExecutionContext<T> & {
 export const evaluateGraph = async <T>(root: GraphDocument, selected: string, port: string | null, frame: number, path: string[], context: GraphEvaluation<T>): Promise<Lease<T>> => {
   if (!Number.isFinite(frame)) throw new Error('Frame time must be finite')
   const active = new Set<string>()
+  // Remember resolved branches for this evaluation without pinning their pixel buffers.
+  // A diamond-shaped graph should traverse each shared branch once, not once per wire.
+  const resolved = new Map<string, { key: string; port: string }>()
   type Scope = { doc: GraphDocument; path: string[]; parent?: Scope; instance?: GraphNode; definitions: string[] }
   const check = () => { if (context.cancelled()) throw new Error('Cancelled') }
   const enter = (scope: Scope, node: GraphNode): Scope => {
@@ -34,6 +37,18 @@ export const evaluateGraph = async <T>(root: GraphDocument, selected: string, po
   }
   const visit = async (scope: Scope, id: string, requested: string | null, time: number): Promise<Target<T>> => {
     check()
+    const address = [...scope.path, id].join('/')
+    if (active.has(address)) throw new Error('The graph contains a cycle')
+    const identity = JSON.stringify([scope.path, id, requested, time]), previous = resolved.get(identity)
+    if (previous) {
+      const lease = context.cache.acquire(previous.key)
+      if (lease) return { ...previous, lease }
+    }
+    const target = await compute(scope, id, requested, time)
+    resolved.set(identity, { key: target.key, port: target.port })
+    return target
+  }
+  const compute = async (scope: Scope, id: string, requested: string | null, time: number): Promise<Target<T>> => {
     const node = scope.doc.nodes.find(n => n.id === id)
     if (!node) throw new Error('Select a node to inspect')
     const spec = specFor(node, scope.doc), address = [...scope.path, id].join('/')

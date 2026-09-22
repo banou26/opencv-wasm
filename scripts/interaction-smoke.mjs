@@ -1,5 +1,47 @@
 import assert from 'node:assert/strict'
 
+/** A held gesture must keep seeking across re-renders, even outside the slider. */
+export const timelineSmoke = async page => {
+  const slider = page.getByRole('slider', { name: 'Timeline', exact: true }), inspector = page.locator('.inspect-panel')
+  const box = await slider.boundingBox(), max = Number(await slider.getAttribute('max'))
+  const x = fraction => box.x + 7 + (box.width - 14) * fraction, y = box.y + box.height / 2
+  const rendered = new Set()
+  await page.mouse.move(x(0.1), y); await page.mouse.down()
+  try {
+    for (const fraction of [0.25, 0.45, 0.7, 0.9, 0.6]) {
+      await page.mouse.move(x(fraction), y, { steps: 12 })
+      assert.equal(Number(await slider.inputValue()), Math.round(max * fraction), 'The frame follows the pointer before release')
+      rendered.add(await inspector.getAttribute('data-computed-frame'))
+    }
+    assert.ok(rendered.size > 1, 'The inspector must update during continuous movement, without waiting for release')
+    await page.mouse.move(x(0.35), y - 60, { steps: 12 })
+    assert.equal(Number(await slider.inputValue()), Math.round(max * 0.35), 'Leaving the track vertically must keep scrubbing')
+    await page.mouse.move(x(1) + 30, y - 60, { steps: 6 })
+    assert.equal(Number(await slider.inputValue()), max, 'Clamp at the final frame')
+    await page.mouse.move(x(0) - 30, y - 60, { steps: 12 })
+    assert.equal(Number(await slider.inputValue()), 0, 'Clamp at the first frame')
+  } finally { await page.mouse.up() }
+  await page.mouse.move(x(0.8), y)
+  assert.equal(Number(await slider.inputValue()), 0, 'Releasing the pointer must stop seeking')
+  await slider.press('End'); assert.equal(Number(await slider.inputValue()), max)
+  await slider.press('ArrowLeft'); assert.equal(Number(await slider.inputValue()), max - 1)
+  await slider.press('Home'); assert.equal(Number(await slider.inputValue()), 0)
+  await slider.press('ArrowRight'); assert.equal(Number(await slider.inputValue()), 1)
+  const subframe = page.getByRole('slider', { name: 'Subframe fraction' }), subbox = await subframe.boundingBox()
+  await page.mouse.move(subbox.x + 7, subbox.y + subbox.height / 2); await page.mouse.down()
+  try {
+    await page.mouse.move(subbox.x + subbox.width - 7, subbox.y - 30, { steps: 12 })
+    assert.equal(Number(await subframe.inputValue()), 0.95)
+    assert.equal(await page.getByTestId('frame-time').innerText(), '1.950')
+    await page.mouse.move(subbox.x + 7, subbox.y - 30, { steps: 12 })
+    assert.equal(Number(await subframe.inputValue()), 0)
+  } finally { await page.mouse.up() }
+  await slider.press('Home')
+  await page.waitForFunction(() => document.querySelector('.inspect-panel')?.getAttribute('data-computed-frame') === '0' && document.querySelector('[data-testid=engine-status]')?.getAttribute('data-state') === 'idle')
+  assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
+  console.log('PASS: continuous timeline and subframe scrubbing, live previews, outside-track capture, bounds, release and keyboard seeking')
+}
+
 /** Exercise the exact surfaces users grab, including an actual rendered preview canvas. */
 export const dragSmoke = async (page, project) => {
   await project()

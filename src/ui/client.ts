@@ -1,10 +1,30 @@
 import type { Inspection, WorkerCommand, WorkerEvent } from '../protocol'
 import { nodeTitle, useEditor } from './store'
 import type { SourceTarget } from './store'
+import type { NodeStatus } from '../engine/execute'
 import { rememberMedia, saveArtifact, chooseProjectFolder, ensureProjectFolder } from './workspace'
 
 let worker: Worker | undefined, serial = 0, active = 0, bakeRequest = 0, bakeLabel = '', thumbnailGeneration = 0
 const send = (message: WorkerCommand, transfer: Transferable[] = []) => worker?.postMessage(message, transfer)
+
+// Many nodes finish in one display frame. Paint their latest states together instead
+// of rebuilding the graph UI for every cached/running/done worker message.
+let pendingStatuses: Record<string, NodeStatus> = {}, statusRequest = 0, statusPath = '', statusTick = 0
+const drainStatuses = () => {
+  cancelAnimationFrame(statusTick); statusTick = 0
+  const values = statusRequest === active && statusPath === JSON.stringify(useEditor.getState().path) ? pendingStatuses : {}
+  pendingStatuses = {}
+  return values
+}
+const queueStatus = (request: number, value: NodeStatus) => {
+  const path = JSON.stringify(value.path ?? [])
+  if (request !== statusRequest || path !== statusPath) pendingStatuses = {}
+  statusRequest = request; statusPath = path; pendingStatuses[value.node] = value
+  if (!statusTick) statusTick = requestAnimationFrame(() => {
+    const values = drainStatuses()
+    if (Object.keys(values).length) useEditor.setState(s => ({ statuses: { ...s.statuses, ...values } }))
+  })
+}
 
 export const saveBlob = (blob: Blob, name: string) => { void saveArtifact(blob, name).catch(() => {}) }
 
@@ -36,7 +56,7 @@ export const initialize = (canvas: HTMLCanvasElement) => {
         useEditor.setState(s => ({ thumbnails: { ...s.thumbnails, [event.node]: event } }))
       } else if (event.type === 'ready') { useEditor.setState({ ready: true, adapter: event.adapter }); nextLoad() }
       else if (event.type === 'error') {
-        if (event.fatal || event.request === active || event.request === bakeRequest) useEditor.setState({ error: event.message, fatal: !!event.fatal, busy: 'idle', cancelling: false, result: null, pixel: null })
+        if (event.fatal || event.request === active || event.request === bakeRequest) { drainStatuses(); useEditor.setState({ error: event.message, fatal: !!event.fatal, busy: 'idle', cancelling: false, result: null, pixel: null }) }
         if (loading && event.request === active) { loading = undefined; nextLoad() }
       } else if (event.type === 'source' && event.request === active) {
         if (loading) {
@@ -47,8 +67,8 @@ export const initialize = (canvas: HTMLCanvasElement) => {
         loading = undefined
         nextLoad()
       }
-      else if (event.type === 'status' && event.request === active && JSON.stringify(event.value.path ?? []) === JSON.stringify(state.path)) useEditor.setState(s => ({ statuses: { ...s.statuses, [event.value.node]: event.value } }))
-      else if (event.type === 'result' && event.request === active && event.selected === state.selected && JSON.stringify(event.path ?? []) === JSON.stringify(state.path)) useEditor.setState({ result: event, busy: 'idle', error: '' })
+      else if (event.type === 'status' && event.request === active && JSON.stringify(event.value.path ?? []) === JSON.stringify(state.path)) queueStatus(event.request, event.value)
+      else if (event.type === 'result' && event.request === active && event.selected === state.selected && JSON.stringify(event.path ?? []) === JSON.stringify(state.path)) useEditor.setState({ result: event, busy: 'idle', error: '', statuses: { ...state.statuses, ...drainStatuses() } })
       else if (event.type === 'bake-progress' && event.request === bakeRequest) useEditor.setState({ progress: { done: event.done, total: event.total } })
       else if (event.type === 'bake-done' && event.request === bakeRequest) {
         if (event.blob) {
@@ -127,7 +147,7 @@ export const refreshThumbnails = () => {
 }
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => worker?.terminate())
+  import.meta.hot.dispose(() => { worker?.terminate(); cancelAnimationFrame(statusTick) })
   // An OffscreenCanvas cannot transfer twice after a processing-client hot reload.
   import.meta.hot.accept(() => window.location.reload())
 }

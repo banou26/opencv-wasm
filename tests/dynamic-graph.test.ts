@@ -84,6 +84,46 @@ test('numeric graphs can run without any video and reuse cached results', async 
   for (let i = 0; i < 2; i++) { const result = await evaluateGraph(graph, 'nv', null, 0, [], f.context); expect(result.value).toBe(17); result.release() }
   expect(f.count).toBe(1); f.context.cache.clear()
 })
+test('shared branches are resolved once per evaluation, with independent input leases', async () => {
+  const f = fixture(), traced: string[] = []
+  f.context.trace = step => { traced.push(step.node.id) }
+  let graph = doc(n('ns', 'source')), previous = 'ns', output = 'out:frame:image'
+  for (let i = 0; i < 8; i++) {
+    const id = `nd${i}`
+    graph.nodes.push(n(id, 'delta', { offset: 0 }))
+    graph = wire(graph, previous, output, id, 'in:frame:a'); graph = wire(graph, previous, output, id, 'in:frame:b')
+    previous = id; output = 'out:frame:delta'
+  }
+  for (let i = 0; i < 2; i++) {
+    traced.length = 0
+    const result = await evaluateGraph(graph, previous, null, 7, [], f.context)
+    expect(result.value).toBe(0)
+    expect(traced).toEqual(['ns', ...Array.from({ length: 8 }, (_, i) => `nd${i}`)])
+    result.release()
+  }
+  expect(f.sourceFrames).toEqual([7]); expect(f.count).toBe(9)
+  f.context.cache.clear(); expect(f.destroyed).toBe(9)
+})
+test('branch memoization falls back to recomputation when the cache evicts an intermediate', async () => {
+  const f = fixture(), kernel = f.context.kernel
+  let graph = doc(n('ns', 'source'), n('na', 'grayscale'), n('nb', 'blur'), n('nc', 'offset', { offset: 0 }), n('nsmall', 'grayscale'), n('nd', 'delta', { offset: 0 }))
+  graph = wire(graph, 'ns', 'out:frame:image', 'na', 'in:frame:image')
+  graph = wire(graph, 'na', 'out:frame:image', 'nb', 'in:frame:image')
+  graph = wire(graph, 'nb', 'out:frame:image', 'nc', 'in:frame:image')
+  graph = wire(graph, 'nc', 'out:frame:image', 'nsmall', 'in:frame:image')
+  graph = wire(graph, 'nsmall', 'out:frame:image', 'nd', 'in:frame:a')
+  graph = wire(graph, 'na', 'out:frame:image', 'nd', 'in:frame:b')
+  f.context.cache.budget = 32
+  f.context.kernel = async (step, inputs) => {
+    const bundle = await kernel(step, inputs)
+    // The long first branch displaces earlier, unpinned intermediates before branch B.
+    if (step.node.id === 'nc') return { ...bundle, bytes: 24 }
+    return bundle
+  }
+  const result = await evaluateGraph(graph, 'nd', null, 7, [], f.context)
+  expect(result.value).toBe(0); expect(f.sourceFrames.length).toBeGreaterThan(1)
+  result.release(); f.context.cache.clear(); expect(f.destroyed).toBe(f.count)
+})
 test('named record types cannot connect to a different schema, and edits prune only invalid field wires', () => {
   const fields = [{ id: 'amount', label: 'Amount', type: 'scalar' as const, default: 2 }]
   let graph = parseDocument({ ...doc({ ...n('nmake', 'makeRecord'), dataType: 'tfirst', params: { amount: 2 } }, { ...n('nbreak', 'breakRecord'), dataType: 'tfirst' }, { ...n('nother', 'breakRecord'), dataType: 'tsecond' }, n('nvalue', 'constant')), dataTypes: [{ id: 'tfirst', name: 'First', fields }, { id: 'tsecond', name: 'Second', fields }] })

@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core'
 import { makeFixture } from './fixture.mjs'
 import { primitivesSmoke } from './primitives-smoke.mjs'
 import { mediaSmoke } from './media-smoke.mjs'
-import { dragSmoke, previewSelectionSmoke } from './interaction-smoke.mjs'
+import { dragSmoke, previewSelectionSmoke, timelineSmoke } from './interaction-smoke.mjs'
 import { assertViewport, layoutSmoke } from './layout-smoke.mjs'
 import { waitForBrowser } from './browser-poll.mjs'
 import { graphActionsSmoke } from './graph-actions-smoke.mjs'
@@ -99,6 +99,7 @@ try {
   }
   assert.equal(await page.evaluate(() => window.pickerCalls), 1, 'The first export opens the folder picker exactly once')
   console.log('PASS: first-save folder picker and frame-exact forward/backward/open-GOP seeks against FFmpeg')
+  await timelineSmoke(page)
   await dragSmoke(page, project)
   await previewSelectionSmoke(page, change)
   await graphActionsSmoke(page, { upload, project, sourceGraph, directory })

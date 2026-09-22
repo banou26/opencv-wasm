@@ -102,6 +102,14 @@ export const styles = css`
   .view-options { flex-shrink: 0; padding: 6px 16px; display: flex; gap: 12px; align-items: center; font-size: 10px; color: #9bab90; } .view-options label { display: flex; gap: 8px; align-items: center; white-space: nowrap; } .view-options select { font-size: 10px; padding: 3px 6px; } .view-options > code { margin-left: auto; }
   .node-explanation { padding: 10px 16px 14px; background: #20271c; } .explanation-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; } .explanation-title code { color: #bfd7a9; font-size: 10px; } .node-explanation p { font-size: 11px; line-height: 1.75; } .node-explanation p + p { margin-top: 7px; } .input-demands { display: flex; gap: 7px; align-items: center; margin-top: 12px; flex-wrap: wrap; } .input-demands .eyebrow { margin-right: 6px; } .input-demands button { font: 10px 'JetBrains Mono', monospace; padding: 3px 7px; } .input-demands .muted { font-size: 10px; }
   .timeline { min-height: 62px; padding: 8px 16px; display: flex; gap: 10px; align-items: center; background: #191f17; border-bottom: 1px solid #394232; } .time-heading { display: flex; align-items: center; gap: 8px; margin-right: 12px; } .time-heading code { font-size: 19px; color: #c5e7ae; } .time-heading .muted { font-size: 10px; } .timeline button { padding: 6px 10px; } .frame-number { width: 62px; } .timeline-track { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 10px; margin: 0 12px; } .timeline-track input { width: 100%; margin: 8px 0 0; } .timeline-track > div { display: flex; justify-content: space-between; font: 9px 'JetBrains Mono', monospace; color: #92a086; } .subframe { width: 175px; font-size: 10px; color: #a7b69a; display: flex; flex-wrap: wrap; gap: 9px; } .subframe code { margin-left: auto; color: #c5e7ae; } .subframe input { width: 100%; }
+  .timeline-track { gap: 4px; }
+  .timeline .timeline-slider { appearance: none; height: 20px; margin: 0; padding: 0; border: 0; background: transparent; touch-action: none; user-select: none; cursor: ew-resize; }
+  .timeline-slider::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: #46563c; }
+  .timeline-slider::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -4.5px; border: 1px solid #d9eccb; border-radius: 50%; background: #b5d49c; }
+  .timeline-slider::-moz-range-track { height: 5px; border-radius: 3px; background: #46563c; }
+  .timeline-slider::-moz-range-thumb { box-sizing: border-box; width: 14px; height: 14px; border: 1px solid #d9eccb; border-radius: 50%; background: #b5d49c; }
+  .timeline .timeline-slider:active { cursor: grabbing; }
+  .timeline .timeline-slider:disabled { cursor: default; }
   .render-section { display: flex; align-items: center; padding: 8px 16px; gap: 20px; border-bottom: 1px solid #394232; background: #151b12; }
   .render-settings { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 16px; flex: 1; min-width: 0; position: relative; }
   .render-controls { display: flex; gap: 16px; } .render-controls label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #b6c3ac; } .render-controls input, .render-controls select { width: 90px; } .render-controls select { padding: 6px; }
@@ -236,6 +244,7 @@ export const styles = css`
     .panel-heading .eyebrow { display: none; }
     .panel-heading h1, .panel-heading h2 { margin-top: 0; }
     .timeline { min-height: 52px; padding-block: 5px; }
+    .subframe { row-gap: 6px; }
     .empty-preview { gap: 6px; }
     .empty-icon { display: none; }
     .empty-preview h2 { font-size: 17px; }

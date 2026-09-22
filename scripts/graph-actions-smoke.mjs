@@ -41,6 +41,8 @@ export const graphActionsSmoke = async (page, { upload, project, sourceGraph, di
   }
   // Shift-drag creates React Flow's separate selection overlay, which needs its own menu handler.
   await pane.click({ position: { x: 10, y: 10 } })
+  // Undo remounts the nodes. Wait for their measured positions before drawing the marquee.
+  await a.hover(); await b.hover()
   const first = await a.boundingBox(), second = await b.boundingBox()
   await page.keyboard.down('Shift')
   await pane.and(page.locator('.selection')).waitFor()

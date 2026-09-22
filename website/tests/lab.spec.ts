@@ -99,7 +99,7 @@ test('guides embed their own lab without eagerly fetching WASM or models', async
   const lab = page.locator('image-lab')
   await expect(lab).toHaveAttribute('data-algorithm', 'gaussian-blur')
   await expect(lab.getByLabel('Sigma (pixels)', { exact: true })).toHaveValue('1.5')
-  expect(requests.filter((url) => url.endsWith('.wasm') || url.includes('/lab-assets/'))).toEqual([])
+  expect(requests.filter((url) => url.includes('/runtime/') || url.endsWith('.wasm') || url.includes('/lab-assets/'))).toEqual([])
   await lab.locator('.load-runtime').click()
   await ready(page)
   await change(page, () => lab.getByLabel('Sigma (pixels)', { exact: true }).fill('5'))

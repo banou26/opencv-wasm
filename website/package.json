@@ -2,12 +2,14 @@
   "name": "opencv-wasm-docs",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "generate": "node scripts/generate.mjs",
     "visuals:cookbook": "node scripts/generate-cookbook-visuals.mjs",
     "dev": "npm run generate && astro dev --host 0.0.0.0",
-    "build": "npm run generate && astro build",
+    "build": "npm run generate && astro build && node scripts/check-pages-assets.mjs",
     "preview": "astro preview --host 0.0.0.0",
     "check": "npm run generate && astro check && node scripts/check-examples.mjs && node scripts/generate-cookbook-visuals.mjs --check",
     "test": "node scripts/check-site.mjs && playwright test"
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
+    "@banou/opencv-wasm": "0.0.6",
     "@playwright/test": "1.63.0",
     "parse5": "^8.0.1",
     "typescript": "5.9.3"

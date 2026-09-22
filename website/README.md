@@ -20,8 +20,8 @@ navigation conventions of docs.fkn.dev with an original visual algorithm atlas.
 
 Use Node 22.12 or newer for the documentation tooling.
 
-Build the package in the parent repository first so `../lib/` contains its native
-runtime, declarations, coverage reports and dependency licenses. Then:
+Install the documentation dependencies, including the pinned published OpenCV
+package:
 
 ```sh
 npm ci
@@ -37,9 +37,41 @@ npm run preview -- --port 4321
 
 The site is available at `http://localhost:4321`. A production hostname is not
 assumed. Set Astro's `site` option before deploying so canonical URLs and a sitemap
-use the intended hostname. No deploy or public hosting is configured here.
+use the intended hostname.
+
+For local package development, build the parent repository first. Generation
+prefers `../lib/` when it exists; otherwise it reads the installed
+`@banou/opencv-wasm` package. A fresh checkout needs no Docker or C++ compilation
+to build the website. Update the package pin and lockfile after adopting a new
+published engine version.
+
+## Cloudflare Pages
+
+With the repository root as the Pages root directory:
+
+| Setting | Value |
+| --- | --- |
+| Build command | `npm ci --prefix website && npm run docs:build` |
+| Output directory | `website/dist` |
+| Environment variable | `NODE_VERSION=24` |
+
+The site generator splits the native binary into 16 MiB chunks. The lab downloads
+all chunks on its first run, checks their lengths and the complete SHA-256 digest,
+then initializes OpenCV from the reassembled bytes. Every native feature stays
+available. This is file chunking, not independently loadable algorithm modules;
+the full download and an assembly buffer are still required, and compilation
+starts after assembly rather than streaming directly from a single response.
+
+Chunk filenames include the binary's hash, and the matching manifest is embedded
+in the worker bundle. The original large `.wasm` file is excluded from the site.
+Every build checks that all output files meet Pages' 25 MiB asset limit. R2 is not
+required for these runtime assets. The npm package keeps its ordinary single WASM
+file for other consumers.
 
 ## Check
+
+Build the parent package before running the full contributor checks and native
+tests below. The production website build alone can use the published package.
 
 ```sh
 npm run check
@@ -63,9 +95,10 @@ chromium` on other machines. Visual review screenshots are saved in `test-result
 
 ## Content and generation
 
-`scripts/generate.mjs` reads the built package and writes
+`scripts/generate.mjs` reads the local or installed package and writes
 `src/data/api.generated.json`. It copies the ESM runtime, WASM and licenses into
-`public/` for the image lab. These generated files are ignored by Git. The build
+`public/` for the image lab, with WASM split into smaller download assets and an
+associated `src/data/wasm.generated.json` manifest. These generated files are ignored by Git. The build
 uses no remote image, font or model service; fonts are bundled locally.
 
 `src/data/algorithms.ts` contains the authored explanations. Each entry links only

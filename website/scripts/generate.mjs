@@ -1,15 +1,24 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import ts from 'typescript'
+import { writeRuntimeAssets } from './runtime-assets.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
-const exportedProgram = ts.createProgram([path.join(root, 'lib/index.d.ts')], { moduleResolution: ts.ModuleResolutionKind.Bundler, module: ts.ModuleKind.ESNext, skipLibCheck: true })
+let library = path.join(root, 'lib')
+try { await fs.access(path.join(library, 'index.d.ts')) }
+catch (error) {
+  if (error.code !== 'ENOENT') throw error
+  const require = createRequire(import.meta.url)
+  library = path.join(path.dirname(require.resolve('@banou/opencv-wasm/package.json')), 'lib')
+}
+const exportedProgram = ts.createProgram([path.join(library, 'index.d.ts')], { moduleResolution: ts.ModuleResolutionKind.Bundler, module: ts.ModuleKind.ESNext, skipLibCheck: true })
 const exportedChecker = exportedProgram.getTypeChecker()
-const exportedSymbols = new Set(exportedChecker.getExportsOfModule(exportedChecker.getSymbolAtLocation(exportedProgram.getSourceFile(path.join(root, 'lib/index.d.ts')))).map(symbol => symbol.name))
+const exportedSymbols = new Set(exportedChecker.getExportsOfModule(exportedChecker.getSymbolAtLocation(exportedProgram.getSourceFile(path.join(library, 'index.d.ts')))).map(symbol => symbol.name))
 const destination = path.join(root, 'website/src/data')
 await fs.mkdir(destination, { recursive: true })
-const read = name => fs.readFile(path.join(root, 'lib', name), 'utf8')
+const read = name => fs.readFile(path.join(library, name), 'utf8')
 const coverage = JSON.parse(await read('coverage.json'))
 const parity = JSON.parse(await read('python-parity.json'))
 const docs = JSON.parse(await read('documentation.json'))
@@ -91,11 +100,11 @@ const slugs = new Set()
 for (const e of entries) { if (slugs.has(e.slug)) throw new Error(`Duplicate API path ${e.slug}`); slugs.add(e.slug) }
 const modules = [...new Set([...coverage.modules, ...entries.map(e => e.module), ...constants.map(e => e.module)])].sort()
 await fs.writeFile(path.join(destination, 'api.generated.json'), JSON.stringify({ entries, constants, modules, coverage: { version: coverage.opencvVersion, modules: coverage.modules, unavailable: coverage.unavailableFeatures }, parity: { reference: parity.reference, counts: parity.counts, missing: parity.missing, missingMembers: parity.missingMembers }, documentation: { declarations: docs.declarations, upstream: docs.upstream, fallback: docs.fallback.length } }))
-await fs.mkdir(path.join(root, 'website/public/runtime'), { recursive: true })
-for (const name of (await fs.readdir(path.join(root, 'lib'))).filter(n => /\.(?:js|mjs|wasm)$/.test(n))) await fs.copyFile(path.join(root, 'lib', name), path.join(root, 'website/public/runtime', name))
+const wasm = await writeRuntimeAssets(library, path.join(root, 'website/public/runtime'))
+await fs.writeFile(path.join(destination, 'wasm.generated.json'), JSON.stringify(wasm, null, 2) + '\n')
 await fs.copyFile(path.join(root, 'LICENSE'), path.join(root, 'website/public/LICENSE.txt'))
 await fs.copyFile(path.join(root, 'THIRD_PARTY_NOTICES.md'), path.join(root, 'website/public/THIRD_PARTY_NOTICES.txt'))
-await fs.cp(path.join(root, 'lib/licenses'), path.join(root, 'website/public/licenses'), { recursive: true })
+await fs.cp(path.join(library, 'licenses'), path.join(root, 'website/public/licenses'), { recursive: true })
 for (const [dependency, license, target] of [
   ['astro', 'LICENSE', 'website-astro.txt'],
   ['@astrojs/starlight', 'LICENSE', 'website-starlight.txt'],

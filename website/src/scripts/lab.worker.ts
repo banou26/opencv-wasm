@@ -9,6 +9,8 @@ import { pairs } from '../lib/lab/pairs'
 import { geometry } from '../lib/lab/geometry'
 import { models } from '../lib/lab/models'
 import { cook } from '../lib/lab/cookbook'
+import { loadWasmChunks } from '../lib/wasm-chunks'
+import wasm from '../data/wasm.generated.json'
 let diagnostics: string[] = []
 let instance: Promise<{ cv: OpenCV; runtime: typeof Runtime }> | undefined
 const load = () =>
@@ -16,7 +18,7 @@ const load = () =>
     const path = '/runtime/index.js'
     const runtime = (await import(/* @vite-ignore */ path)) as typeof Runtime
     const cv = await runtime.createOpenCV({
-      wasmUrl: '/runtime/opencv_js.wasm',
+      wasmBinary: await loadWasmChunks(wasm),
       printErr: (text) => {
         diagnostics.push(text)
         diagnostics = diagnostics.slice(-8)

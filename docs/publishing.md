@@ -73,6 +73,7 @@ Commit `package.json` and `package-lock.json` with the release changes and push 
 creates its tag and release. If publishing fails after the build succeeds, fix
 the npm configuration and rerun the failed jobs to reuse the tested artifact.
 
-The website can consume the published package's `lib/` artifacts instead of
-compiling OpenCV on Cloudflare. This workflow publishes the npm package; the
-website's Pages build and large-WASM hosting still need their own configuration.
+The website consumes a pinned npm package when no local `lib/` build exists, and
+splits WASM into smaller assets for Cloudflare Pages. This workflow publishes the
+npm package; configure the website separately using the
+[Pages build settings](../website/README.md#cloudflare-pages).

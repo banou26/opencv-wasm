@@ -9,7 +9,7 @@ import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { defaultParams, specFor } from '../src/engine/specs'
 import type { NodeType, Params } from '../src/engine/types'
-import { runKernel } from '../src/worker/kernels'
+import { displayPixels, runKernel } from '../src/worker/kernels'
 import { clonePayload, image, parameterValue, payloadBundle, type Payload } from '../src/worker/payload'
 import { regionalKernel, sceneGeometry } from '../src/worker/regional-kernels'
 import type { RegionalData } from '../src/worker/regional-data'
@@ -39,15 +39,17 @@ const step = (type: NodeType, params: Params = {}) => ({ key: 'test', node: { id
 
 test('regional prefab has real staged contracts and only inspectors depend on Time', () => {
   const doc = parseDocument(regionalLayersGraph())
-  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(12)
-  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(12)
+  const inspectors = doc.nodes.filter(n => n.type === 'regionalInspect' || n.type === 'regionalCompletionInspect')
+  expect(inspectors).toHaveLength(12)
+  expect(new Set(inspectors.map(n => specFor(n, doc).title)).size).toBe(12)
   expect(doc.edges).toContainEqual(expect.objectContaining({ source: 'ntiming', target: 'nconflictview', targetHandle: 'in:regions:data' }))
   expect(specFor(doc.nodes.find(node => node.id === 'nconflictview')!, doc).title).toBe('Inspect Motion Conflicts')
   expect(specFor(doc.nodes.find(node => node.id === 'ncompletionview')!, doc).title).toBe('Inspect Support Completion')
   expect(validateConnection(doc, { source: 'ntiming', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'nhistory', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'ntracks', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
-  expect(doc.edges.filter(e => e.source === 'ntime').every(e => doc.nodes.find(n => n.id === e.target)?.type === 'regionalInspect')).toBe(true)
+  expect(doc.edges.filter(e => e.source === 'ntime').every(e => inspectors.some(n => n.id === e.target))).toBe(true)
+  expect(validateConnection(doc, { source: 'ntiming', sourceHandle: 'out:regions:data', target: 'ncompletionview', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(validateConnection(doc, { source: 'ndense', sourceHandle: 'out:regions:data', target: 'ngridview', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'nhistory', sourceHandle: 'out:regions:data', target: 'ntiming', targetHandle: 'in:regions:data' })).toBeNull()
@@ -72,7 +74,9 @@ test('the single regional output renders completion while the measured review st
   expect(review.steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
   expect(review.steps.filter(step => step.node.type === 'regionalInspect').map(step => step.node.params.view)).toEqual(['review'])
   expect(completion.steps.some(step => step.node.type === 'regionalComplete')).toBe(true)
-  expect(completion.steps.filter(step => step.node.type === 'regionalInspect').map(step => step.node.params.view)).toEqual(['completion'])
+  expect(completion.steps.some(step => step.node.type === 'regionalCompletionInspect')).toBe(true)
+  expect(completion.steps.filter(step => step.node.type === 'frameLayout').map(step => step.node.params.direction)).toEqual(['horizontal', 'horizontal', 'vertical'])
+  expect(completion.steps.some(step => step.node.type === 'regionalInspect')).toBe(false)
 })
 
 test('whole-scene native analysis executes once across scrub order and exposes every stage', async () => {
@@ -101,6 +105,13 @@ test('whole-scene native analysis executes once across scrub order and exposes e
     }
     expect(calls.get('regionalComplete')).toBe(1)
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    const completionEvidence = await evaluate('ncomplete', 3, 'out:regions:data'), arranged = await evaluate('n5', 3)
+    try {
+      if (completionEvidence.value.kind !== 'regions') throw new Error('Missing completion evidence')
+      const legacy = renderRegional(completionEvidence.value.data, 3, 'completion', 8), output = image(arranged.value)
+      expect([output.mat.cols, output.mat.rows]).toEqual([legacy.width, legacy.height])
+      expect(displayPixels(output, 1)).toEqual(legacy.pixels)
+    } finally { completionEvidence.release(); arranged.release() }
     const baseline = await evaluate('nreview', 3)
     let originalPixels: Float32Array
     try { originalPixels = image(baseline.value).mat.data32F.slice() } finally { baseline.release() }
@@ -197,7 +208,7 @@ test('rendering under cache pressure retains scene analysis and preserves pixels
       expect(cache.bytes).toBeLessThanOrEqual(budget)
     }
     for (const type of stages) expect(calls.get(type), type).toBe(1)
-    expect(calls.get('regionalInspect')).toBeGreaterThan(count)
+    expect(calls.get('regionalCompletionInspect')).toBeGreaterThan(count)
     // A changed history threshold must still invalidate its downstream stages.
     doc.nodes.find(node => node.id === 'nhistory')!.params.tolerance = .8
     const changed = await evaluate(0)

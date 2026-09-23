@@ -1,11 +1,19 @@
-import { expect, test } from 'vite-plus/test'
+import { beforeAll, expect, test } from 'vite-plus/test'
+import { initOpenCV } from '@banou/opencv-wasm'
 import { completeMotionSupport, type MotionCompletionOptions, type RegionalMotionSequence } from 'cadence/regional'
 import { defaultParams, specFor, validateParams } from '../src/engine/specs'
 import { groupNodes, parseDocument } from '../src/engine/graph'
 import { regionalLayersGraph } from '../src/engine/regional-prefab'
 import { regionalKernel } from '../src/worker/regional-kernels'
 import { regionalSummary, type RegionalData } from '../src/worker/regional-data'
-import { renderRegional } from '../src/worker/regional-render'
+import { renderCompletionPanels, renderRegional } from '../src/worker/regional-render'
+import { runKernel, displayPixels } from '../src/worker/kernels'
+import { image } from '../src/worker/payload'
+import { planGraph } from '../src/engine/plan'
+import type { Bundle, GraphDocument } from '../src/engine/types'
+import type { Payload } from '../src/worker/payload'
+
+beforeAll(async () => { await initOpenCV() }, 60000)
 
 const fixture = (frameCount = 3): RegionalData => {
   const width = 72, height = 40, cellSize = 8, columns = 9, rows = 5, seeds = [20, 24]
@@ -27,6 +35,50 @@ const fixture = (frameCount = 3): RegionalData => {
   }
 }
 const step = (options: MotionCompletionOptions = {}) => ({ key: 'completion', node: { id: 'ncomplete', type: 'regionalComplete' as const, params: { ...defaultParams('regionalComplete'), ...options }, position: { x: 0, y: 0 } }, inputs: {}, frame: 0 })
+
+test('four completion frame ports stay independently inspectable and layouts reproduce legacy pixels', async () => {
+  const source = fixture(), data: RegionalData = { ...source, stage: 'completion', completion: completeMotionSupport(source.sequence!, source.families!) }
+  const doc = regionalLayersGraph(), node = doc.nodes.find(node => node.id === 'ncompletionview')!
+  const ports = specFor(node, doc).outputs
+  expect(ports.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance', 'out:string:summary'])
+  for (const port of ports) expect(planGraph(doc, node.id, port.id, 10, 'clip', 13).target.port).toBe(port.id)
+  const before = structuredClone(data), held: Bundle<Payload>[] = []
+  try {
+    for (const frame of [10, 12]) {
+      const bundle = await regionalKernel({ key: 'panels', node: { ...node, params: { ...node.params, frame, displayMaxSide: 0 } }, frame, inputs: {} }, { 'in:regions:data': { kind: 'regions', data } }, () => { throw new Error('Analysis display must not decode') }, () => false)
+      held.push(bundle!)
+      const panels = renderCompletionPanels(data, frame)
+      for (const key of ['source', 'measured', 'completed', 'provenance'] as const) {
+        const output = image(bundle!.outputs[`out:frame:${key}`])
+        expect([output.mat.cols, output.mat.rows]).toEqual([72, 40])
+        expect(displayPixels(output, 1)).toEqual(panels.panels[key])
+      }
+      const join = async (a: Payload, b: Payload, direction: string) => {
+        const result = await runKernel({ key: direction, node: { id: direction, type: 'frameLayout', params: { direction }, position: { x: 0, y: 0 } }, frame, inputs: {} }, { 'in:frame:a': a, 'in:frame:b': b }, undefined, () => false)
+        held.push(result)
+        return result.outputs['out:frame:image']!
+      }
+      const top = await join(bundle!.outputs['out:frame:source']!, bundle!.outputs['out:frame:measured']!, 'horizontal')
+      const bottom = await join(bundle!.outputs['out:frame:completed']!, bundle!.outputs['out:frame:provenance']!, 'horizontal')
+      const combined = image(await join(top, bottom, 'vertical')), legacy = renderRegional(data, frame, 'completion', 8)
+      expect([combined.mat.cols, combined.mat.rows]).toEqual([legacy.width, legacy.height])
+      expect(displayPixels(combined, 1)).toEqual(legacy.pixels)
+      expect(bundle!.outputs['out:string:summary']).toEqual({ kind: 'string', value: panels.summary })
+      expect(bundle!.bytes).toBe(72 * 40 * 4 * 4 * 4)
+    }
+    expect(data).toEqual(before)
+  } finally { held.reverse().forEach(bundle => bundle.dispose()) }
+})
+
+test('saved combined completion inspectors retain their exact old port and graph topology', () => {
+  const legacy: GraphDocument = { version: 1, definitions: [], nodes: [
+    { id: 'nold', type: 'regionalInspect', params: { ...defaultParams('regionalInspect'), view: 'completion' }, position: { x: 0, y: 0 } },
+    { id: 'nout', type: 'output', params: {}, position: { x: 400, y: 0 } },
+  ], edges: [{ id: 'e:nout:in:frame:image', source: 'nold', sourceHandle: 'out:frame:image', target: 'nout', targetHandle: 'in:frame:image' }] }
+  const restored = parseDocument(JSON.parse(JSON.stringify(legacy)))
+  expect(restored).toEqual(legacy)
+  expect(specFor(restored.nodes[0]!, restored).outputs.map(port => port.id)).toEqual(['out:frame:image', 'out:string:summary'])
+})
 
 test('completion controls use bounded whole fine-grid distances', () => {
   expect(defaultParams('regionalComplete')).toEqual({ maxHoleDistance: 6, maxBorderDistance: 6, competitorClearance: 2, fillIsolated: true, bridgeTemporal: true })

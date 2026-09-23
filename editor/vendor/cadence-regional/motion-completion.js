@@ -192,6 +192,17 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
         }
         return !requireWitness || witnesses > 0;
     };
+    const associationMargin = (context, label) => {
+        const observation = context.observations[label], velocity = context.velocities.get(observation.id);
+        return {
+            seeds: distances(observation.measuredCells, columns, rows),
+            separation: distances(context.grid.cells.flatMap((cell, p) => {
+                const original = context.owner[p];
+                return original >= 0 ? original !== label ? [p] : []
+                    : original === -2 && (!fits(cell, velocity) || !temporalStable(context, p, observation.id, false)) ? [p] : [];
+            }), columns, rows),
+        };
+    };
     const consistentTrajectory = (context, p, id) => {
         const cell = context.grid.cells[p];
         // A positive donor is an anchor, not permission to ignore later redraws.
@@ -278,17 +289,12 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                     competitors.push(p);
             const clearance = distances(competitors, columns, rows);
             // Scene donors may overcome a short reach, not the original spatial separation guard.
-            const seeds = associateMotion ? distances(observation.measuredCells, columns, rows) : null;
-            const separation = associateMotion ? distances(context.grid.cells.flatMap((cell, p) => {
-                const original = context.owner[p];
-                return original >= 0 ? original !== label ? [p] : []
-                    : original === -2 && (!fits(cell, velocity) || !temporalStable(context, p, id, false)) ? [p] : [];
-            }), columns, rows) : null;
+            const margin = associateMotion ? associationMargin(context, label) : null;
             for (let p = 0; p < count; p++) {
                 if (owner[p] !== (associateMotion ? -2 : -1) || clearance[p] <= Math.max(1, resolved.competitorClearance)
                     || associateMotion && !fits(context.grid.cells[p], velocity))
                     continue;
-                if (seeds && separation && separation[p] <= seeds[p] + resolved.competitorClearance)
+                if (margin && margin.separation[p] <= margin.seeds[p] + resolved.competitorClearance)
                     continue;
                 const before = witness(p, id, -1);
                 if (before === 'blocked' || witness(p, id, 1, before === 'leading' ? 2 : 1) !== 'supported'
@@ -450,6 +456,47 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                     current.frame.counts.temporal++;
                     current.frame.counts.unknown--;
                 }
+            if (resolved.fillIsolated) {
+                // Closing a single cell never changes the frozen donors or unlocks further growth.
+                const raster = current.owner.map((label, p) => proposals[p] >= 0 ? proposals[p] : label);
+                const context = byFrame.get(current.frame.frame), margins = new Map();
+                for (let y = 1; y < rows - 1; y++)
+                    for (let x = 1; x < columns - 1; x++) {
+                        const p = y * columns + x, label = raster[p - 1];
+                        if (raster[p] >= 0 || label < 0)
+                            continue;
+                        const neighbors = [p - columns - 1, p - columns, p - columns + 1, p - 1, p + 1, p + columns - 1, p + columns, p + columns + 1];
+                        if (neighbors.some(q => raster[q] !== label))
+                            continue;
+                        const observation = current.frame.observations[label], velocity = context.velocities.get(observation.id);
+                        if (!velocity || ![velocity.dx, velocity.dy].every(Number.isFinite)
+                            || !temporalStable(context, p, observation.id, false) || !consistentTrajectory(context, p, observation.id))
+                            continue;
+                        if (raster[p] === -2) {
+                            if (!fits(context.grid.cells[p], velocity))
+                                continue;
+                            if (!margins.has(label))
+                                margins.set(label, associationMargin(context, label));
+                            const margin = margins.get(label);
+                            if (margin.separation[p] <= margin.seeds[p] + resolved.competitorClearance)
+                                continue;
+                            observation.motionCells.push(p);
+                            current.frame.counts.motion++;
+                            current.frame.counts.blocked--;
+                        }
+                        else {
+                            observation.isolatedCells.push(p);
+                            current.frame.counts.isolated++;
+                            current.frame.counts.unknown--;
+                        }
+                        observation.enclosedCells ??= [];
+                        observation.enclosedCells.push(p);
+                    }
+                for (const observation of current.frame.observations) {
+                    observation.motionCells.sort((a, b) => a - b);
+                    observation.isolatedCells.sort((a, b) => a - b);
+                }
+            }
         }
         yield current.frame;
     }

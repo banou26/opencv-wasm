@@ -16,8 +16,10 @@ export const regionalLayersGraph = (): GraphDocument => {
     node('nvelocityview', 'regionalInspect', 2160, 1260, { view: 'velocities' }), node('neventsview', 'regionalInspect', 2530, 740, { view: 'events' }),
     node('ntimeview', 'regionalInspect', 2530, 1340, { view: 'timeline' }),
     node('nconflictview', 'regionalInspect', 2900, 740, { view: 'conflicts' }),
-    node('ncomplete', 'regionalComplete', 3270, 740), node('ncompletionview', 'regionalInspect', 3270, 1340, { view: 'completion' }),
-    node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 3640, 1340),
+    node('ncomplete', 'regionalComplete', 3270, 740), node('ncompletionview', 'regionalCompletionInspect', 3270, 1340),
+    node('ncompletiontop', 'frameLayout', 3640, 1100), node('ncompletionbottom', 'frameLayout', 3640, 1600),
+    node('ncompletionlayout', 'frameLayout', 4010, 1340, { direction: 'vertical' }),
+    node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 4380, 1340),
   ], edges: [] }
   const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => { doc = connect(doc, { source, sourceHandle, target, targetHandle }) }
   wire('n1', 'out:video:clip', 'ninfo', 'in:video:clip')
@@ -30,6 +32,12 @@ export const regionalLayersGraph = (): GraphDocument => {
   wire('ntiming', 'out:regions:data', 'ncomplete', 'in:regions:data')
   wire('ncomplete', 'out:regions:data', 'ncompletionview', 'in:regions:data')
   for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'nconflictview', 'ncompletionview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
-  wire('ncompletionview', 'out:frame:image', 'n5', 'in:frame:image')
+  wire('ncompletionview', 'out:frame:source', 'ncompletiontop', 'in:frame:a')
+  wire('ncompletionview', 'out:frame:measured', 'ncompletiontop', 'in:frame:b')
+  wire('ncompletionview', 'out:frame:completed', 'ncompletionbottom', 'in:frame:a')
+  wire('ncompletionview', 'out:frame:provenance', 'ncompletionbottom', 'in:frame:b')
+  wire('ncompletiontop', 'out:frame:image', 'ncompletionlayout', 'in:frame:a')
+  wire('ncompletionbottom', 'out:frame:image', 'ncompletionlayout', 'in:frame:b')
+  wire('ncompletionlayout', 'out:frame:image', 'n5', 'in:frame:image')
   return doc
 }

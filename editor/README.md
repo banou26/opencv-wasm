@@ -213,7 +213,7 @@ finished layer extractor. Its ordinary typed nodes expose each actual stage:
 Scene Range -> Scene Dense Motion -> Multiscale Motion Cells
             -> Whole-Scene Motion Groups -> Motion-History Grouping
             -> Regional Drawing Events -> Support Completion
-            -> Inspect Support Completion -> Output
+            -> Inspect Support Completion -> Frame Layouts -> Output
 ```
 
 Scene Range decodes a fixed inclusive range, independent of scrubbing. The prefab
@@ -393,11 +393,21 @@ background in that baseline, and the central characters remain fragmented.
   lengths. Unknown intervals break holds; no on-2s/on-3s cadence is imposed.
 - **Support completion (experimental):** select **Inspect Support Completion**
   after `Regional Drawing Events -> Support Completion`. It accepts
-  motion-history data directly as well. Its four-panel video drives the prefab's
-  **single Output**. The measured-support, family and original review inspectors
+  motion-history data directly as well. The new inspector exposes four separate
+  frame sockets: **Source**, **Measured support**, **Completed support** and
+  **Inference provenance**, plus **Evidence summary**. Select a frame in
+  **Output socket** to view that panel alone at its full display resolution.
+  The preview's fullscreen button expands the image and its zoom/pixel controls;
+  the same button or Escape returns to the editor without changing graph data.
+  Three editable **Frame Layout** nodes combine source/measured above
+  completed/provenance and drive the prefab's **single Output**. The
+  measured-support, family and original review inspectors
   remain available for comparison; selecting an inspector changes the preview,
   not the movie output. Reopen the prefab to get the current single-output graph.
-  Existing saved graphs and their user-edited outputs are not rewritten.
+  Existing saved graphs and their user-edited outputs are not rewritten. The
+  legacy Regional Evidence inspector's `completion` view still exposes its
+  original combined `out:frame:image`. The new layout reproduces that image's
+  dimensions and pixels for the same completion data.
   Original measured family cells stay unchanged. Nearby unassigned coherent
   cells can be associated with a family only when their measured motion agrees
   locally and at least one independent neighboring pair supports that agreement.

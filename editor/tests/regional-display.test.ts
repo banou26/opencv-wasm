@@ -54,6 +54,26 @@ test('inspector decodes the requested original frame and preserves detail absent
   } finally { bundle!.dispose() }
 })
 
+test('four completion panels share one source decode and retain original detail independently', async () => {
+  const data = fixture(), source = mockVideo()
+  data.stage = 'completion'
+  data.completion = { width: 4, height: 3, frameCount: 3, cellSize: 8, columns: 1, rows: 1, frames: [], options: { maxHoleDistance: 6, maxBorderDistance: 6, competitorClearance: 2, fillIsolated: true, bridgeTemporal: true } }
+  const request = { key: 'panels', node: { id: 'ninspect', type: 'regionalCompletionInspect' as const, params: { ...defaultParams('regionalCompletionInspect'), frame: 3 }, position: { x: 0, y: 0 } }, inputs: {}, frame: 3 }
+  const bundle = await regionalKernel(request, input(data), () => source.video, () => false)
+  try {
+    const frames = ['source', 'measured', 'completed', 'provenance'].map(key => image(bundle!.outputs[`out:frame:${key}`]))
+    for (const frame of frames) {
+      expect([frame.mat.cols, frame.mat.rows]).toEqual([8, 6])
+      for (let i = 0; i < source.rgba.length; i++) expect(frame.mat.data32F[i]).toBeCloseTo(source.rgba[i]! / 255, 6)
+    }
+    frames[0]!.mat.data32F[0] = .5
+    expect(frames[1]!.mat.data32F[0]).toBeCloseTo(source.rgba[0]! / 255, 6)
+    expect(source.requested).toEqual([3]); expect(source.closed).toEqual([3])
+  } finally { bundle!.dispose() }
+  await expect(regionalKernel(request, input(fixture()), () => source.video, () => false)).rejects.toThrow('requires completion data')
+  expect(source.requested).toEqual([3])
+})
+
 test('analysis-size displays reuse cached pixels and missing high-detail sources fail explicitly', async () => {
   const source = mockVideo()
   for (const displayMaxSide of [0, 4]) {

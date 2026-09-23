@@ -48,6 +48,7 @@ try {
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   await page.goto(new URL('/editor/', url).href)
   await page.getByText('Engine ready', { exact: true }).waitFor({ timeout: 90000 })
+  assert.equal(await page.getByLabel('Render workers').inputValue(), '4', 'New renders must default to four workers')
   const footer = page.getByTestId('engine-status')
   const change = async action => {
     const before = Number(await footer.getAttribute('data-request'))
@@ -78,12 +79,14 @@ try {
   const project = await page.evaluate(async () => JSON.parse(await (
     await (await window.regionalSmokeFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
   const stages = project.nodes.map(node => node.type)
-  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect']) {
+  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect', 'regionalCompletionInspect', 'frameLayout']) {
     assert.ok(stages.includes(stage), `Regional prefab is missing its editable ${stage} stage`)
   }
   assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), ['n5'])
   assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'Completion must be the single render output')
-  assert.ok(project.edges.some(edge => edge.source === 'ncompletionview' && edge.target === 'n5'), 'The output must render the completion inspector')
+  assert.ok(project.edges.some(edge => edge.source === 'ncompletionlayout' && edge.target === 'n5'), 'The output must render the completion layout')
+  assert.equal(project.nodes.filter(node => node.type === 'frameLayout').length, 3)
+  assert.deepEqual(project.edges.filter(edge => edge.source === 'ncompletionview').map(edge => edge.sourceHandle).sort(), ['out:frame:completed', 'out:frame:measured', 'out:frame:provenance', 'out:frame:source'])
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-computed-frame'), '6')
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
@@ -142,9 +145,9 @@ try {
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Support Completion' }).click())
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'ncompletionview')
   assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'Inspector selection must not silently change the explicit render target')
+  assert.deepEqual(await page.getByLabel('Output socket').locator('option').evaluateAll(options => options.map(option => option.value)), ['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance', 'out:string:summary'])
   await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
   const completionSummary = await page.locator('.value-preview pre').innerText()
-  assert.match(completionSummary, /Top: source \/ measured family support\. Bottom: completed support \/ inference distinction\./)
   assert.match(completionSummary, /Source 6 -> 7/)
   assert.match(completionSummary, /Cells: measured \d+; motion-associated \d+; inferred holes \d+; inferred border \d+; isolated \d+; temporal \d+; blocked \d+; unknown \d+/)
   assert.match(completionSummary, /purple motion-associated/)
@@ -183,7 +186,29 @@ try {
   assert.match(await page.locator('.value-preview pre').innerText(), /final frame, no outgoing pair/)
   assert.match(await page.locator('.value-preview pre').innerText(), /No completion evidence for this frame/)
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
-  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  for (const port of ['source', 'measured', 'completed', 'provenance']) {
+    await change(() => page.getByLabel('Output socket').selectOption(`out:frame:${port}`))
+    assert.equal(await page.locator('.view-options code').innerText(), '960 × 540')
+    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    const fullscreenButton = page.getByRole('button', { name: 'Fullscreen preview', exact: true })
+    const buttonBox = await fullscreenButton.boundingBox()
+    assert.ok(buttonBox && Math.abs(buttonBox.width - 24) < 1 && Math.abs(buttonBox.height - 24) < 1, 'Fullscreen icon must not enlarge the compact preview toolbar')
+    await fullscreenButton.click()
+    await page.waitForFunction(() => document.fullscreenElement?.classList.contains('frame-preview'))
+    await page.getByRole('button', { name: 'Exit fullscreen preview', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Exit fullscreen preview', exact: true }).getAttribute('aria-pressed'), 'true')
+    await page.waitForFunction(() => {
+      const rect = document.querySelector('.frame-preview .image-viewport canvas').getBoundingClientRect()
+      return rect.width > innerWidth * .6 && rect.height > innerHeight * .6 && rect.x >= 0 && rect.y >= 0 && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1
+    })
+    await page.screenshot({ path: resolve(directory, `regional-layers-completion-${port}.png`) })
+    if (port === 'source') await page.keyboard.press('Escape')
+    else await page.getByRole('button', { name: 'Exit fullscreen preview', exact: true }).click()
+    await page.waitForFunction(() => !document.fullscreenElement)
+    assert.equal(await page.getByRole('button', { name: 'Fullscreen preview', exact: true }).getAttribute('aria-pressed'), 'false')
+    assert.equal(await page.getByLabel('Render target').inputValue(), 'n5')
+  }
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:completed'))
   await page.getByRole('button', { name: 'Fit', exact: true }).click()
   await page.screenshot({ path: resolve(directory, 'regional-layers-completion.png') })
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())

@@ -5,7 +5,7 @@ import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
 import { payloadBundle, type Payload } from './payload'
 import type { RegionalData, SceneData } from './regional-data'
-import { renderRegional, type RegionalView } from './regional-render'
+import { renderCompletionPanels, renderRegional, type RegionalView } from './regional-render'
 
 /** Bound retained dense fields before decoding; downstream cache accounting includes JS arrays. */
 export const sceneGeometry = (sourceWidth: number, sourceHeight: number, first: number, last: number, maxSide: number, frameCount: number) => {
@@ -46,7 +46,7 @@ export const regionalDisplayGeometry = (scene: SceneData, maxSide: number) => {
 
 export const regionalKernel = async (step: Step, inputs: Record<string, Payload>, sourceById: (asset: string) => VideoSource | undefined, cancelled: () => boolean): Promise<Bundle<Payload> | undefined> => {
   const type = step.node.type
-  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect'].includes(type)) return undefined
+  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect', 'regionalCompletionInspect'].includes(type)) return undefined
   const checkpoint = async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)); if (cancelled()) throw new Error('Evaluation cancelled') }
   const params = step.node.params
   if (type === 'sceneRange') {
@@ -109,7 +109,8 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     }
     output = { ...data, stage: 'completion', completion }
   } else {
-    const sourceFrame = Number(params.frame), view = String(params.view) as RegionalView
+    const sourceFrame = Number(params.frame), view = type === 'regionalCompletionInspect' ? 'completion' : String(params.view) as RegionalView
+    if (type === 'regionalCompletionInspect') requireStage('completion')
     const analysis = data.scene.frames[sourceFrame - data.scene.first]
     if (!Number.isSafeInteger(sourceFrame) || !analysis) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
     let display: AnalysisFrame | undefined
@@ -122,6 +123,18 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
       }
     }
     checkCancelled(cancelled)
+    if (type === 'regionalCompletionInspect') {
+      const result = renderCompletionPanels(data, sourceFrame, display), outputs: Record<string, Payload> = { 'out:string:summary': { kind: 'string', value: result.summary } }, allocated: Mat[] = []
+      try {
+        for (const [key, pixels] of Object.entries(result.panels)) {
+          using rgba = matFromArray(result.height, result.width, CV_8UC4, pixels)
+          const mat = new Mat(); allocated.push(mat)
+          rgba.convertTo(mat, CV_32F, 1 / 255)
+          outputs[`out:frame:${key}`] = { kind: 'frame', mat, range: 'unit' }
+        }
+        return payloadBundle(outputs)
+      } catch (error) { allocated.forEach(mat => mat.delete()); throw error }
+    }
     const raster = renderRegional(data, sourceFrame, view, Number(params.cellSize), Number(params.groupPage), display)
     using rgba = matFromArray(raster.height, raster.width, CV_8UC4, raster.pixels)
     for (const label of raster.labels ?? []) putText(rgba, label.text, { x: label.x, y: label.y }, FONT_HERSHEY_SIMPLEX, .35, [235, 238, 242, 255], 1, LINE_AA)

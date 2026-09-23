@@ -6,7 +6,8 @@ import { useEditor } from './store'
 export const Preview = () => {
   const result = useEditor(s => s.result), busy = useEditor(s => s.busy), pixel = useEditor(s => s.pixel), ready = useEditor(s => s.ready), source = useEditor(s => s.source)
   const fatal = useEditor(s => s.fatal)
-  const viewport = useRef<HTMLDivElement>(null)
+  const viewport = useRef<HTMLDivElement>(null), surface = useRef<HTMLDivElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
   const [box, setBox] = useState({ width: 640, height: 360 }), [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 }), [pinned, setPinned] = useState(false)
   const pinnedPosition = useRef<{ x: number; y: number } | null>(null)
   const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null), throttle = useRef(0)
@@ -14,6 +15,11 @@ export const Preview = () => {
   const width = result?.width || source?.width || 1920, height = result?.height || source?.height || 1080
   const fit = Math.min(Math.max(1, box.width - 28) / width, Math.max(1, box.height - 28) / height), scale = fit * zoom
   const current = useRef({ zoom, pan, fit }); current.current = { zoom, pan, fit }
+  useEffect(() => {
+    const changed = () => setFullscreen(document.fullscreenElement === surface.current)
+    document.addEventListener('fullscreenchange', changed)
+    return () => document.removeEventListener('fullscreenchange', changed)
+  }, [])
   useEffect(() => {
     const el = viewport.current
     if (!el) return
@@ -30,8 +36,10 @@ export const Preview = () => {
   }, [])
   useEffect(() => { setPan({ x: 0, y: 0 }); setZoom(1); setPinned(false) }, [source?.id])
   useEffect(() => { if (pinned && pinnedPosition.current && nativePixels) inspectPixel(pinnedPosition.current.x, pinnedPosition.current.y) }, [pinned, result?.request, nativePixels])
-  return <>
-    <div className="preview-tools"><div><span className="eyebrow">VIEW</span><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>Fit</button><button onClick={() => { setZoom(1 / fit); setPan({ x: 0, y: 0 }) }}>1:1</button><code>{Math.round(scale * 100)}%</code></div><div><span className="muted">Scroll to zoom · drag to pan</span><button onClick={exportFrame} disabled={!nativePixels || busy !== 'idle'} title="Save the displayed image with the current view gain">Save PNG</button></div></div>
+  return <div className="frame-preview" ref={surface} onKeyDown={event => {
+    if (event.key === 'Escape' && document.fullscreenElement === surface.current) { event.preventDefault(); void document.exitFullscreen().catch(() => {}) }
+  }}>
+    <div className="preview-tools"><div><span className="eyebrow">VIEW</span><button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>Fit</button><button onClick={() => { setZoom(1 / fit); setPan({ x: 0, y: 0 }) }}>1:1</button><code>{Math.round(scale * 100)}%</code></div><div><span className="muted">Scroll to zoom · drag to pan</span><button onClick={exportFrame} disabled={!nativePixels || busy !== 'idle'} title="Save the displayed image with the current view gain">Save PNG</button><button className="preview-fullscreen" aria-label={fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview'} title={fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview'} aria-pressed={fullscreen} disabled={!visual} onClick={() => { void (fullscreen ? document.exitFullscreen() : surface.current?.requestFullscreen())?.catch(() => {}) }}>⛶</button></div></div>
     <div ref={viewport} tabIndex={0} aria-label="Image preview" title="Scroll to zoom, drag to pan. Press < or > (comma or period) to step through source frames." className={`image-viewport ${drag.current ? 'dragging' : ''}`} onDoubleClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} onPointerDown={e => {
       if (e.button !== 0) return
       e.currentTarget.focus({ preventScroll: true })
@@ -52,5 +60,5 @@ export const Preview = () => {
       {result?.motion && <div className="motion-key"><strong>Δx {result.motion.dx.toFixed(3)} px &nbsp; Δy {result.motion.dy.toFixed(3)} px</strong><span>Global translation · arrows enlarged 4× · response {result.motion.response.toFixed(3)}</span></div>}
     </div>
     <div className="pixel-bar"><span className="eyebrow">PIXEL</span>{pixel && nativePixels ? <><code>{pixel.x}, {pixel.y}</code><span className="swatch" style={{ background: `rgb(${pixel.rgba.slice(0, 3).map(v => Math.round(v * 255)).join(' ')})` }} /><code>{pixel.rgba.slice(0, 3).map(v => v.toFixed(4)).join(' · ')}</code><span className="muted">RGB · float</span></> : <span className="muted">Hover over the image to inspect its values</span>}<button className={pinned ? 'active' : ''} onClick={() => { if (pixel) pinnedPosition.current = { x: pixel.x, y: pixel.y }; setPinned(!pinned) }} disabled={!pixel && !pinned}>{pinned ? 'Unpin' : 'Pin'}</button></div>
-  </>
+  </div>
 }

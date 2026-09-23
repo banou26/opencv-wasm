@@ -5,7 +5,7 @@ import { regionalLayersGraph } from '../src/engine/regional-prefab'
 import { parseDocument, validateConnection } from '../src/engine/graph'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
-import { defaultParams } from '../src/engine/specs'
+import { defaultParams, specFor } from '../src/engine/specs'
 import type { NodeType, Params } from '../src/engine/types'
 import { runKernel } from '../src/worker/kernels'
 import { clonePayload, image, parameterValue, payloadBundle, type Payload } from '../src/worker/payload'
@@ -32,6 +32,7 @@ const step = (type: NodeType, params: Params = {}) => ({ key: 'test', node: { id
 test('regional prefab has real staged contracts and only inspectors depend on Time', () => {
   const doc = parseDocument(regionalLayersGraph())
   expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(8)
+  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(8)
   expect(doc.edges.filter(e => e.source === 'ntime').every(e => doc.nodes.find(n => n.id === e.target)?.type === 'regionalInspect')).toBe(true)
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(validateConnection(doc, { source: 'ndense', sourceHandle: 'out:regions:data', target: 'ngridview', targetHandle: 'in:regions:data' })).toBeNull()

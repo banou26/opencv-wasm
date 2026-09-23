@@ -9,3 +9,6 @@ test-results/
 public/runtime/
 public/samples.json
 src/wasm.generated.json
+!/vendor/
+/vendor/*
+!/vendor/cadence-regional/

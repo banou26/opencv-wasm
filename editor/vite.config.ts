@@ -23,7 +23,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [react({ jsxImportSource: '@emotion/react' })],
   build: { target: 'esnext', assetsInlineLimit: 0 },
   worker: { format: 'es', plugins: () => [nativeRuntime()] },
-  optimizeDeps: { exclude: ['@banou/opencv-wasm'] },
+  resolve: { dedupe: ['@banou/opencv-wasm'] },
+  optimizeDeps: { exclude: ['@banou/opencv-wasm', 'cadence'] },
   test: { include: ['tests/**/*.test.ts'] },
   lint: { rules: { 'no-var': 'error', 'prefer-const': 'error' } },
 }))

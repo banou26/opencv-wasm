@@ -1,0 +1,24 @@
+{
+  "generator": "npm run sync:cadence",
+  "sourceProject": "cadence",
+  "files": {
+    "src/regional.ts": "3365dae602d930832d0b155f9710fe24065cfe6caf71628238789d5d9c8c16b1",
+    "regional.js": "176688723fd31eb87e6443615caec26220bea93a925436d234018a596de044dd",
+    "regional.d.ts": "18b54bbb8b82abf200e521585ad438e3397bace654d5c18eaca79d9a1faf08b6",
+    "src/regions.ts": "08d844319e32efa02c91ebcb1c451fe4e112a182af9c4f6f0dfb3599db24351e",
+    "regions.js": "13d619bd672b323daf34fe163877a93b75401f89ecb3e0f644dc49d20e6c0893",
+    "regions.d.ts": "aa868784b854183494ae8f46a681dba464684666b70e2c5171d1d4cb0a522327",
+    "src/flow.ts": "a85617b5f2d1542f5893e47499db54f933dcc3c2a6dc2c9d8eda3265cf5f5018",
+    "flow.js": "72f64679e82a43b625678b029598f8b1820f0a0a486e8feb36d7dbb5bf5d2c83",
+    "flow.d.ts": "33b4a9903eed43790672542918d8ca4c94009523aa558607c4946e63d17a09cf",
+    "src/timing.ts": "c24c317cd487763240856dc746392e45714975d87abc926f64932d0a2a0d4dfa",
+    "timing.js": "23405d31cd47f1c6cd0fd352da539ed507ff1da6746c431b247cd196a143cf9f",
+    "timing.d.ts": "acd2b6114a1031662d996541ced57a3e55fbc3c46d790790279c9c8c28be15c7",
+    "src/regional-types.ts": "b3fb9e70e6ea8445b22237af5c5e59fc5dc79b134438eed9a9f90937f36d1771",
+    "regional-types.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+    "regional-types.d.ts": "2678a2deef7a336d3a14adea47faf9a2cfe276a0c2a8a1f73b4f0cfd94dbb0ca",
+    "src/types.ts": "ef29558e2f4aeb7979327a61be39595e994f758afcc2ab8b8a4b9b3b44f19d95",
+    "types.js": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+    "types.d.ts": "da45b4127c69894bb3f22f78f75a0a1145cdf1b9bf892985fb44113d1db7289e"
+  }
+}

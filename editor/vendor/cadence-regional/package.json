@@ -1,0 +1,15 @@
+{
+  "name": "cadence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./regional": {
+      "types": "./regional.d.ts",
+      "default": "./regional.js"
+    }
+  },
+  "peerDependencies": {
+    "@banou/opencv-wasm": "0.0.6"
+  }
+}

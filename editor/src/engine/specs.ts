@@ -50,7 +50,7 @@ export const SPECS = Object.fromEntries([...Object.values(BASE), ...CATALOG, ...
 /** Resolve a custom node against the project library, or its explicit interface context. */
 export const specFor = (node: GraphNode, doc: GraphDocument): NodeSpec => {
   if (node.type === 'regionalInspect') {
-    const titles: Record<string, string> = { source: 'Scene Source', flow: 'Dense Motion', validity: 'Motion Validity', cells: 'Motion Cells', tracks: 'Motion Groups', events: 'Drawing Events', timeline: 'Timing Timeline', review: 'Regional Review' }
+    const titles: Record<string, string> = { source: 'Scene Source', flow: 'Dense Motion', validity: 'Motion Validity', cells: 'Motion Cells', tracks: 'Motion Groups', families: 'Motion Families', velocities: 'Velocity Histories', events: 'Drawing Events', timeline: 'Timing Timeline', review: 'Regional Review' }
     return { ...SPECS.regionalInspect, title: `Inspect ${titles[String(node.params.view)] ?? 'Regional Evidence'}` }
   }
   if (node.type === 'group') {

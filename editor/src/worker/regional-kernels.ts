@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -19,7 +19,7 @@ export const sceneGeometry = (sourceWidth: number, sourceHeight: number, first: 
 
 export const regionalKernel = async (step: Step, inputs: Record<string, Payload>, sourceById: (asset: string) => VideoSource | undefined, cancelled: () => boolean): Promise<Bundle<Payload> | undefined> => {
   const type = step.node.type
-  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalTiming', 'regionalInspect'].includes(type)) return undefined
+  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalInspect'].includes(type)) return undefined
   const checkpoint = async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)); if (cancelled()) throw new Error('Evaluation cancelled') }
   const params = step.node.params
   if (type === 'sceneRange') {
@@ -47,7 +47,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
   const input = inputs['in:regions:data']
   if (input?.kind !== 'regions') throw new Error('Regional analysis data is required')
   const data = input.data
-  const requireStage = (stage: RegionalData['stage']) => { if (data.stage !== stage) throw new Error(`This stage requires ${stage} data, received ${data.stage}`) }
+  const requireStage = (stage: RegionalData['stage']) => { if (data.stage !== stage && !(stage === 'tracks' && data.stage === 'history')) throw new Error(`This stage requires ${stage} data, received ${data.stage}`) }
   let output: RegionalData
   if (type === 'regionalMotion') {
     requireStage('scene')
@@ -78,6 +78,9 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
       frames.push(analyzeRegionalTimingFrame(data.scene.frames[i]!, data.scene.frames[i + 1]!, data.sequence!.pairs[i]!, observations.observations, { ...(i > 0 ? { previous: { pair: data.sequence!.pairs[i - 1]!, observations: data.tracks!.frames[i - 1]!.observations } } : {}), groupIds }))
     }
     output = { ...data, stage: 'timing', analysis: finishRegionalTiming(frames, groupIds) }
+  } else if (type === 'regionalHistory') {
+    requireStage('tracks'); await checkpoint()
+    output = { ...data, stage: 'history', families: groupMotionHistories(data.tracks!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap) }) }
   } else {
     const raster = renderRegional(data, Number(params.frame), String(params.view) as RegionalView, Number(params.cellSize), Number(params.groupPage))
     using rgba = matFromArray(raster.height, raster.width, CV_8UC4, raster.pixels)

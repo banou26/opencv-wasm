@@ -188,7 +188,8 @@ finished layer extractor. Its ordinary typed nodes expose each actual stage:
 
 ```text
 Scene Range -> Scene Dense Motion -> Multiscale Motion Cells
-            -> Whole-Scene Motion Groups -> Regional Drawing Events
+            -> Whole-Scene Motion Groups -> Motion-History Grouping
+            -> Regional Drawing Events
 ```
 
 Scene Range decodes a fixed inclusive range, independent of scrubbing. The prefab
@@ -197,12 +198,15 @@ shorter range. Use a single shot: cuts are not automatically segmented here.
 The default longest side is 320 pixels, adjustable up to 640. A range exceeding
 500 frames or ten million analysis pixels is refused before decoding.
 
-Eight separate inspector branches expose source pixels, motion, validity, cells,
-groups, drawing events, a timing timeline and the four-panel review. Only these
+Ten separate inspector branches expose source pixels, motion, validity, cells,
+original groups, motion families, velocity histories, drawing events, a timing
+timeline and the four-panel review. Only these
 inspectors connect to Time. Analysis results are cached by the clip, range and
 parameters, not accumulated as frames are visited. The final source frame has no
 outgoing pair. Memory accounting includes retained JavaScript arrays as well as
-native matrices; the usual cache budget still applies.
+native matrices; the usual cache budget still applies. Shared data is counted
+conservatively per cached stage, so larger scenes can evict intermediates and
+recompute them when switching inspector branches.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
@@ -213,15 +217,40 @@ native matrices; the usual cache budget still applies.
 - **Groups:** colored cells share supported motion histories. Co-moving objects,
   texture holes, occlusion, brief tracks and subcell boundaries remain unresolved.
   A colored cell is not a pixel-accurate silhouette or a recovered layer.
+- **Motion families:** disconnected original regions share a color only when
+  their velocities agree at matching times, not merely on average. Default
+  tolerance is 0.75 analysis pixels per source pair with at least four shared
+  pairs. The comparison uses measured regional velocity summaries, not a
+  per-pixel error bound. Every pair of constituent regions must agree, preventing a compatible
+  bridge from merging contradictory or unobserved histories. Acceleration and
+  reversal are allowed when simultaneous velocities still agree. The union
+  contains exactly the original supported cells; sky and texture holes are not
+  filled. Matching motion is not proof of identical layer ownership. The
+  Evidence summary lists full membership and currently observed members.
+- **Velocity histories:** teal is horizontal velocity, amber is vertical
+  velocity; each row is a motion family and each column a source-frame pair.
+  Group page selects eight families, with a common vertical scale for that page.
+  Unobserved values remain gaps, not zero motion. The summary contains full
+  numeric histories and membership. Family velocities summarize the currently
+  observed members, not an inferred trajectory through missing data.
 - **Events:** green is held, red is changed, gray is unknown. The first pair is
   intentionally unknown without independent prior support. Drawing comparison
   uses a regional translation, not a deforming optical-flow warp.
 - **Timeline:** rows are motion-group IDs; columns are source-frame pairs.
-  Timing group page selects 32 rows at a time. The Evidence summary output
+  Group page selects 32 rows at a time. The Evidence summary output
   includes complete H/C/? patterns, absolute change frames and completed hold
   lengths. Unknown intervals break holds; no on-2s/on-3s cadence is imposed.
-- **Review:** top left source, top right flow, bottom left groups, bottom right
-  drawing events. These analysis-resolution diagnostics are not artwork exports.
+- **Review:** top left source, top right flow, bottom left motion families,
+  bottom right original-region drawing events. Family grouping never merges
+  drawing-event identities. Existing saved graphs without Motion-History
+  Grouping retain the old motion-group panel and continue to run. These
+  analysis-resolution diagnostics are not artwork exports.
+
+`npm run typecheck` and `npm test` cover stage contracts, shared-core parity,
+unchanged per-region timing, preserved support and unknown intervals. With the
+editor server running, `node scripts/regional-layers-smoke.mjs` loads real
+footage, selects both new inspectors, checks their summaries, and writes the
+current desktop/mobile, family and velocity screenshots to `build-smoke/`.
 
 The core is a generated, committed browser-safe snapshot from Cadence under
 `vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,

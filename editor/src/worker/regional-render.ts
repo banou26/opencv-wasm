@@ -2,7 +2,7 @@ import type { MotionCell, DrawingEvent } from 'cadence/regional'
 import { regionalFineGrid } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
-export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'events' | 'timeline' | 'review'
+export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'families' | 'velocities' | 'events' | 'timeline' | 'review'
 export type RegionalRaster = { width: number; height: number; pixels: Uint8Array; summary: string; labels?: { x: number; y: number; text: string }[] }
 const color = (id: number): [number, number, number] => {
   const h = (id * .61803398875) % 1
@@ -21,7 +21,9 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   if (view !== 'source' && !data.sequence) throw new Error('This view requires dense motion data')
   if ((view === 'tracks' || view === 'events' || view === 'review') && !data.tracks) throw new Error('This view requires whole-scene tracks')
   if ((view === 'events' || view === 'review' || view === 'timeline') && !data.analysis) throw new Error('This view requires drawing events')
+  if ((view === 'families' || view === 'velocities') && !data.families) throw new Error('This view requires motion-history grouping')
   if (view === 'timeline') return renderTiming(data, sourceFrame, groupPage)
+  if (view === 'velocities') return renderVelocities(data, sourceFrame, groupPage)
   const sourcePixels = (): Uint8Array => {
     const result = new Uint8Array(width * height * 4)
     for (let i = 0; i < width * height; i++) {
@@ -36,7 +38,7 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   const cellPaint = (pixels: Uint8Array, cell: MotionCell, rgb: readonly number[], opacity: number) => {
     for (let y = cell.y; y < cell.y + cell.height; y++) for (let x = cell.x; x < cell.x + cell.width; x++) paint(pixels, y * width + x, rgb, opacity)
   }
-  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline'>): Uint8Array => {
+  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities'>): Uint8Array => {
     const pixels = sourcePixels()
     if (mode === 'source') return pixels
     if (mode === 'flow' || mode === 'validity') {
@@ -60,7 +62,7 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
       }
     } else if (pair) {
       const grid = regionalFineGrid(pair)
-      const observations = mode === 'events' ? data.analysis!.frames[index]?.observations : data.tracks!.frames[index]?.observations
+      const observations = mode === 'events' ? data.analysis!.frames[index]?.observations : mode === 'families' ? data.families!.frames[index]?.observations : data.tracks!.frames[index]?.observations
       for (const observation of observations ?? []) {
         const event = 'event' in observation ? observation.event as DrawingEvent : undefined
         const rgb = mode === 'events' ? event?.status === 'held' ? [61, 211, 139] : event?.status === 'changed' ? [246, 87, 72] : [150, 150, 165] : color(observation.id)
@@ -71,15 +73,58 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   }
   const valid = pair ? pair.flow.valid.reduce((sum, v) => sum + Number(v !== 0), 0) : 0
   const events = data.analysis?.frames[index]?.observations ?? []
-  const summary = [`Source ${sourceFrame}${pair ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`, `${valid}/${width * height} supported flow pixels`, ...events.map(o => `Group ${o.id}: ${o.event.status}; ${o.event.reason}`)].join('\n')
+  const familySummary = data.families ? [
+    `${data.tracks!.groups.length} original regions -> ${data.families.families.length} motion families; support only, not silhouettes`,
+    ...data.families.families.map(family => {
+      const observed = data.families!.frames[index]?.observations.find(o => o.id === family.id)
+      return `Family ${family.id}: regions ${family.regionIds.join(', ')}; ${observed ? `present ${observed.regionIds.join(', ')}; dx ${observed.dx.toFixed(3)}, dy ${observed.dy.toFixed(3)} analysis px/pair` : 'unobserved in this pair'}`
+    }),
+  ] : []
+  const summary = [`Source ${sourceFrame}${pair ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`, `${valid}/${width * height} supported flow pixels`, ...familySummary, ...events.map(o => `Group ${o.id}: ${o.event.status}; ${o.event.reason}`)].join('\n')
   if (view !== 'review') return { width, height, pixels: panel(view), summary }
   const pixels = new Uint8Array(width * height * 16)
-  const modes = ['source', 'flow', 'tracks', 'events'] as const
+  const modes = ['source', 'flow', data.families ? 'families' : 'tracks', 'events'] as const
   for (let p = 0; p < modes.length; p++) {
     const part = panel(modes[p]!), ox = p % 2 * width, oy = Math.floor(p / 2) * height
     for (let y = 0; y < height; y++) pixels.set(part.subarray(y * width * 4, (y + 1) * width * 4), ((y + oy) * width * 2 + ox) * 4)
   }
-  return { width: width * 2, height: height * 2, pixels, summary: `Top: source / flow. Bottom: motion groups / drawing events.\n${summary}` }
+  return { width: width * 2, height: height * 2, pixels, summary: `Top: source / flow. Bottom: ${data.families ? 'motion families / original-region drawing events' : 'motion groups / drawing events'}.\n${summary}` }
+}
+
+/** Measured velocities only: gaps are left blank, never filled with zero or joined. */
+const renderVelocities = (data: RegionalData, sourceFrame: number, page: number): RegionalRaster => {
+  const grouped = data.families!, pageSize = 8, families = grouped.families.slice(page * pageSize, (page + 1) * pageSize)
+  if (!Number.isSafeInteger(page) || page < 0 || page > 0 && !families.length) throw new RangeError('Group page is outside the observed motion families')
+  const count = data.scene.frames.length - 1, column = Math.max(2, Math.min(12, Math.floor(960 / count)))
+  const left = 70, top = 42, row = 64, width = Math.max(384, left + count * column + 8), height = Math.max(128, top + families.length * row + 28)
+  const pixels = new Uint8Array(width * height * 4)
+  for (let i = 0; i < width * height; i++) pixels.set([24, 25, 27, 255], i * 4)
+  const observations = grouped.frames.map(frame => new Map(frame.observations.map(observation => [observation.id, observation])))
+  const visible = new Set(families.map(family => family.id))
+  const scale = Math.max(1, ...grouped.frames.flatMap(frame => frame.observations.filter(observation => visible.has(observation.id)).flatMap(observation => [Math.abs(observation.dx), Math.abs(observation.dy)])))
+  const labels = [{ x: left, y: 16, text: `dx teal / dy amber | +/-${scale.toFixed(2)} analysis px/pair` }, { x: left, y: 32, text: `${data.scene.first} -> ${data.scene.last} | blank = unobserved` }]
+  const lines = [`Family page ${page}: ${families.length}/${grouped.families.length} motion families`, 'dx,dy are analysis pixels per source pair; ? is unobserved, not zero.']
+  for (const [r, family] of families.entries()) {
+    const baseline = top + r * row + row / 2
+    labels.push({ x: 4, y: baseline + 4, text: `F${family.id}` })
+    const history: string[] = []
+    for (let f = 0; f < count; f++) {
+      const observation = observations[f]?.get(family.id), x = left + f * column
+      for (let xx = x; xx < x + column; xx++) pixels.set([57, 60, 63, 255], (baseline * width + xx) * 4)
+      history.push(observation ? `${f + data.scene.first}:${observation.dx.toFixed(3)},${observation.dy.toFixed(3)}` : `${f + data.scene.first}:?`)
+      if (!observation) continue
+      for (const [value, rgb] of [[observation.dy, [240, 178, 72]], [observation.dx, [66, 220, 183]]] as const) {
+        const y = baseline - Math.round(value / scale * (row / 2 - 8))
+        for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x; xx < x + Math.max(1, column - 1); xx++) pixels.set([...rgb, 255], (yy * width + xx) * 4)
+      }
+    }
+    lines.push(`F${family.id}: regions ${family.regionIds.join(', ')}`, history.join(' | '))
+  }
+  const cursor = sourceFrame - data.scene.first
+  if (cursor < count) for (let y = top; y < top + families.length * row; y++) pixels.set([255, 255, 255, 255], (y * width + left + cursor * column) * 4)
+  labels.push({ x: 4, y: height - 9, text: `Frame ${sourceFrame} | every member must agree over shared pairs` })
+  if (!families.length) labels.push({ x: left, y: 68, text: 'No supported motion families' })
+  return { width, height, pixels, labels, summary: lines.join('\n') }
 }
 
 /** Unknown boundaries break completed holds; no forced on-2s or on-3s classification. */

@@ -78,7 +78,7 @@ try {
   const project = await page.evaluate(async () => JSON.parse(await (
     await (await window.regionalSmokeFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
   const stages = project.nodes.map(node => node.type)
-  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalTiming', 'regionalInspect']) {
+  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalInspect']) {
     assert.ok(stages.includes(stage), `Regional prefab is missing its editable ${stage} stage`)
   }
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
@@ -90,6 +90,7 @@ try {
   assert.match(summary, /Source 6 -> 7/)
   assert.match(summary, /\d+\/\d+ supported flow pixels/)
   assert.match(summary, /Group \d+: (?:held|changed|unknown);/)
+  assert.match(summary, /\d+ original regions -> \d+ motion families/)
   const last = Number(await page.getByLabel('Render last frame').inputValue())
   await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(last)))
   assert.match(await page.locator('.value-preview pre').innerText(), /final frame, no outgoing pair/)
@@ -105,6 +106,23 @@ try {
   assert.ok(patterns.length > 0 && patterns.every(pattern => pattern.length === last), 'Every timeline row must cover all source pairs')
   await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
   await page.screenshot({ path: resolve(directory, 'regional-layers-timing.png') })
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Motion Families' }).click())
+  await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
+  const familySummary = await page.locator('.value-preview pre').innerText()
+  assert.match(familySummary, /Family \d+: regions \d+/)
+  assert.match(familySummary, /analysis px\/pair/)
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  await page.screenshot({ path: resolve(directory, 'regional-layers-families.png') })
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Velocity Histories' }).click())
+  await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
+  const velocitySummary = await page.locator('.value-preview pre').innerText()
+  assert.match(velocitySummary, /dx,dy are analysis pixels per source pair/)
+  assert.match(velocitySummary, /F\d+: regions \d+/)
+  assert.match(velocitySummary, /6:-?\d+\.\d+,-?\d+\.\d+/)
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  await page.screenshot({ path: resolve(directory, 'regional-layers-velocities.png') })
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
   const canvas = page.locator('.image-viewport canvas').filter({ visible: true }).first()
   await canvas.waitFor({ state: 'visible' })
@@ -144,8 +162,8 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [])
   await writeFile(resolve(directory, 'regional-layers-smoke.json'), JSON.stringify({
-    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
-    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png'],
+    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, familySummary, velocitySummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
+    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png', 'regional-layers-families.png', 'regional-layers-velocities.png'],
   }, null, 2) + '\n')
   console.log(`PASS: regional layers prefab processed real footage in ${processingSeconds.toFixed(2)} s; nonblank desktop/mobile previews`)
 } finally {

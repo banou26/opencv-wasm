@@ -648,6 +648,14 @@ validity masks are useful checks, not a probability of correctness.
 
 ## Explicit values and frame flow
 
+**Frame Layout** joins two frame inputs, A then B, horizontally or vertically.
+It copies native pixels without resampling or blending. The canvas sums sizes
+along the selected direction and uses the larger size across it. Inputs align
+at the top or left edge; unused space is transparent black. Chain two horizontal
+layouts into one vertical layout for a four-panel comparison. Each intermediate
+frame remains independently inspectable, and **Resize Frame** is explicit when
+different input sizes should be scaled instead of padded.
+
 ```text
 Video Source.Video ────────────────→ Extract Video Frame.Video
 Time.Frame index (or Number) ──────→ Extract Video Frame.Frame index

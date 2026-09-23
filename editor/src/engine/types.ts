@@ -3,7 +3,7 @@ export type PortType = 'frame' | 'video' | 'regions' | 'flow' | 'motion' | 'scal
 /** Native operations, typed values and reusable graph interfaces. */
 export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 'translateX' | 'translateY' | 'multiply' | 'constant' | 'group' | 'groupInput' | 'groupOutput' | 'output' | 'time' | 'offset' | 'extractFrame' | 'threshold' | 'composite'
   | 'clip' | 'readFrame' | 'videoInfo' | 'imageInfo' | 'text' | 'boolean' | 'vector' | 'rectangle' | 'splitVector' | 'splitRectangle' | 'math' | 'compare' | 'logic' | 'selectNumber'
-  | 'coverage' | 'crop' | 'paste' | 'resize' | 'rotate' | 'flip' | 'boxBlur' | 'medianBlur' | 'bilateral' | 'sobel' | 'scharr' | 'laplacian' | 'canny' | 'normalize' | 'invert' | 'brightness' | 'adaptiveThreshold' | 'erode' | 'dilate' | 'morphology' | 'equalize' | 'clahe' | 'distanceTransform'
+  | 'coverage' | 'crop' | 'paste' | 'frameLayout' | 'resize' | 'rotate' | 'flip' | 'boxBlur' | 'medianBlur' | 'bilateral' | 'sobel' | 'scharr' | 'laplacian' | 'canny' | 'normalize' | 'invert' | 'brightness' | 'adaptiveThreshold' | 'erode' | 'dilate' | 'morphology' | 'equalize' | 'clahe' | 'distanceTransform'
   | 'frameList' | 'pyrDown' | 'pyrUp' | 'gaussianPyramid' | 'laplacianPyramid' | 'pyramidLevel' | 'reconstructPyramid' | 'addImages' | 'subtractImages' | 'multiplyImages' | 'blendImages' | 'channel' | 'mergeChannels' | 'magnitude' | 'phaseCorrelation' | 'makeRecord' | 'breakRecord'
   | 'farneback' | 'offsetFlow' | 'flowConsistency' | 'cornerStrength' | 'flowGrid' | 'drawFlow' | 'coordinates' | 'noise' | 'pixelMath'
   | 'sceneRange' | 'regionalMotion' | 'regionalPool' | 'regionalTracks' | 'regionalHistory' | 'regionalTiming' | 'regionalComplete' | 'regionalInspect'

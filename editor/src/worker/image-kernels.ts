@@ -17,7 +17,7 @@ const supported = new Set(['coverage', 'crop', 'paste', 'resize', 'rotate', 'fli
 /** Each image operation produces independent native storage; inputs remain immutable. */
 export const imageKernel = (step: Step, inputs: Record<string, Payload>) => {
   const { type, params: p } = step.node
-  if (!supported.has(type)) return null
+  if (!supported.has(type) && type !== 'frameLayout') return null
   const out = new Mat(), allocated: Mat[] = [out]
   const mat = () => { const value = new Mat(); allocated.push(value); return value }
   let range: Frame['range'] = 'unit'
@@ -60,6 +60,16 @@ export const imageKernel = (step: Step, inputs: Record<string, Payload>) => {
           pyrUp(out, expanded, { width: band.mat.cols, height: band.mat.rows }); add(expanded, band.mat, out)
         }
       }
+    } else if (type === 'frameLayout') {
+      const a = image(inputs['in:frame:a']), b = image(inputs['in:frame:b'])
+      if (p.direction !== 'horizontal' && p.direction !== 'vertical') throw new Error('Frame layout direction must be horizontal or vertical')
+      const horizontal = p.direction === 'horizontal'
+      const { width, height } = dimensions(horizontal ? a.mat.cols + b.mat.cols : Math.max(a.mat.cols, b.mat.cols), horizontal ? Math.max(a.mat.rows, b.mat.rows) : a.mat.rows + b.mat.rows)
+      out.create(height, width, a.mat.type()); out.setTo([0, 0, 0, 0])
+      using first = out.roi({ x: 0, y: 0, width: a.mat.cols, height: a.mat.rows })
+      using second = out.roi({ x: horizontal ? a.mat.cols : 0, y: horizontal ? 0 : a.mat.rows, width: b.mat.cols, height: b.mat.rows })
+      a.mat.copyTo(first); b.mat.copyTo(second)
+      range = a.range === 'signed' || b.range === 'signed' ? 'signed' : 'unit'
     } else if (type === 'crop') {
       const frame = image(inputs['in:frame:image']), rect = inputs['in:rect:region']
       if (rect?.kind !== 'rect') throw new Error('Connect a Rectangle to Region')

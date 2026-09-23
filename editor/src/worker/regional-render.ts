@@ -1,4 +1,4 @@
-import type { MotionCell, DrawingEvent } from 'cadence/regional'
+import type { AnalysisFrame, MotionCell, DrawingEvent } from 'cadence/regional'
 import { regionalFineGrid } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
@@ -14,37 +14,49 @@ const hue = (h: number): [number, number, number] => {
 }
 
 /** Diagnostic pixels are separate from source artwork and never used as layer alpha. */
-export const renderRegional = (data: RegionalData, sourceFrame: number, view: RegionalView, cellSize: number, groupPage = 0): RegionalRaster => {
+export const renderRegional = (data: RegionalData, sourceFrame: number, view: RegionalView, cellSize: number, groupPage = 0, displaySource?: AnalysisFrame): RegionalRaster => {
   const index = sourceFrame - data.scene.first, source = data.scene.frames[index]
   if (!Number.isSafeInteger(sourceFrame) || !source) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
-  const { width, height } = source, pair = data.sequence?.pairs[index]
+  const { width: analysisWidth, height: analysisHeight } = source, pair = data.sequence?.pairs[index]
   if (view !== 'source' && !data.sequence) throw new Error('This view requires dense motion data')
   if ((view === 'tracks' || view === 'events' || view === 'review') && !data.tracks) throw new Error('This view requires whole-scene tracks')
   if ((view === 'events' || view === 'review' || view === 'timeline') && !data.analysis) throw new Error('This view requires drawing events')
   if ((view === 'families' || view === 'velocities') && !data.families) throw new Error('This view requires motion-history grouping')
   if (view === 'timeline') return renderTiming(data, sourceFrame, groupPage)
   if (view === 'velocities') return renderVelocities(data, sourceFrame, groupPage)
+  const displayed = displaySource ?? source, { width, height } = displayed
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || displayed.data.length !== width * height * 3) throw new RangeError('Display source must contain a complete BGR image')
   const sourcePixels = (): Uint8Array => {
     const result = new Uint8Array(width * height * 4)
     for (let i = 0; i < width * height; i++) {
-      result[i * 4] = source.data[i * 3 + 2]!; result[i * 4 + 1] = source.data[i * 3 + 1]!; result[i * 4 + 2] = source.data[i * 3]!; result[i * 4 + 3] = 255
+      result[i * 4] = displayed.data[i * 3 + 2]!; result[i * 4 + 1] = displayed.data[i * 3 + 1]!; result[i * 4 + 2] = displayed.data[i * 3]!; result[i * 4 + 3] = 255
     }
     return result
   }
+  // Half-open analysis rectangles share exact display boundaries, even at odd scale ratios.
+  const paintRect = (pixels: Uint8Array, x0: number, y0: number, x1: number, y1: number, rgb: readonly number[], opacity: number) => {
+    const left = Math.max(0, Math.ceil(x0 * width / analysisWidth)), right = Math.min(width, Math.ceil(x1 * width / analysisWidth))
+    const top = Math.max(0, Math.ceil(y0 * height / analysisHeight)), bottom = Math.min(height, Math.ceil(y1 * height / analysisHeight))
+    for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+      const i = (y * width + x) * 4
+      for (let c = 0; c < 3; c++) pixels[i + c] = Math.round(pixels[i + c]! * (1 - opacity) + rgb[c]! * opacity)
+      pixels[i + 3] = 255
+    }
+  }
   const paint = (pixels: Uint8Array, i: number, rgb: readonly number[], opacity = 1) => {
-    for (let c = 0; c < 3; c++) pixels[i * 4 + c] = Math.round(pixels[i * 4 + c]! * (1 - opacity) + rgb[c]! * opacity)
-    pixels[i * 4 + 3] = 255
+    const x = i % analysisWidth, y = Math.floor(i / analysisWidth)
+    paintRect(pixels, x, y, x + 1, y + 1, rgb, opacity)
   }
   const cellPaint = (pixels: Uint8Array, cell: MotionCell, rgb: readonly number[], opacity: number) => {
-    for (let y = cell.y; y < cell.y + cell.height; y++) for (let x = cell.x; x < cell.x + cell.width; x++) paint(pixels, y * width + x, rgb, opacity)
+    paintRect(pixels, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, rgb, opacity)
   }
   const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities'>): Uint8Array => {
     const pixels = sourcePixels()
     if (mode === 'source') return pixels
     if (mode === 'flow' || mode === 'validity') {
-      for (let i = 0; i < width * height; i++) {
+      for (let i = 0; i < analysisWidth * analysisHeight; i++) {
         if (!pair?.flow.valid[i]) {
-          const bright = ((i % width >> 3) + (Math.floor(i / width) >> 3)) % 2
+          const bright = ((i % analysisWidth >> 3) + (Math.floor(i / analysisWidth) >> 3)) % 2
           paint(pixels, i, bright ? [71, 49, 67] : [40, 31, 40]); continue
         }
         const dx = pair.flow.vectors[i * 2]!, dy = pair.flow.vectors[i * 2 + 1]!
@@ -57,8 +69,8 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
       for (const cell of grid?.cells ?? []) {
         const rgb = cell.coherent && cell.dx !== null && cell.dy !== null ? hue((Math.atan2(cell.dy, cell.dx) / (2 * Math.PI) + 1) % 1) : cell.accepted ? [230, 170, 40] : [90, 65, 90]
         cellPaint(pixels, cell, rgb, .55)
-        for (let x = cell.x; x < cell.x + cell.width; x++) paint(pixels, cell.y * width + x, [20, 20, 20], .6)
-        for (let y = cell.y; y < cell.y + cell.height; y++) paint(pixels, y * width + cell.x, [20, 20, 20], .6)
+        for (let x = cell.x; x < cell.x + cell.width; x++) paint(pixels, cell.y * analysisWidth + x, [20, 20, 20], .6)
+        for (let y = cell.y; y < cell.y + cell.height; y++) paint(pixels, y * analysisWidth + cell.x, [20, 20, 20], .6)
       }
     } else if (pair) {
       const grid = regionalFineGrid(pair)
@@ -80,7 +92,7 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
       return `Family ${family.id}: regions ${family.regionIds.join(', ')}; ${observed ? `present ${observed.regionIds.join(', ')}; dx ${observed.dx.toFixed(3)}, dy ${observed.dy.toFixed(3)} analysis px/pair` : 'unobserved in this pair'}`
     }),
   ] : []
-  const summary = [`Source ${sourceFrame}${pair ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`, `${valid}/${width * height} supported flow pixels`, ...familySummary, ...events.map(o => `Group ${o.id}: ${o.event.status}; ${o.event.reason}`)].join('\n')
+  const summary = [`Source ${sourceFrame}${pair ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`, `${width} x ${height} display / ${analysisWidth} x ${analysisHeight} analysis`, `${valid}/${analysisWidth * analysisHeight} supported flow pixels`, ...familySummary, ...events.map(o => `Group ${o.id}: ${o.event.status}; ${o.event.reason}`)].join('\n')
   if (view !== 'review') return { width, height, pixels: panel(view), summary }
   const pixels = new Uint8Array(width * height * 16)
   const modes = ['source', 'flow', data.families ? 'families' : 'tracks', 'events'] as const

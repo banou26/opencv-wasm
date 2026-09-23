@@ -191,6 +191,38 @@ test('regional payload cloning owns arrays and unsupported flow is not stationar
   expect(raster.pixels[0]).toBeLessThan(100)
 })
 
+test('larger displays preserve source detail and map discrete evidence without gaps or smoothing', () => {
+  const width = 17, height = 13, small = { width, height, data: new Uint8Array(width * height * 3).fill(110) }
+  const data: RegionalData = { stage: 'pooled', scene: { asset: 'clip', first: 0, last: 1, sourceWidth: 35, sourceHeight: 27, frames: [small, small] } }
+  const cells = [{ x: 0, y: 0, width: 8, height: 8 }, { x: 16, y: 8, width: 1, height: 5 }].map(cell => ({ ...cell, samples: cell.width * cell.height, accepted: cell.width * cell.height, coverage: 1, dx: 0, dy: 0, spread: 0, coherent: true }))
+  const vectors = new Float32Array(width * height * 2), valid = new Uint8Array(width * height).fill(255)
+  vectors[0] = 4; valid[width * height - 1] = 0
+  data.sequence = { width, height, frameCount: 2, pairs: [{ frame: 0, grids: [{ cellSize: 8, columns: 3, rows: 2, cells }], flow: { width, height, vectors, valid, roundTrip: new Float32Array(width * height), pan: { dx: 0, dy: 0, response: 0, used: false } } }] }
+  const detailed: AnalysisFrame = { width: 35, height: 27, data: Uint8Array.from({ length: 35 * 27 * 3 }, (_, i) => i % 251) }
+  const before = structuredClone(data), source = renderRegional(data, 0, 'source', 8, 0, detailed)
+  const flow = renderRegional(data, 0, 'flow', 8), largeFlow = renderRegional(data, 0, 'flow', 8, 0, detailed)
+  const grid = renderRegional(data, 0, 'cells', 8, 0, detailed)
+  expect([source.width, source.height]).toEqual([35, 27])
+  expect(largeFlow.summary).toContain('35 x 27 display / 17 x 13 analysis')
+  expect(largeFlow.summary).toContain('220/221 supported flow pixels')
+  for (let y = 0; y < detailed.height; y++) for (let x = 0; x < detailed.width; x++) {
+    const pixel = y * detailed.width + x, ax = Math.floor(x * width / detailed.width), ay = Math.floor(y * height / detailed.height)
+    const rgb = [detailed.data[pixel * 3 + 2]!, detailed.data[pixel * 3 + 1]!, detailed.data[pixel * 3]!]
+    expect([...source.pixels.subarray(pixel * 4, pixel * 4 + 4)]).toEqual([...rgb, 255])
+    expect(largeFlow.pixels.subarray(pixel * 4, pixel * 4 + 4)).toEqual(flow.pixels.subarray((ay * width + ax) * 4, (ay * width + ax + 1) * 4))
+    const cell = cells.find(c => ax >= c.x && ax < c.x + c.width && ay >= c.y && ay < c.y + c.height)
+    const expected = rgb.map((value, channel) => {
+      if (!cell) return value
+      let result = Math.round(value * (1 - .55) + [255, 35, 35][channel]! * .55)
+      if (ay === cell.y) result = Math.round(result * .4 + 20 * .6)
+      if (ax === cell.x) result = Math.round(result * .4 + 20 * .6)
+      return result
+    })
+    expect([...grid.pixels.subarray(pixel * 4, pixel * 4 + 4)]).toEqual([...expected, 255])
+  }
+  expect(data).toEqual(before)
+})
+
 test('motion-family diagnostics preserve support, show membership and leave missing histories unknown', () => {
   const data = fixture(6), { width, height } = data.scene.frames[0]!
   const tracks: RegionalTracks = { width, height, frameCount: 6, cellSize: 8, tracks: [], groups: [{ id: 4, trackIds: [] }, { id: 9, trackIds: [] }], frames: Array.from({ length: 5 }, (_, frame) => ({ frame, observations: frame === 2 ? [] : [{ id: 4, cells: [0], dx: frame, dy: -frame, spread: 0 }, { id: 9, cells: [15], dx: frame, dy: -frame, spread: 0 }] })) }

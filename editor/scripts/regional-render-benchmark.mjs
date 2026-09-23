@@ -13,8 +13,13 @@ if (!source || process.argv.length !== 3) throw new Error('Usage: node scripts/r
 await access(source)
 const output = resolve(process.env.BENCH_OUTPUT ?? 'build-smoke/regional-render')
 const workers = Number(process.env.BENCH_WORKERS ?? 0), expectedHash = process.env.EXPECTED_HASH
+const displayMaxSide = process.env.BENCH_DISPLAY_MAX_SIDE === undefined ? undefined : Number(process.env.BENCH_DISPLAY_MAX_SIDE)
+const expectedWidth = process.env.EXPECTED_WIDTH === undefined ? undefined : Number(process.env.EXPECTED_WIDTH)
+const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : Number(process.env.EXPECTED_HEIGHT)
 assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
 if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH must be a decoded-video SHA256')
+if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
+for (const size of [expectedWidth, expectedHeight]) if (size !== undefined) assert.ok(Number.isSafeInteger(size) && size > 0, 'Expected image dimensions must be positive whole numbers')
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
 const freePort = () => new Promise(resolvePort => {
   const server = createServer()
@@ -43,6 +48,7 @@ try {
   await reachable(`${cdp}/json/version`)
   browser = await chromium.connectOverCDP(cdp)
   page = await browser.contexts()[0].newPage()
+  await page.setViewportSize({ width: 1600, height: 1100 })
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   await page.goto(new URL('/editor/', url).href)
@@ -61,7 +67,15 @@ try {
   await page.getByLabel('Prefab library').selectOption('regionalLayers')
   const opened = performance.now()
   await change(() => page.getByRole('button', { name: 'Open', exact: true }).click())
-  const analysisMs = performance.now() - opened, cache = await page.getByTestId('engine-status').innerText()
+  const analysisMs = performance.now() - opened
+  const displayControl = page.getByLabel('Inspect Regional Review Display max side', { exact: true })
+  if (displayMaxSide !== undefined && Number(await displayControl.inputValue()) !== displayMaxSide) {
+    assert.ok(displayMaxSide <= Number(await displayControl.getAttribute('max')), 'BENCH_DISPLAY_MAX_SIDE exceeds the editor limit')
+    await change(() => displayControl.fill(String(displayMaxSide)))
+  }
+  const display = Number(await displayControl.inputValue())
+  const analysis = Number(await page.getByLabel('Scene Range Analysis max side', { exact: true }).inputValue())
+  const cache = await page.getByTestId('engine-status').innerText()
   const sourceInfo = await page.locator('.clip-info').innerText()
   const dimensions = (await page.locator('.view-options code').innerText()).match(/^(\d+)\s*\u00d7\s*(\d+)$/)
   assert.ok(dimensions, 'Regional output must have known image dimensions')
@@ -75,7 +89,7 @@ try {
   await page.getByLabel('Render workers').selectOption(String(workers))
   const total = Number((await page.locator('.render-note').innerText()).match(/^(\d+) output frames/)?.[1])
   assert.ok(total > 0, 'Render controls must resolve a positive frame count')
-  console.log(JSON.stringify({ analysisMs, cache, sourceInfo, workers, total }))
+  console.log(JSON.stringify({ analysisMs, analysisMaxSide: analysis, displayMaxSide: display, cache, sourceInfo, workers, total }))
   const started = performance.now(), milestones = []
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   let previous = '', finished = false
@@ -97,14 +111,18 @@ try {
   const video = await movieFile(page, `${output}.mp4`)
   assert.equal(Number(video.nb_read_frames), total, 'All requested output frames must be encoded')
   assert.deepEqual([video.width, video.height], dimensions.slice(1).map(Number), 'Encoded dimensions must match the inspected output')
+  if (expectedWidth !== undefined) assert.equal(video.width, expectedWidth, 'Encoded width must match the requested benchmark expectation')
+  if (expectedHeight !== undefined) assert.equal(video.height, expectedHeight, 'Encoded height must match the requested benchmark expectation')
   assert.equal(video.r_frame_rate, '60/1', 'Encoded output must be 60 fps')
   const hash = execFileSync('ffmpeg', ['-v', 'error', '-i', `${output}.mp4`, '-map', '0:v:0', '-f', 'hash', '-hash', 'sha256', '-'], { encoding: 'utf8' }).trim().replace(/^SHA256=/, '')
   assert.match(hash, /^[a-f\d]{64}$/)
   if (expectedHash) assert.equal(hash, expectedHash.toLowerCase(), 'Decoded pixels must match the reference render')
+  await page.waitForFunction(() => document.querySelector('.frame-player')?.getAttribute('data-ready') === 'true')
+  await page.locator('.frame-player').screenshot({ path: `${output}.png` })
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [], 'Browser must not report errors')
   const report = {
-    status: 'passed', source: resolve(source), sourceInfo, analysisMs, cache, last, fps: 60, quality: 'high',
+    status: 'passed', source: resolve(source), sourceInfo, analysisMs, analysisMaxSide: analysis, displayMaxSide: display, cache, last, fps: 60, quality: 'high',
     requestedWorkers: workers, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs,
     total, width: video.width, height: video.height, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
   }

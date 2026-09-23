@@ -94,6 +94,8 @@ export const parseDocument = (value: unknown): GraphDocument => {
     if (!body || body.version !== 1 || !Array.isArray(body.nodes) || !Array.isArray(body.edges) || body.nodes.length > 100 || body.edges.length > 300) throw new Error('Invalid project format or graph too large')
     // Existing saved axis transforms predate the configurable border sampler.
     body = { ...body, nodes: body.nodes.map(n => n && (n.type === 'translateX' || n.type === 'translateY') && n.params && n.params.border === undefined ? { ...n, params: { ...n.params, border: 'constant' } } : n) }
+    // Regional displays formerly inherited the downsampled analysis dimensions.
+    body = { ...body, nodes: body.nodes.map(n => n?.type === 'regionalInspect' && n.params && n.params.displayMaxSide === undefined ? { ...n, params: { ...n.params, displayMaxSide: 960 } } : n) }
     const context = { ...body, definitions, dataTypes, interfaceId }, nodes = new Set<string>()
     for (const n of body.nodes) {
       if (!n || typeof n.id !== 'string' || !/^n[a-z0-9]+$/.test(n.id) || nodes.has(n.id) || !Object.hasOwn(SPECS, n.type)) throw new Error('Invalid or duplicate node')

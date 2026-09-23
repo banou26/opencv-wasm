@@ -221,6 +221,24 @@ shorter range. Use a single shot: cuts are not automatically segmented here.
 The default longest side is 320 pixels, adjustable up to 640. A range exceeding
 500 frames or ten million analysis pixels is refused before decoding.
 
+Inspectors have a separate **Display max side** control, defaulting to 960 pixels
+per panel, capped to the source dimensions. A 1920 x 1080 source therefore produces
+a 1920 x 1080 four-panel review instead of 640 x 360. The source, family and event
+panels use freshly decoded original artwork, not enlarged analysis pixels. Only
+the current displayed frame is decoded on an inspector cache miss; full-resolution
+frames are not retained for the whole scene. The flow and colored support still
+come from the analysis grid, mapped without smoothing or invented fine boundaries.
+Changing display size does not rerun scene analysis. Set it to 0 for the original
+analysis-sized view, or up to 1280 per panel for larger output within the bounded
+cache. Timing and velocity charts keep their own layout and do not decode video.
+Saved graphs automatically acquire the new default; explicit display settings
+are preserved. Re-render existing videos to use the new size.
+On the same 117-frame market shot, the source-backed HD review exported all 293
+frames at 60 fps in 6.33 seconds after 9.48 seconds of initial scene analysis.
+Auto used one worker, with 244 MiB estimated cache storage before export. The
+larger display adds per-frame decoding and rendering cost, not another full-scene
+analysis for every frame.
+
 Ten separate inspector branches expose source pixels, motion, validity, cells,
 original groups, motion families, velocity histories, drawing events, a timing
 timeline and the four-panel review. Only these
@@ -261,11 +279,14 @@ node scripts/regional-render-benchmark.mjs /path/to/single-shot.mp4
 
 It opens the regional prefab in an isolated browser, exports the full clip with
 Auto workers at 60 fps, and overwrites `build-smoke/regional-render.mp4` and
-`build-smoke/regional-render.json`. The report separates initial scene analysis
+`build-smoke/regional-render.json`, plus a review screenshot. The report separates initial scene analysis
 from rendering and verifies output frame count, dimensions, frame rate, browser
 errors and decoded-video SHA-256. Set `BENCH_LAST=4` for the short comparison,
 `BENCH_WORKERS=1` or `2` for explicit comparisons, `BENCH_OUTPUT` for an output
 filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
+`BENCH_DISPLAY_MAX_SIDE=0` reproduces the analysis-sized cache benchmark above;
+the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
+`EXPECTED_HEIGHT` can assert the encoded dimensions.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.

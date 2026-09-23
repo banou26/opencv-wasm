@@ -86,7 +86,7 @@ test('chart-only regional views do not decode the original video', async () => {
   const data = fixture(), source = mockVideo()
   data.sequence = { width: 4, height: 3, frameCount: 3, pairs: [] }
   data.analysis = { frames: [], groups: [] }
-  data.families = { width: 4, height: 3, frameCount: 3, cellSize: 8, options: { tolerance: .75, minimumOverlap: 4 }, families: [], frames: [], comparisons: [] }
+  data.families = { width: 4, height: 3, frameCount: 3, cellSize: 8, options: { tolerance: .75, minimumOverlap: 4, proximityWeight: .25 }, families: [], frames: [], comparisons: [] }
   for (const view of ['timeline', 'velocities']) {
     const bundle = await regionalKernel(step({ view }), input(data), () => source.video, () => false)
     try { expect(image(bundle!.outputs['out:frame:image']!).mat.cols).toBeGreaterThan(8) }

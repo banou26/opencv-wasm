@@ -96,6 +96,8 @@ export const parseDocument = (value: unknown): GraphDocument => {
     body = { ...body, nodes: body.nodes.map(n => n && (n.type === 'translateX' || n.type === 'translateY') && n.params && n.params.border === undefined ? { ...n, params: { ...n.params, border: 'constant' } } : n) }
     // Regional displays formerly inherited the downsampled analysis dimensions.
     body = { ...body, nodes: body.nodes.map(n => n?.type === 'regionalInspect' && n.params && n.params.displayMaxSide === undefined ? { ...n, params: { ...n.params, displayMaxSide: 960 } } : n) }
+    // Saved motion-history nodes predate the optional spatial proposal priority.
+    body = { ...body, nodes: body.nodes.map(n => n?.type === 'regionalHistory' && n.params && n.params.proximityWeight === undefined ? { ...n, params: { ...n.params, proximityWeight: .25 } } : n) }
     const context = { ...body, definitions, dataTypes, interfaceId }, nodes = new Set<string>()
     for (const n of body.nodes) {
       if (!n || typeof n.id !== 'string' || !/^n[a-z0-9]+$/.test(n.id) || nodes.has(n.id) || !Object.hasOwn(SPECS, n.type)) throw new Error('Invalid or duplicate node')

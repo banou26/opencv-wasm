@@ -287,6 +287,9 @@ filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
 `BENCH_DISPLAY_MAX_SIDE=0` reproduces the analysis-sized cache benchmark above;
 the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 `EXPECTED_HEIGHT` can assert the encoded dimensions.
+`BENCH_PROXIMITY_WEIGHT=0` disables the local prior for an exact motion-only
+control; the default uses the prefab's 0.25. The report records the selected
+weight and full family summary alongside the video hash.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
@@ -307,6 +310,17 @@ the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
   contains exactly the original supported cells; sky and texture holes are not
   filled. Matching motion is not proof of identical layer ownership. The
   Evidence summary lists full membership and currently observed members.
+  **Proximity weight** defaults to 0.25 (range 0 to 4): among already compatible
+  proposals, nearby support gets a weak ordering preference. The score is mean
+  velocity error minus `tolerance * weight * max(0, 1 - distanceCells / 4)`.
+  Distance uses symmetric median-nearest support separation over shared pairs,
+  measured in cell widths. At four cell widths and beyond the bonus is zero;
+  distant fragments can still merge. Proximity cannot override conflicting
+  velocities, missing overlap, or pairwise family consistency. Set weight to 0
+  for motion-only proposal ordering. Saved root and custom-node graphs acquire
+  the new default only when the parameter is absent; explicit values survive.
+  Changing it invalidates grouping and downstream results, not decoded scenes,
+  dense motion, cells or original tracks. This is not a silhouette refinement.
 - **Velocity histories:** teal is horizontal velocity, amber is vertical
   velocity; each row is a motion family and each column a source-frame pair.
   Group page selects eight families, with a common vertical scale for that page.

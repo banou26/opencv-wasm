@@ -3,6 +3,8 @@ export type MotionHistoryOptions = {
     /** Maximum simultaneous disagreement in analysis pixels per frame pair. */
     tolerance?: number;
     minimumOverlap?: number;
+    /** Local preference among motion-compatible proposals; default .25, zero restores motion-only ordering. */
+    proximityWeight?: number;
 };
 export type MotionHistoryComparison = {
     a: number;
@@ -11,6 +13,9 @@ export type MotionHistoryComparison = {
     error: number | null;
     maximum: number | null;
     status: 'compatible' | 'different' | 'insufficient-overlap';
+    /** Robust symmetric support separation in cell widths; null when unused. */
+    distanceCells: number | null;
+    score: number | null;
 };
 export type MotionHistoryGroups = {
     width: number;
@@ -35,6 +40,7 @@ export type MotionHistoryGroups = {
  * Join spatially disconnected regions using simultaneous whole-scene velocities.
  * Every pair of constituent histories must agree with enough shared evidence;
  * a compatible bridge cannot erase a contradiction or an unobserved interval.
+ * Spatial proximity orders eligible proposals; it never establishes compatibility.
  * Matching motion does not establish shared artwork or fill unsupported cells.
  */
 export declare function groupMotionHistories(tracks: RegionalTracks, options?: MotionHistoryOptions): MotionHistoryGroups;

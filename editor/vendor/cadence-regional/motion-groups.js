@@ -11,16 +11,39 @@ function weightedMedian(observations, coordinate) {
     }
     throw new Error('Cannot summarize an empty motion family');
 }
+function median(values) {
+    values.sort((a, b) => a - b);
+    return (values[(values.length - 1) >> 1] + values[values.length >> 1]) / 2;
+}
+/** Symmetric median nearest support, so one touching cell cannot anchor a whole background. */
+function supportDistance(one, other, x, y) {
+    const forward = new Float64Array(one.length).fill(Infinity), backward = new Float64Array(other.length).fill(Infinity);
+    for (let a = 0; a < one.length; a++)
+        for (let b = 0; b < other.length; b++) {
+            const dx = x[one[a]] - x[other[b]], dy = y[one[a]] - y[other[b]], squared = dx * dx + dy * dy;
+            if (squared < forward[a])
+                forward[a] = squared;
+            if (squared < backward[b])
+                backward[b] = squared;
+        }
+    const middle = (values) => {
+        values.sort();
+        return (Math.sqrt(values[(values.length - 1) >> 1]) + Math.sqrt(values[values.length >> 1])) / 2;
+    };
+    return Math.max(middle(forward), middle(backward));
+}
 /**
  * Join spatially disconnected regions using simultaneous whole-scene velocities.
  * Every pair of constituent histories must agree with enough shared evidence;
  * a compatible bridge cannot erase a contradiction or an unobserved interval.
+ * Spatial proximity orders eligible proposals; it never establishes compatibility.
  * Matching motion does not establish shared artwork or fill unsupported cells.
  */
 export function groupMotionHistories(tracks, options = {}) {
-    const tolerance = options.tolerance ?? .75, minimumOverlap = options.minimumOverlap ?? 4;
-    if (!Number.isFinite(tolerance) || tolerance <= 0 || !Number.isSafeInteger(minimumOverlap) || minimumOverlap < 2) {
-        throw new RangeError('Invalid motion-history tolerance or overlap');
+    const tolerance = options.tolerance ?? .75, minimumOverlap = options.minimumOverlap ?? 4, proximityWeight = options.proximityWeight ?? .25;
+    if (!Number.isFinite(tolerance) || tolerance <= 0 || !Number.isSafeInteger(minimumOverlap) || minimumOverlap < 2
+        || !Number.isFinite(proximityWeight) || proximityWeight < 0 || proximityWeight > 4) {
+        throw new RangeError('Invalid motion-history tolerance, overlap or proximity weight');
     }
     const { width, height, frameCount, cellSize } = tracks;
     if (![width, height, cellSize].every(n => Number.isSafeInteger(n) && n > 0)
@@ -55,6 +78,12 @@ export function groupMotionHistories(tracks, options = {}) {
             histories[index].set(frame.frame, observation);
         }
     }
+    const columns = Math.ceil(width / cellSize), x = new Float64Array(cellCount), y = new Float64Array(cellCount);
+    for (let cell = 0; cell < cellCount; cell++) {
+        const left = cell % columns * cellSize, top = Math.floor(cell / columns) * cellSize;
+        x[cell] = (left + Math.min(cellSize, width - left) / 2) / cellSize;
+        y[cell] = (top + Math.min(cellSize, height - top) / 2) / cellSize;
+    }
     const comparisons = [];
     const compatible = ids.map(() => new Set());
     for (let a = 0; a < ids.length; a++)
@@ -70,8 +99,22 @@ export function groupMotionHistories(tracks, options = {}) {
                 maximum = Math.max(maximum, error);
             }
             const status = overlap < minimumOverlap ? 'insufficient-overlap' : maximum > tolerance ? 'different' : 'compatible';
-            comparisons.push({ a: ids[a], b: ids[b], overlap, error: overlap ? sum / overlap : null,
-                maximum: overlap ? maximum : null, status });
+            let distanceCells = null;
+            if (status === 'compatible' && proximityWeight > 0) {
+                const distances = [];
+                for (const [frame, one] of histories[a]) {
+                    const other = histories[b].get(frame);
+                    if (other)
+                        distances.push(supportDistance(one.cells, other.cells, x, y));
+                }
+                distanceCells = median(distances);
+            }
+            const error = overlap ? sum / overlap : null;
+            // Only local support gets a bonus; distant background proposals keep their motion-only scores.
+            const proximity = distanceCells === null ? 0 : Math.max(0, 1 - distanceCells / 4);
+            const score = status === 'compatible' ? error - tolerance * proximityWeight * proximity : null;
+            comparisons.push({ a: ids[a], b: ids[b], overlap, error,
+                maximum: overlap ? maximum : null, status, distanceCells, score });
             if (status === 'compatible') {
                 compatible[a].add(b);
                 compatible[b].add(a);
@@ -86,7 +129,7 @@ export function groupMotionHistories(tracks, options = {}) {
         return id;
     };
     const candidates = comparisons.filter(p => p.status === 'compatible')
-        .sort((a, b) => a.error - b.error || b.overlap - a.overlap || a.a - b.a || a.b - b.b);
+        .sort((a, b) => a.score - b.score || a.error - b.error || b.overlap - a.overlap || a.a - b.a || a.b - b.b);
     for (const candidate of candidates) {
         let a = root(indices.get(candidate.a)), b = root(indices.get(candidate.b));
         if (a === b || !members[a].every(one => members[b].every(other => compatible[one].has(other))))
@@ -116,6 +159,6 @@ export function groupMotionHistories(tracks, options = {}) {
                     spread: Math.max(...group.map(o => o.spread + Math.hypot(o.dx - dx, o.dy - dy))) };
             }) };
     });
-    return { width, height, frameCount, cellSize, options: { tolerance, minimumOverlap }, families,
+    return { width, height, frameCount, cellSize, options: { tolerance, minimumOverlap, proximityWeight }, families,
         frames: groupedFrames, comparisons };
 }

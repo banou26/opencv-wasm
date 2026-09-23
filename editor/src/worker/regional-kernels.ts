@@ -98,7 +98,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     output = { ...data, stage: 'timing', analysis: finishRegionalTiming(frames, groupIds) }
   } else if (type === 'regionalHistory') {
     requireStage('tracks'); await checkpoint()
-    output = { ...data, stage: 'history', families: groupMotionHistories(data.tracks!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap) }) }
+    output = { ...data, stage: 'history', families: groupMotionHistories(data.tracks!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap), proximityWeight: Number(params.proximityWeight) }) }
   } else {
     const sourceFrame = Number(params.frame), view = String(params.view) as RegionalView
     const analysis = data.scene.frames[sourceFrame - data.scene.first]

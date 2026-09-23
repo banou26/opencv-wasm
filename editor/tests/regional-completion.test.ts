@@ -87,7 +87,7 @@ test('completion controls use bounded whole fine-grid distances', () => {
     for (const value of [-1, .5, 33, NaN]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).not.toBeNull()
   }
   const doc = regionalLayersGraph(), spec = specFor(doc.nodes.find(node => node.id === 'ncomplete')!, doc)
-  expect(spec.version).toBe(6)
+  expect(spec.version).toBe(7)
   for (const key of ['fillIsolated', 'bridgeTemporal']) {
     expect(spec.inputs.find(port => port.parameter === key)?.type).toBe('boolean')
     for (const value of [true, false]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).toBeNull()
@@ -159,6 +159,19 @@ test('cleanup provenance has distinct colors and counts without changing measure
   expect(raster.summary).toContain('pink isolated holes; blue temporal holes')
   expect(regionalSummary({ ...data, completion })).toContain('isolated 1; temporal 1')
   expect(data.families!.frames[0]!.observations[0]!.cells).toEqual([20, 24])
+})
+
+test('terminal border metadata preserves ordinary border colors and counts', () => {
+  const data = fixture(), completion = completeMotionSupport(data.sequence!, data.families!, { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated: false, bridgeTemporal: false })
+  const frame = completion.frames[0]!, observation = frame.observations[0]!
+  observation.borderCells = [21]; frame.counts.border = 1; frame.counts.unknown--
+  const before = renderCompletionPanels({ ...data, completion }, 10)
+  observation.terminalBorderCells = [21]
+  const after = renderCompletionPanels({ ...data, completion }, 10)
+  expect(after).toEqual(before)
+  const pixel = ((2 * 8 + 4) * 72 + 3 * 8 + 4) * 4
+  expect([...after.panels.provenance.subarray(pixel, pixel + 4)]).toEqual([72, 164, 142, 255])
+  expect(after.summary).toContain('inferred border 1')
 })
 
 test('temporal cleanup uses both adjacent pairs even when geometric completion is disabled', async () => {

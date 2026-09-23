@@ -12,6 +12,8 @@ const frames = (process.env.PROBE_FRAMES ?? '20,22,28,33,84,88,89,90,91,92,93,94
 assert.ok(frames.length > 0 && frames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
 const imageFrames = process.env.PROBE_IMAGE_FRAMES === undefined ? frames : process.env.PROBE_IMAGE_FRAMES.split(',').filter(Boolean).map(Number)
 assert.ok(imageFrames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
+const prefix = process.env.PROBE_PREFIX ?? 'regional-completion-probe'
+assert.match(prefix, /^[a-z0-9-]+$/)
 const directory = resolve('build-smoke'), url = process.env.APP_URL ?? 'http://127.0.0.1:4560'
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
 const freePort = () => new Promise(resolvePort => { const server = createServer(); server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolvePort(port)) }) })
@@ -72,7 +74,7 @@ try {
       rasters[key] = decode(Buffer.from(data.split(',')[1], 'base64'))
       assert.equal(rasters[key].length, width * height * 3)
     }
-    const path = imageFrames.includes(frame) ? resolve(directory, `regional-completion-probe-${String(frame).padStart(3, '0')}.png`) : null
+    const path = imageFrames.includes(frame) ? resolve(directory, `${prefix}-${String(frame).padStart(3, '0')}.png`) : null
     if (path) {
       const mosaic = Buffer.alloc(width * height * 12)
       for (const [panel, raster] of Object.values(rasters).entries()) for (let y = 0; y < height; y++) raster.copy(mosaic, ((y + Math.floor(panel / 2) * height) * width * 2 + panel % 2 * width) * 3, y * width * 3, (y + 1) * width * 3)
@@ -96,7 +98,7 @@ try {
     console.log(JSON.stringify({ sourceFrame: frame, output60: [record.output60First, record.output60Last], counts }))
   }
   assert.deepEqual(errors, [])
-  await writeFile(resolve(directory, 'regional-completion-probe.json'), `${JSON.stringify({ clip, metadata, sourceFps, analysisWidth, analysisHeight, description: 'Native editor PNG exports. Sheets: source/measured above completed/provenance. Cells classified from center pixels of known diagnostic colors; unknown means unpainted (blocked or unknown support), not recovered ownership ground truth.', records, errors }, null, 2)}\n`)
+  await writeFile(resolve(directory, `${prefix}.json`), `${JSON.stringify({ clip, metadata, sourceFps, analysisWidth, analysisHeight, description: 'Native editor PNG exports. Sheets: source/measured above completed/provenance. Cells classified from center pixels of known diagnostic colors; unknown means unpainted (blocked or unknown support), not recovered ownership ground truth.', records, errors }, null, 2)}\n`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])
   await Promise.race([browser?.close().catch(() => {}), pause(2000)])

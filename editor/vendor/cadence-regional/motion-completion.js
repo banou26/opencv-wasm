@@ -511,6 +511,56 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                     observation.isolatedCells.sort((a, b) => a - b);
                 }
             }
+            if (resolved.maxBorderDistance > 0) {
+                // Close viewport gaps near frozen temporal anchors, without making new donors or seeds.
+                const raster = current.owner.slice(), context = byFrame.get(current.frame.frame);
+                for (const [label, observation] of current.frame.observations.entries()) {
+                    for (const cells of [observation.motionCells, observation.isolatedCells, observation.temporalCells]) {
+                        for (const p of cells)
+                            raster[p] = label;
+                    }
+                }
+                const additions = new Int32Array(count).fill(-1), limit = resolved.maxBorderDistance;
+                const atBorder = (p) => Math.min(p % columns + 1, columns - p % columns, Math.floor(p / columns) + 1, rows - Math.floor(p / columns)) <= limit;
+                for (const [label, observation] of current.frame.observations.entries()) {
+                    const velocity = context.velocities.get(observation.id);
+                    if (!observation.temporalCells.length || ![velocity.dx, velocity.dy].every(Number.isFinite))
+                        continue;
+                    const seeds = observation.temporalCells, near = distances(seeds, columns, rows);
+                    const competitors = [], allowed = new Uint8Array(count);
+                    for (let p = 0; p < count; p++) {
+                        const raw = context.grid.cells[p];
+                        if (raster[p] === label)
+                            allowed[p] = 1;
+                        else if (raster[p] >= 0 || raster[p] === -2 && !fits(raw, velocity))
+                            competitors.push(p);
+                        else if (near[p] <= limit && atBorder(p) && temporalStable(context, p, observation.id, false)
+                            && consistentTrajectory(context, p, observation.id))
+                            allowed[p] = 1;
+                    }
+                    const reach = reachable(seeds, allowed, columns, rows, limit);
+                    const clearance = distances(competitors, columns, rows);
+                    for (let p = 0; p < count; p++) {
+                        if (raster[p] !== -1 || !atBorder(p) || reach[p] > limit
+                            || clearance[p] <= reach[p] + resolved.competitorClearance)
+                            continue;
+                        if (additions[p] >= 0)
+                            throw new Error('Ambiguous terminal border completion');
+                        additions[p] = label;
+                    }
+                }
+                for (let p = 0; p < count; p++)
+                    if (additions[p] >= 0) {
+                        const observation = current.frame.observations[additions[p]];
+                        observation.borderCells.push(p);
+                        observation.terminalBorderCells ??= [];
+                        observation.terminalBorderCells.push(p);
+                        current.frame.counts.border++;
+                        current.frame.counts.unknown--;
+                    }
+                for (const observation of current.frame.observations)
+                    observation.borderCells.sort((a, b) => a - b);
+            }
         }
         yield current.frame;
     }

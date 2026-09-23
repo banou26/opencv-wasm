@@ -3,7 +3,7 @@ import { type RegionalSupportSequence } from './regions.ts';
 export type MotionCompletionOptions = {
     /** Original-seed reach and local hull radius, in fine-grid cells. Zero disables holes. */
     maxHoleDistance?: number;
-    /** Maximum path distance from original seeds and distance to the frame edge. Zero disables borders. */
+    /** Border band/reach from original seeds, then frozen temporal anchors. Zero disables borders. */
     maxBorderDistance?: number;
     /** Competing families and contradictory motion must be farther by this many cells. */
     competitorClearance?: number;
@@ -24,6 +24,8 @@ export type MotionCompletionFrame = {
         temporalCells: number[];
         /** Subset of motion/isolated cells added after all donor maps froze; never donor evidence. */
         enclosedCells?: number[];
+        /** Subset of border cells closed from final frozen support; never temporal donors. */
+        terminalBorderCells?: number[];
     }[];
     counts: {
         measured: number;

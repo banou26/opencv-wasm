@@ -467,6 +467,12 @@ background in that baseline, and the central characters remain fragmented.
   beyond the first agreeing donor to catch later contradictions; incomplete or
   unknown trajectories are not certified ownership. Neither pass moves or
   synthesizes artwork.
+  With temporal cleanup enabled and a positive border distance, one terminal
+  border pass can fill nearby raw-unknown cells in the viewport-edge belt from
+  frozen temporal anchors. Its bounded paths retain original motion and
+  competitor checks. New border fills never become donors or restart growth.
+  Optional `terminalBorderCells` metadata marks a subset of `borderCells`, not
+  extra cells; the inspector keeps the ordinary teal border provenance and counts.
   These are analysis-grid distances, not
   full-resolution pixels. The source-backed four-panel view shows source /
   measured support on top, completed support / inference distinction below.
@@ -550,12 +556,15 @@ colors plus source-to-60fps index mapping in
 `build-smoke/regional-completion-probe.json`. Comma-separated `PROBE_FRAMES`
 selects source indices. `PROBE_IMAGE_FRAMES` limits which of those frames also
 overwrite four-panel PNG sheets; set it to an empty string for metrics only.
+`PROBE_PREFIX` changes their shared filename prefix within `build-smoke/`, so a
+different source encode can be checked without replacing the original report.
 The classifier's `unknown` means unpainted, including both blocked and unknown
 support. These colors identify motion-family evidence, not true object ownership.
 The probe uses a disposable browser profile and leaves the dev server running.
 
-The 2026-09-24 boundary-repair check covers every source frame 20-33 and 88-115,
-plus 84, through these actual browser exports. In the top-left ROI (fine-grid
+The 2026-09-24 boundary-repair check of `original/original.mp4` (24fps) covers
+every source frame 20-33 and 88-115, plus 84, through these actual browser
+exports. In the top-left ROI (fine-grid
 columns 0-8, rows 0-3), only source frame 24 still has unsupported cells: 0-5
 along the top edge. The other 13 frames in 20-33 have no unsupported cells in
 that ROI. The right-wall ROI (columns 34-38, rows 4-13) has all 50 cells covered
@@ -568,6 +577,22 @@ object ownership. Validation passes 175 editor tests, typecheck, lint, build and
 regional desktop/mobile smoke. Generic production smoke passed on a fresh retry
 after one backward pointer-drag seek timeout; no production change was made for
 that transient failure.
+
+The saved project's `test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4`
+is a different encode at 24000/1001fps. Its motion evidence differs, so the
+original-encode coverage claim does not apply to it. The terminal-border check
+uses this actual asset at sources 63, 66, 78, 84, 110, 113, 114, 115 and 116.
+Native inspector PNGs agree with the frozen browser-input core replay across
+all 8,280 grid cells. At 110/113/114/115 the pass adds 24 right-edge support
+cells per frame, without changing measured labels or existing owners. Seven
+unpainted cells remain in the right-wall ROI at 110/113/114, and eight at 115;
+these retained gaps are not claimed to be fixed. Source 116 has no outgoing
+pair and therefore shows no support, unchanged by this pass. It maps to
+zero-based 60fps output frames 291-292; source 113 maps to 283-285 and 114 to
+286-287. The prior report remains `build-smoke/regional-completion-market-asset-tail.json`;
+the current report and nine sheets use the `regional-completion-market-asset-candidate`
+prefix. These diagnostics do not resolve the pre-existing character/family
+conflation or establish object ownership.
 
 The core is a generated, committed browser-safe snapshot from Cadence under
 `vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,

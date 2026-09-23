@@ -290,6 +290,8 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
         };
         for (const [label, observation] of frame.observations.entries()) {
             const id = observation.id, velocity = context.velocities.get(id);
+            if (![velocity.dx, velocity.dy].every(Number.isFinite))
+                continue;
             const competitors = [];
             for (let p = 0; p < count; p++)
                 if (owner[p] >= 0 && owner[p] !== label

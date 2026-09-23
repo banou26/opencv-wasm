@@ -451,6 +451,9 @@ background in that baseline, and the central characters remain fragmented.
   90 show much broader background coverage, while the walking group remains
   fragmented and the hooded carriage character already shares family 1 in the
   measured input. Those identity errors are unresolved, not fixed by completion.
+  Source checks confirm the hooded figure changes relative to the wagon opening;
+  completion can extend its incorrect upstream background assignment. Full
+  coverage must not be interpreted as a correctly extracted compositing layer.
   A separate `BENCH_VIEW=review` regression run through the same single output
   exactly matches the pre-proximity `56ba952a...` decoded hash above across all
   293 frames (9.87s analysis, 6.34s render).

@@ -409,13 +409,32 @@ background in that baseline, and the central characters remain fragmented.
   resets distance or starts unlimited growth from new seeds.
   **Max hole distance**, **Max border distance** and **Competitor clearance**
   default to 6, 6 and 2 fine-grid cells, each adjustable from 0 to 32. A zero
-  maximum disables that geometric inference type, not motion-backed association.
+  maximum disables that geometric inference type, not motion-backed association
+  or either cleanup pass.
+  **Fill isolated holes** and **Bridge temporal holes** independently enable the
+  cleanup passes; both default to on. Their additions remain separately marked,
+  rather than becoming original measured support. Existing root and nested
+  completion nodes acquire missing toggle defaults when loaded; explicit off
+  settings, other parameters and output wiring are preserved. Changing either
+  toggle reruns completion, not upstream motion, grouping or drawing analysis.
+  Isolated cleanup considers only raw-unknown cells with all four cardinal
+  neighbors already completed for one family. Foreign diagonal ownership,
+  informative raw blockers and neighboring-pair motion contradictions veto it.
+  It runs once from the pre-cleanup map, without recursively filling more cells.
+  Temporal cleanup requires the same observed family in the current pair and
+  both immediately adjacent pairs. After translation, both adjacent maps must
+  cover the entire original cell footprint with that family, without clipping.
+  Raw motion contradictions, nearby competing completed support or blockers,
+  and ambiguous family candidates veto it. Donor maps can include isolated
+  cleanup but never temporal additions. Missing neighbors, end pairs and chains
+  of missing support are not bridged. Neither pass moves or synthesizes artwork.
   These are analysis-grid distances, not
   full-resolution pixels. The source-backed four-panel view shows source /
   measured support on top, completed support / inference distinction below.
   In the distinction panel, gray is original measured family support, purple
-  motion-backed association, amber inferred holes and teal inferred border
-  support; blocked and unknown cells stay unpainted. Counts
+  motion-backed association, amber inferred holes, teal inferred border support,
+  pink isolated-hole cleanup and blue temporal-hole cleanup; blocked and unknown
+  cells stay unpainted. Counts
   report cells, not pixel coverage or confidence. The final source frame has
   no outgoing evidence and shows no support overlay. This conservative stage
   cannot identify entirely unobserved objects, establish correct ownership,
@@ -440,7 +459,7 @@ background in that baseline, and the central characters remain fragmented.
   unsupported regions are not solved. Looser clearance enters character-area
   controls, so it is not enabled by default.
 
-  Revised single-output export on the same shot: 293 frames at 1920x1080/60fps,
+  Pre-cleanup single-output export on the same shot: 293 frames at 1920x1080/60fps,
   10.87s initial analysis, 0.07s to select completion and 6.80s to render with
   one worker. Decoded SHA-256:
   `c863558e135631e1ee47bc7b5aed64e3f88b47edd93cb9c52fa0f610e95e642d`.

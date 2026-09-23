@@ -64,11 +64,13 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
     for (const observation of frame?.observations ?? []) {
       const rgb = color(observation.id)
       paintCells(parts[1]!, observation.measuredCells, rgb)
-      for (const cells of [observation.measuredCells, observation.motionCells, observation.holeCells, observation.borderCells]) paintCells(parts[2]!, cells, rgb)
+      for (const cells of [observation.measuredCells, observation.motionCells, observation.holeCells, observation.borderCells, observation.isolatedCells, observation.temporalCells]) paintCells(parts[2]!, cells, rgb)
       paintCells(parts[3]!, observation.measuredCells, [150, 150, 165])
       paintCells(parts[3]!, observation.motionCells, [180, 116, 244])
       paintCells(parts[3]!, observation.holeCells, [240, 178, 72])
       paintCells(parts[3]!, observation.borderCells, [66, 220, 183])
+      paintCells(parts[3]!, observation.isolatedCells, [240, 106, 170])
+      paintCells(parts[3]!, observation.temporalCells, [70, 172, 245])
     }
     const pixels = new Uint8Array(width * height * 16)
     for (const [p, part] of parts.entries()) for (let y = 0; y < height; y++) pixels.set(part.subarray(y * width * 4, (y + 1) * width * 4), ((y + Math.floor(p / 2) * height) * width * 2 + p % 2 * width) * 4)
@@ -76,11 +78,12 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
       'Top: source / measured family support. Bottom: completed support / inference distinction.',
       `Source ${sourceFrame}${index < data.scene.frames.length - 1 ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`,
       `${width} x ${height} display / ${analysisWidth} x ${analysisHeight} analysis`,
-      frame ? `Cells: measured ${frame.counts.measured}; motion-associated ${frame.counts.motion}; inferred holes ${frame.counts.holes}; inferred border ${frame.counts.border}; blocked ${frame.counts.blocked}; unknown ${frame.counts.unknown}` : 'No completion evidence for this frame.',
-      'Distinction: gray measured; purple motion-associated; amber inferred holes; teal inferred border; unpainted blocked/unknown.',
+      frame ? `Cells: measured ${frame.counts.measured}; motion-associated ${frame.counts.motion}; inferred holes ${frame.counts.holes}; inferred border ${frame.counts.border}; isolated ${frame.counts.isolated}; temporal ${frame.counts.temporal}; blocked ${frame.counts.blocked}; unknown ${frame.counts.unknown}` : 'No completion evidence for this frame.',
+      'Distinction: gray measured; purple motion-associated; amber inferred holes; teal inferred border; pink isolated holes; blue temporal holes; unpainted blocked/unknown.',
       'Inferred support is not measured family membership, recovered pixels or a pixel-accurate silhouette. Original motion measurements stay unchanged.',
       `Limits (fine-grid cells): holes ${completion.options.maxHoleDistance}; border ${completion.options.maxBorderDistance}; competitor clearance ${completion.options.competitorClearance}`,
-      ...(frame?.observations ?? []).map(observation => `Family ${observation.id}: measured ${observation.measuredCells.length}; motion-associated ${observation.motionCells.length}; holes ${observation.holeCells.length}; border ${observation.borderCells.length}`),
+      `Cleanup: isolated ${completion.options.fillIsolated ? 'on' : 'off'}; temporal ${completion.options.bridgeTemporal ? 'on' : 'off'}`,
+      ...(frame?.observations ?? []).map(observation => `Family ${observation.id}: measured ${observation.measuredCells.length}; motion-associated ${observation.motionCells.length}; holes ${observation.holeCells.length}; border ${observation.borderCells.length}; isolated ${observation.isolatedCells.length}; temporal ${observation.temporalCells.length}`),
     ].join('\n')
     return { width: width * 2, height: height * 2, pixels, summary }
   }

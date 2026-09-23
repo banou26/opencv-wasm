@@ -98,6 +98,11 @@ export const parseDocument = (value: unknown): GraphDocument => {
     body = { ...body, nodes: body.nodes.map(n => n && (n.type === 'translateX' || n.type === 'translateY') && n.params && n.params.border === undefined ? { ...n, params: { ...n.params, border: 'constant' } } : n) }
     // Regional displays formerly inherited the downsampled analysis dimensions.
     body = { ...body, nodes: body.nodes.map(n => n?.type === 'regionalInspect' && n.params && n.params.displayMaxSide === undefined ? { ...n, params: { ...n.params, displayMaxSide: 960 } } : n) }
+    // Existing completion nodes predate the independently switchable hole cleanup passes.
+    body = { ...body, nodes: body.nodes.map(n => n?.type === 'regionalComplete' && n.params ? { ...n, params: { ...n.params,
+      fillIsolated: n.params.fillIsolated === undefined ? true : n.params.fillIsolated,
+      bridgeTemporal: n.params.bridgeTemporal === undefined ? true : n.params.bridgeTemporal,
+    } } : n) }
     // Retire the rejected spatial prior, including saved wires to its former control.
     const histories = new Set(body.nodes.filter(n => n?.type === 'regionalHistory').map(n => n.id))
     body = { ...body, nodes: body.nodes.map(n => {

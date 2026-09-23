@@ -101,7 +101,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     output = { ...data, stage: 'history', families: groupMotionHistories(data.tracks!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap), proximityWeight: 0 }) }
   } else if (type === 'regionalComplete') {
     if ((data.stage !== 'history' && data.stage !== 'timing') || !data.sequence || !data.families) throw new Error('Support completion requires motion-history grouping or drawing-event data with families')
-    const options = { maxHoleDistance: Number(params.maxHoleDistance), maxBorderDistance: Number(params.maxBorderDistance), competitorClearance: Number(params.competitorClearance) }
+    const options = { maxHoleDistance: Number(params.maxHoleDistance), maxBorderDistance: Number(params.maxBorderDistance), competitorClearance: Number(params.competitorClearance), fillIsolated: Boolean(params.fillIsolated), bridgeTemporal: Boolean(params.bridgeTemporal) }
     const completion = completeMotionSupport({ ...data.sequence, pairs: [] }, { ...data.families, frames: [] }, options)
     for (const frame of completeMotionSupportFrames(data.sequence, data.families, options)) {
       await checkpoint()

@@ -34,10 +34,14 @@ function distances(seeds, columns, rows) {
 }
 function layout(sequence, families, options = {}) {
     const resolved = { maxHoleDistance: options.maxHoleDistance ?? 6, maxBorderDistance: options.maxBorderDistance ?? 6,
-        competitorClearance: options.competitorClearance ?? 2 };
-    if (Object.values(resolved).some(n => !Number.isSafeInteger(n) || n < 0 || n > 32)) {
+        competitorClearance: options.competitorClearance ?? 2, fillIsolated: options.fillIsolated ?? true, bridgeTemporal: options.bridgeTemporal ?? true };
+    if ([resolved.maxHoleDistance, resolved.maxBorderDistance, resolved.competitorClearance].some(n => !Number.isSafeInteger(n) || n < 0 || n > 32)) {
         throw new RangeError('Completion distances must be whole cell counts from 0 to 32');
     }
+    if (typeof resolved.fillIsolated !== 'boolean')
+        throw new TypeError('Isolated completion must be boolean');
+    if (typeof resolved.bridgeTemporal !== 'boolean')
+        throw new TypeError('Temporal completion must be boolean');
     const { width, height, frameCount } = sequence, { cellSize } = families;
     if (![width, height, cellSize].every(n => Number.isSafeInteger(n) && n > 0)
         || !Number.isSafeInteger(frameCount) || frameCount < 2
@@ -143,7 +147,8 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
                 }
                 owner[p] = index;
             }
-            return { id: observation.id, measuredCells, motionCells: [], holeCells: [], borderCells: [] };
+            return { id: observation.id, measuredCells, motionCells: [], holeCells: [], borderCells: [],
+                isolatedCells: [], temporalCells: [] };
         });
         return { frame: pair.frame, grid, owner, observations,
             velocities: new Map(frame.observations.map(o => [o.id, { dx: o.dx, dy: o.dy }])) };
@@ -151,44 +156,95 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
     const byFrame = new Map(contexts.map(context => [context.frame, context]));
     const fits = (cell, velocity) => cell.coherent && cell.accepted > 0 && cell.dx !== null && cell.dy !== null && cell.spread !== null && Number.isFinite(cell.spread)
         && cell.spread >= 0 && cell.spread <= 1 && Math.hypot(cell.dx - velocity.dx, cell.dy - velocity.dy) <= families.options.tolerance;
-    for (const context of contexts) {
-        const { owner: original, observations, grid } = context, owner = original.slice();
-        const stable = (p, label, requireWitness) => {
-            const id = observations[label].id, cell = grid.cells[p];
-            let witnesses = 0;
-            for (const direction of [-1, 1]) {
-                let x = cell.x + cell.width / 2, y = cell.y + cell.height / 2, current = context;
-                for (let step = 1; step <= 2; step++) {
-                    const target = byFrame.get(context.frame + direction * step);
-                    if (!target)
+    const temporalStable = (context, p, id, requireWitness) => {
+        const cell = context.grid.cells[p];
+        let witnesses = 0;
+        for (const direction of [-1, 1]) {
+            let x = cell.x + cell.width / 2, y = cell.y + cell.height / 2, current = context;
+            for (let step = 1; step <= 2; step++) {
+                const target = byFrame.get(context.frame + direction * step);
+                if (!target)
+                    break;
+                const velocity = (direction > 0 ? current : target).velocities.get(id), nextVelocity = target.velocities.get(id);
+                if (!velocity)
+                    break;
+                x += direction * velocity.dx;
+                y += direction * velocity.dy;
+                if (x < 0 || y < 0 || x >= width || y >= height)
+                    break;
+                const q = Math.floor(y / cellSize) * columns + Math.floor(x / cellSize), other = target.owner[q];
+                if (other >= 0) {
+                    if (target.observations[other].id !== id)
+                        return false;
+                    witnesses++;
+                }
+                else if (other === -2) {
+                    if (!target.grid.cells[q].coherent)
+                        return false;
+                    if (!nextVelocity)
                         break;
-                    const velocity = (direction > 0 ? current : target).velocities.get(id), nextVelocity = target.velocities.get(id);
-                    if (!velocity)
-                        break;
-                    x += direction * velocity.dx;
-                    y += direction * velocity.dy;
-                    if (x < 0 || y < 0 || x >= width || y >= height)
-                        break;
-                    const q = Math.floor(y / cellSize) * columns + Math.floor(x / cellSize), other = target.owner[q];
-                    if (other >= 0) {
-                        if (target.observations[other].id !== id)
-                            return false;
-                        witnesses++;
-                    }
-                    else if (other === -2) {
-                        if (!target.grid.cells[q].coherent)
-                            return false;
-                        if (!nextVelocity)
-                            break;
-                        if (!fits(target.grid.cells[q], nextVelocity))
-                            return false;
-                        witnesses++;
-                    }
-                    current = target;
+                    if (!fits(target.grid.cells[q], nextVelocity))
+                        return false;
+                    witnesses++;
+                }
+                current = target;
+            }
+        }
+        return !requireWitness || witnesses > 0;
+    };
+    // A rolling three-frame window keeps immutable pre-temporal donors, never bridged results.
+    const completedFrames = new Map();
+    let pending;
+    const bridge = (current) => {
+        const { frame, owner } = current, before = completedFrames.get(frame.frame - 1), after = completedFrames.get(frame.frame + 1);
+        if (!resolved.bridgeTemporal || !before || !after)
+            return frame;
+        const context = byFrame.get(frame.frame), previous = byFrame.get(frame.frame - 1);
+        const proposals = new Int32Array(count).fill(-1);
+        const agrees = (donor, cell, dx, dy, id) => {
+            const left = cell.x + dx, top = cell.y + dy, right = left + cell.width, bottom = top + cell.height;
+            if (![left, top, right, bottom].every(Number.isFinite) || left < 0 || top < 0 || right > width || bottom > height)
+                return false;
+            // Every positively overlapped donor cell must agree, not just the shifted center.
+            for (let y = Math.floor(top / cellSize); y < Math.ceil(bottom / cellSize); y++) {
+                for (let x = Math.floor(left / cellSize); x < Math.ceil(right / cellSize); x++) {
+                    const label = donor.owner[y * columns + x];
+                    if (label < 0 || donor.ids[label] !== id)
+                        return false;
                 }
             }
-            return !requireWitness || witnesses > 0;
+            return true;
         };
+        for (const [label, observation] of frame.observations.entries()) {
+            const id = observation.id, backward = previous.velocities.get(id), forward = context.velocities.get(id);
+            if (!backward || !forward || ![backward.dx, backward.dy, forward.dx, forward.dy].every(Number.isFinite))
+                continue;
+            const competitors = [];
+            for (let p = 0; p < count; p++)
+                if (owner[p] === -2 || owner[p] >= 0 && owner[p] !== label)
+                    competitors.push(p);
+            const clearance = distances(competitors, columns, rows);
+            for (let p = 0; p < count; p++) {
+                if (owner[p] !== -1 || clearance[p] <= Math.max(1, resolved.competitorClearance))
+                    continue;
+                const cell = context.grid.cells[p];
+                if (!agrees(before, cell, -backward.dx, -backward.dy, id) || !agrees(after, cell, forward.dx, forward.dy, id)
+                    || !temporalStable(context, p, id, false))
+                    continue;
+                proposals[p] = proposals[p] === -1 ? label : -2;
+            }
+        }
+        for (let p = 0; p < count; p++)
+            if (proposals[p] >= 0) {
+                frame.observations[proposals[p]].temporalCells.push(p);
+                frame.counts.temporal++;
+                frame.counts.unknown--;
+            }
+        return frame;
+    };
+    for (const context of contexts) {
+        const { owner: original, observations, grid } = context, owner = original.slice();
+        const stable = (p, label, requireWitness) => temporalStable(context, p, observations[label].id, requireWitness);
         const originalDistances = observations.map(o => distances(o.measuredCells, columns, rows));
         const nearest = new Int32Array(count).fill(-1), first = new Float64Array(count).fill(Infinity);
         const second = new Float64Array(count).fill(Infinity);
@@ -267,11 +323,42 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
                 }
             }
         }
+        // Read a frozen raster: plugging one enclosed cell cannot manufacture the next enclosure.
+        const completed = owner.map((label, p) => label >= 0 ? label : assigned[p] >= 0 ? assigned[p] : label);
+        let isolated = 0;
+        if (resolved.fillIsolated)
+            for (let y = 1; y < rows - 1; y++)
+                for (let x = 1; x < columns - 1; x++) {
+                    const p = y * columns + x, label = completed[p - 1];
+                    if (completed[p] !== -1 || label < 0 || completed[p + 1] !== label
+                        || completed[p - columns] !== label || completed[p + columns] !== label)
+                        continue;
+                    const diagonals = [p - columns - 1, p - columns + 1, p + columns - 1, p + columns + 1];
+                    if (diagonals.some(q => completed[q] === -2 || completed[q] >= 0 && completed[q] !== label)
+                        || !stable(p, label, false))
+                        continue;
+                    observations[label].isolatedCells.push(p);
+                    isolated++;
+                }
         const measured = observations.reduce((sum, o) => sum + o.measuredCells.length, 0), blocked = blockers.length;
         const motion = observations.reduce((sum, o) => sum + o.motionCells.length, 0);
-        yield { frame: context.frame, observations, counts: { measured, motion, holes, border, blocked,
-                unknown: count - measured - motion - holes - border - blocked } };
+        const frame = { frame: context.frame, observations, counts: { measured, motion, holes, border, isolated, temporal: 0, blocked,
+                unknown: count - measured - motion - holes - border - isolated - blocked } };
+        for (const [label, observation] of observations.entries())
+            for (const p of observation.isolatedCells)
+                completed[p] = label;
+        const current = { frame, owner: completed, ids: observations.map(o => o.id) };
+        completedFrames.set(context.frame, current);
+        if (pending) {
+            yield bridge(pending);
+            completedFrames.delete(pending.frame.frame - 1);
+            if (context.frame !== pending.frame.frame + 1)
+                completedFrames.delete(pending.frame.frame);
+        }
+        pending = current;
     }
+    if (pending)
+        yield bridge(pending);
 }
 /** Source-preserving motion associations and bounded geometry; not certified silhouettes. */
 export function completeMotionSupport(sequence, families, options = {}) {

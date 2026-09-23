@@ -1,6 +1,8 @@
 import { expect, test } from 'vite-plus/test'
 import { completeMotionSupport, type MotionCompletionOptions, type RegionalMotionSequence } from 'cadence/regional'
-import { defaultParams, validateParams } from '../src/engine/specs'
+import { defaultParams, specFor, validateParams } from '../src/engine/specs'
+import { groupNodes, parseDocument } from '../src/engine/graph'
+import { regionalLayersGraph } from '../src/engine/regional-prefab'
 import { regionalKernel } from '../src/worker/regional-kernels'
 import { regionalSummary, type RegionalData } from '../src/worker/regional-data'
 import { renderRegional } from '../src/worker/regional-render'
@@ -26,16 +28,42 @@ const fixture = (): RegionalData => {
 const step = (options: MotionCompletionOptions = {}) => ({ key: 'completion', node: { id: 'ncomplete', type: 'regionalComplete' as const, params: { ...defaultParams('regionalComplete'), ...options }, position: { x: 0, y: 0 } }, inputs: {}, frame: 0 })
 
 test('completion controls use bounded whole fine-grid distances', () => {
-  expect(defaultParams('regionalComplete')).toEqual({ maxHoleDistance: 6, maxBorderDistance: 6, competitorClearance: 2 })
+  expect(defaultParams('regionalComplete')).toEqual({ maxHoleDistance: 6, maxBorderDistance: 6, competitorClearance: 2, fillIsolated: true, bridgeTemporal: true })
   for (const key of ['maxHoleDistance', 'maxBorderDistance', 'competitorClearance']) {
     for (const value of [0, 32]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).toBeNull()
     for (const value of [-1, .5, 33, NaN]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).not.toBeNull()
+  }
+  const doc = regionalLayersGraph(), spec = specFor(doc.nodes.find(node => node.id === 'ncomplete')!, doc)
+  for (const key of ['fillIsolated', 'bridgeTemporal']) {
+    expect(spec.inputs.find(port => port.parameter === key)?.type).toBe('boolean')
+    for (const value of [true, false]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).toBeNull()
+    for (const value of [0, 1, 'true']) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).not.toBeNull()
+  }
+})
+
+test('saved root and nested completion nodes gain missing cleanup toggles without changing explicit settings or outputs', () => {
+  for (const nested of [false, true]) {
+    let doc = regionalLayersGraph()
+    if (nested) doc = groupNodes(doc, undefined, ['ncomplete'], 'Completion', 'gcompletion', 'ncompletiongroup')
+    const body = nested ? doc.definitions!.find(definition => definition.id === 'gcompletion')!.graph : doc
+    const node = body.nodes.find(node => node.id === 'ncomplete')!
+    delete node.params.fillIsolated; delete node.params.bridgeTemporal
+    node.params.maxHoleDistance = 4
+    const restored = parseDocument(JSON.parse(JSON.stringify(doc)))
+    const restoredBody = nested ? restored.definitions!.find(definition => definition.id === 'gcompletion')!.graph : restored
+    expect(restoredBody.nodes.find(node => node.id === 'ncomplete')!.params).toEqual({ ...defaultParams('regionalComplete'), maxHoleDistance: 4 })
+    expect(restored.nodes.filter(node => node.type === 'output').map(node => node.id)).toEqual(['n5'])
+    expect(restored.edges).toEqual(doc.edges)
+    node.params.fillIsolated = false
+    const explicit = parseDocument(JSON.parse(JSON.stringify(doc)))
+    const explicitBody = nested ? explicit.definitions!.find(definition => definition.id === 'gcompletion')!.graph : explicit
+    expect(explicitBody.nodes.find(node => node.id === 'ncomplete')!.params).toMatchObject({ fillIsolated: false, bridgeTemporal: true, maxHoleDistance: 4 })
   }
 })
 
 test('completion kernel checkpoints per pair, matches shared core and preserves original evidence', async () => {
   const data = fixture(), before = structuredClone(data)
-  for (const options of [{}, { maxBorderDistance: 0 }, { maxHoleDistance: 0, maxBorderDistance: 0, competitorClearance: 4 }]) {
+  for (const options of [{}, { maxBorderDistance: 0 }, { maxHoleDistance: 0, maxBorderDistance: 0, competitorClearance: 4 }, { fillIsolated: false }, { bridgeTemporal: false }, { fillIsolated: false, bridgeTemporal: false }]) {
     for (const stage of ['history', 'timing'] as const) {
       const input = { ...data, stage, ...(stage === 'timing' ? { analysis: { frames: [], groups: [] } } : {}) }
       const bundle = await regionalKernel(step(options), { 'in:regions:data': { kind: 'regions', data: input } }, () => { throw new Error('Completion must not decode source video') }, () => false)
@@ -57,6 +85,72 @@ test('completion kernel checkpoints per pair, matches shared core and preserves 
   expect(data).toEqual(before)
   await expect(regionalKernel(step(), { 'in:regions:data': { kind: 'regions', data: { ...data, stage: 'tracks' } } }, () => undefined, () => false)).rejects.toThrow(/requires motion-history/)
   await expect(regionalKernel(step(), { 'in:regions:data': { kind: 'regions', data: { ...data, stage: 'timing', families: undefined } } }, () => undefined, () => false)).rejects.toThrow(/requires motion-history/)
+})
+
+test('cleanup provenance has distinct colors and counts without changing measured support', () => {
+  const data = fixture(), completion = completeMotionSupport(data.sequence!, data.families!, { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated: false, bridgeTemporal: false })
+  const frame = completion.frames[0]!, observation = frame.observations[0]!
+  observation.isolatedCells = [21]; observation.temporalCells = [23]
+  frame.counts.isolated = 1; frame.counts.temporal = 1; frame.counts.unknown -= 2
+  const raster = renderRegional({ ...data, completion }, 10, 'completion', 8)
+  const pixel = (panel: number, cell: number) => {
+    const x = panel % 2 * 72 + cell % 9 * 8 + 4, y = Math.floor(panel / 2) * 40 + Math.floor(cell / 9) * 8 + 4
+    return [...raster.pixels.subarray((y * raster.width + x) * 4, (y * raster.width + x + 1) * 4)]
+  }
+  expect(pixel(1, 21)).toEqual([80, 80, 80, 255]); expect(pixel(1, 23)).toEqual([80, 80, 80, 255])
+  expect(pixel(2, 21)).toEqual(pixel(1, 20)); expect(pixel(2, 23)).toEqual(pixel(1, 20))
+  expect(pixel(3, 21)).toEqual([176, 96, 134, 255])
+  expect(pixel(3, 23)).toEqual([74, 135, 179, 255])
+  expect(raster.summary).toContain('isolated 1; temporal 1')
+  expect(raster.summary).toContain('pink isolated holes; blue temporal holes')
+  expect(regionalSummary({ ...data, completion })).toContain('isolated 1; temporal 1')
+  expect(data.families!.frames[0]!.observations[0]!.cells).toEqual([20, 24])
+})
+
+test('temporal cleanup uses both adjacent pairs even when geometric completion is disabled', async () => {
+  const data = fixture()
+  data.scene.frames.push(structuredClone(data.scene.frames[1]!)); data.scene.last = 13
+  data.sequence!.frameCount = 4; data.families!.frameCount = 4; data.tracks!.frameCount = 4
+  data.sequence!.pairs.push({ ...structuredClone(data.sequence!.pairs[1]!), frame: 2 })
+  data.families!.frames.push({ ...structuredClone(data.families!.frames[1]!), frame: 2 })
+  data.tracks!.frames.push({ ...structuredClone(data.tracks!.frames[1]!), frame: 2 })
+  for (const frame of [0, 2]) {
+    Object.assign(data.sequence!.pairs[frame]!.grids[0]!.cells[22]!, { accepted: 64, coverage: 1, coherent: true, dx: 0, dy: 0, spread: 0 })
+    data.families!.frames[frame]!.observations[0]!.cells.push(22)
+  }
+  const original = structuredClone(data)
+  for (const bridgeTemporal of [true, false]) {
+    const options = { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated: false, bridgeTemporal }
+    const bundle = await regionalKernel(step(options), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => false)
+    try {
+      const value = bundle!.outputs['out:regions:data']!
+      if (value.kind !== 'regions') throw new Error('Missing completion')
+      expect(value.data.completion).toEqual(completeMotionSupport(data.sequence!, data.families!, options))
+      expect(value.data.completion!.frames[1]!.observations[0]!.temporalCells).toEqual(bridgeTemporal ? [22] : [])
+      expect(value.data.completion!.frames[0]!.counts.temporal).toBe(0)
+      expect(value.data.completion!.frames[2]!.counts.temporal).toBe(0)
+    } finally { bundle!.dispose() }
+  }
+  expect(data).toEqual(original)
+})
+
+test('isolated cleanup is independently switchable and preserves original measurements', async () => {
+  const data = fixture(), surround = [13, 21, 23, 31]
+  for (const pair of data.sequence!.pairs) for (const cell of surround) Object.assign(pair.grids[0]!.cells[cell]!, { accepted: 64, coverage: 1, coherent: true, dx: 0, dy: 0, spread: 0 })
+  for (const frame of data.families!.frames) frame.observations[0]!.cells.push(...surround)
+  const original = structuredClone(data)
+  for (const fillIsolated of [true, false]) {
+    const options = { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated, bridgeTemporal: false }
+    const bundle = await regionalKernel(step(options), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => false)
+    try {
+      const value = bundle!.outputs['out:regions:data']!
+      if (value.kind !== 'regions') throw new Error('Missing completion')
+      expect(value.data.completion).toEqual(completeMotionSupport(data.sequence!, data.families!, options))
+      expect(value.data.completion!.frames[0]!.observations[0]!.isolatedCells).toEqual(fillIsolated ? [22] : [])
+      expect(value.data.completion!.frames[0]!.observations[0]!.measuredCells).toEqual([13, 20, 21, 23, 24, 31])
+    } finally { bundle!.dispose() }
+  }
+  expect(data).toEqual(original)
 })
 
 test('completion raster separates measured and inferred support without painting unknown cells or changing other views', () => {

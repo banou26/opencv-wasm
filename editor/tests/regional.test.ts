@@ -109,6 +109,16 @@ test('whole-scene native analysis executes once across scrub order and exposes e
     try { if (changed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(changed.value.value).toContain('holes 0; border 6') } finally { changed.release() }
     expect(calls.get('regionalComplete')).toBe(2)
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    for (const [index, key] of ['fillIsolated', 'bridgeTemporal'].entries()) {
+      doc.nodes.find(node => node.id === 'ncomplete')!.params[key] = false
+      const toggled = await evaluate('ncompletionview', 3, 'out:string:summary')
+      try {
+        if (toggled.value.kind !== 'string') throw new Error('Missing completion summary')
+        expect(toggled.value.value).toContain(`Cleanup: isolated off; temporal ${index === 0 ? 'on' : 'off'}`)
+      } finally { toggled.release() }
+      expect(calls.get('regionalComplete')).toBe(3 + index)
+      for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    }
     const unchanged = await evaluate('nreview', 3)
     try { expect(image(unchanged.value).mat.data32F).toEqual(originalPixels) } finally { unchanged.release() }
     const dense = await evaluate('ndense', 5, 'out:regions:data')

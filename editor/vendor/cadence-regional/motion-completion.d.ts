@@ -7,6 +7,10 @@ export type MotionCompletionOptions = {
     maxBorderDistance?: number;
     /** Competing families and contradictory motion must be farther by this many cells. */
     competitorClearance?: number;
+    /** Fill an empty single cell enclosed by one completed family, without iterative growth. */
+    fillIsolated?: boolean;
+    /** Bridge only one empty frame using agreeing motion-aligned support on both adjacent frames. */
+    bridgeTemporal?: boolean;
 };
 export type MotionCompletionFrame = {
     frame: number;
@@ -16,12 +20,16 @@ export type MotionCompletionFrame = {
         motionCells: number[];
         holeCells: number[];
         borderCells: number[];
+        isolatedCells: number[];
+        temporalCells: number[];
     }[];
     counts: {
         measured: number;
         motion: number;
         holes: number;
         border: number;
+        isolated: number;
+        temporal: number;
         blocked: number;
         unknown: number;
     };

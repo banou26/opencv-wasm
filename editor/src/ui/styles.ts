@@ -154,7 +154,7 @@ export const styles = css`
   .project-folder-strip { padding: 4px 16px; display: flex; align-items: center; gap: 16px; background: var(--cv-panel); font-size: 12px; border-bottom: 1px solid var(--cv-line); }
   .project-folder-strip small { color: var(--cv-muted); flex: 1; }
 
-  /* Only bounded panels scroll. The application itself always occupies the viewport. */
+  /* Desktop panels own scrolling; narrow screens keep a usable image height below. */
   .workspace-notices { max-height: 18dvh; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .project-folder-strip { min-width: 0; flex-wrap: wrap; gap: 8px 16px; }
   .project-folder-strip strong, .project-folder-strip > span { overflow-wrap: anywhere; }
@@ -229,6 +229,10 @@ export const styles = css`
     footer > span:last-child { display: none; }
   }
   @media (max-width: 600px) {
+    html, body, #root { height: auto; min-height: 100%; overflow: visible; }
+    html { overflow-x: hidden; overflow-y: auto; }
+    .app-shell { height: auto; min-height: 100dvh; overflow: visible; }
+    .workspace { flex: 0 0 auto; height: max(480px, 65dvh); min-height: 480px; }
     .app-header { padding: 7px 10px; gap: 8px; align-items: start; }
     .brand { gap: 6px; }
     .brand-mark { display: none; }

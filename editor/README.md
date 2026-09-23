@@ -41,6 +41,8 @@ original standalone checkout can remain as a backup; development now happens her
 - The editor fits the browser window: the graph and inspector share the available
   space, with the timeline and render controls docked below. Drag the divider to
   resize the panels. Narrow windows use **Node graph / Inspector** buttons.
+  At 600px and narrower, the page scrolls vertically to preserve preview space;
+  timeline and render controls remain accessible below it.
 - **Node preview / Rendered video** switches the inspector between the selected
   node and the last movie. Rendering opens the video view when it finishes;
   **View video** also opens it. **About this step** opens a scrollable explanation

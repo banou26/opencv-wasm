@@ -16,11 +16,22 @@ export const assertViewport = async (page, selectors = []) => {
       elements: selectors.map(selector => ({ selector, ...rect(document.querySelector(selector)) })),
     }
   }, selectors)
+  const narrow = measured.width <= 600
   for (const name of ['document', 'body', 'shell']) {
-    assert.ok(measured[name][0] <= measured.width + 1 && measured[name][1] <= measured.height + 1, `${name} overflows at ${measured.width}×${measured.height}: ${measured[name]}`)
+    assert.ok(measured[name][0] <= measured.width + 1 && (narrow || measured[name][1] <= measured.height + 1), `${name} overflows at ${measured.width}×${measured.height}: ${measured[name]}`)
   }
   for (const box of measured.elements) {
-    assert.ok(box.width > 0 && box.height > 0 && box.x >= -1 && box.y >= -1 && box.right <= measured.width + 1 && box.bottom <= measured.height + 1, `${box.selector} is clipped: ${JSON.stringify(box)}`)
+    assert.ok(box.width > 0 && box.height > 0 && box.x >= -1 && box.right <= measured.width + 1
+      && (narrow || box.y >= -1 && box.bottom <= measured.height + 1), `${box.selector} is clipped: ${JSON.stringify(box)}`)
+  }
+  if (narrow) {
+    const scroll = await page.evaluate(() => ({ x: scrollX, y: scrollY }))
+    for (const selector of selectors) {
+      await page.locator(selector).scrollIntoViewIfNeeded()
+      const box = await page.locator(selector).boundingBox()
+      assert.ok(box && box.y >= -1 && box.y + box.height <= measured.height + 1, `${selector} cannot be reached by vertical scrolling`)
+    }
+    await page.evaluate(position => scrollTo(position.x, position.y), scroll)
   }
 }
 
@@ -39,7 +50,7 @@ export const layoutSmoke = async (page, directory) => {
     await page.getByRole('button', { name: 'Node preview', exact: true }).click()
     await assertViewport(page, [...fixed, '.image-viewport', '.preview-tools', '.pixel-bar', '.view-options', '.node-details summary'])
     const preview = await page.locator('.image-viewport').boundingBox()
-    assert.ok(preview.height > 32, `Preview must retain space at ${width}×${height}`)
+    assert.ok(preview.height >= (width <= 600 ? 180 : 32), `Preview must retain space at ${width}×${height}`)
     await page.locator('.node-details summary').click()
     await assertViewport(page, ['.node-explanation'])
     assert.equal((await page.locator('.image-viewport').boundingBox()).height, preview.height, 'Expanding explanations must not squeeze out the image')

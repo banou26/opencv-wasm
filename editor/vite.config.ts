@@ -26,5 +26,5 @@ export default defineConfig(({ mode }) => ({
   resolve: { dedupe: ['@banou/opencv-wasm'] },
   optimizeDeps: { exclude: ['@banou/opencv-wasm', 'cadence'] },
   test: { include: ['tests/**/*.test.ts'] },
-  lint: { rules: { 'no-var': 'error', 'prefer-const': 'error' } },
+  lint: { ignorePatterns: ['vendor/cadence-regional/**'], rules: { 'no-var': 'error', 'prefer-const': 'error' } },
 }))

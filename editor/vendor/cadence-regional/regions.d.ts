@@ -14,6 +14,15 @@ export type RegionalMotionSequence = {
     frameCount: number;
     pairs: RegionalPair[];
 };
+/** Tracking and timing need pooled evidence and image geometry, not retained dense buffers. */
+export type RegionalSupportPair = {
+    frame: number;
+    flow: Pick<DenseMotion, 'width' | 'height'>;
+    grids: MotionGrid[];
+};
+export type RegionalSupportSequence = Omit<RegionalMotionSequence, 'pairs'> & {
+    pairs: RegionalSupportPair[];
+};
 export type TrackSample = {
     frame: number;
     cell: number;
@@ -73,27 +82,27 @@ export declare function analyzeMotionPairs(frames: AnalysisFrame[], options?: Re
 /** Alternative poolings share their flow measurements; scales are not independent votes. */
 export declare function poolMotionSequence(sequence: RegionalMotionSequence, scales?: readonly number[]): RegionalMotionSequence;
 /** Smallest spatial pooling is the support lattice, never a pixel-accurate silhouette. */
-export declare function regionalFineGrid(pair: RegionalPair): MotionGrid;
+export declare function regionalFineGrid(pair: Pick<RegionalPair, 'grids'>): MotionGrid;
 /**
  * Advect supported sites, then join spatial neighbors only when their overlapping
  * whole-shot motion histories agree. A shared held frame cannot merge identities.
  * Co-moving artwork is deliberately unresolved: motion alone cannot identify it.
  */
-export declare function trackRegionalMotion(sequence: RegionalMotionSequence, options?: {
+export declare function trackRegionalMotion(sequence: RegionalSupportSequence, options?: {
     tolerance?: number;
     minimumOverlap?: number;
     minimumCells?: number;
 }): RegionalTracks;
 export type RegionalTimingContext = {
     previous?: {
-        pair: RegionalPair;
+        pair: RegionalSupportPair;
         observations: RegionalObservation[];
     };
     groupIds?: number[];
 };
 /** Current flow validity cannot decide which appearance pixels are allowed to change. */
-export declare function analyzeRegionalTimingFrame(a: AnalysisFrame, b: AnalysisFrame, pair: RegionalPair, observations: RegionalObservation[], context?: RegionalTimingContext): RegionalAnalysis['frames'][number];
+export declare function analyzeRegionalTimingFrame(a: AnalysisFrame, b: AnalysisFrame, pair: RegionalSupportPair, observations: RegionalObservation[], context?: RegionalTimingContext): RegionalAnalysis['frames'][number];
 /** Finalize explicit pair events without inventing timing across missing evidence. */
 export declare function finishRegionalTiming(frames: RegionalAnalysis['frames'], groupIds: number[]): RegionalAnalysis;
 /** Compare group interiors under one robust translation, not the dense deformation. */
-export declare function analyzeRegionalTiming(frames: AnalysisFrame[], sequence: RegionalMotionSequence, tracks: RegionalTracks, onProgress?: (completed: number, total: number) => void): RegionalAnalysis;
+export declare function analyzeRegionalTiming(frames: AnalysisFrame[], sequence: RegionalSupportSequence, tracks: RegionalTracks, onProgress?: (completed: number, total: number) => void): RegionalAnalysis;

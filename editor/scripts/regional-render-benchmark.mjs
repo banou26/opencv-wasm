@@ -14,11 +14,13 @@ await access(source)
 const output = resolve(process.env.BENCH_OUTPUT ?? 'build-smoke/regional-render')
 const workers = Number(process.env.BENCH_WORKERS ?? 0), expectedHash = process.env.EXPECTED_HASH
 const displayMaxSide = process.env.BENCH_DISPLAY_MAX_SIDE === undefined ? undefined : Number(process.env.BENCH_DISPLAY_MAX_SIDE)
+const proximityWeight = process.env.BENCH_PROXIMITY_WEIGHT === undefined ? undefined : Number(process.env.BENCH_PROXIMITY_WEIGHT)
 const expectedWidth = process.env.EXPECTED_WIDTH === undefined ? undefined : Number(process.env.EXPECTED_WIDTH)
 const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : Number(process.env.EXPECTED_HEIGHT)
 assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
 if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH must be a decoded-video SHA256')
 if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
+if (proximityWeight !== undefined) assert.ok(Number.isFinite(proximityWeight) && proximityWeight >= 0 && proximityWeight <= 4, 'BENCH_PROXIMITY_WEIGHT must be between 0 and 4')
 for (const size of [expectedWidth, expectedHeight]) if (size !== undefined) assert.ok(Number.isSafeInteger(size) && size > 0, 'Expected image dimensions must be positive whole numbers')
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
 const freePort = () => new Promise(resolvePort => {
@@ -68,6 +70,11 @@ try {
   const opened = performance.now()
   await change(() => page.getByRole('button', { name: 'Open', exact: true }).click())
   const analysisMs = performance.now() - opened
+  const proximityControl = page.getByLabel('Motion-History Grouping Proximity weight', { exact: true })
+  if (proximityWeight !== undefined && Number(await proximityControl.inputValue()) !== proximityWeight) {
+    await change(() => proximityControl.fill(String(proximityWeight)))
+  }
+  const proximity = Number(await proximityControl.inputValue())
   const displayControl = page.getByLabel('Inspect Regional Review Display max side', { exact: true })
   if (displayMaxSide !== undefined && Number(await displayControl.inputValue()) !== displayMaxSide) {
     assert.ok(displayMaxSide <= Number(await displayControl.getAttribute('max')), 'BENCH_DISPLAY_MAX_SIDE exceeds the editor limit')
@@ -79,6 +86,11 @@ try {
   const sourceInfo = await page.locator('.clip-info').innerText()
   const dimensions = (await page.locator('.view-options code').innerText()).match(/^(\d+)\s*\u00d7\s*(\d+)$/)
   assert.ok(dimensions, 'Regional output must have known image dimensions')
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
+  await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
+  const summary = await page.locator('.value-preview pre').innerText()
+  assert.match(summary, /\d+ original regions -> \d+ motion families/)
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
   const availableLast = Number(await page.getByLabel('Render last frame').inputValue())
   const last = Number(process.env.BENCH_LAST ?? availableLast)
   assert.ok(Number.isSafeInteger(last) && last >= 0 && last <= availableLast, 'BENCH_LAST must be a whole frame index within the clip')
@@ -89,7 +101,7 @@ try {
   await page.getByLabel('Render workers').selectOption(String(workers))
   const total = Number((await page.locator('.render-note').innerText()).match(/^(\d+) output frames/)?.[1])
   assert.ok(total > 0, 'Render controls must resolve a positive frame count')
-  console.log(JSON.stringify({ analysisMs, analysisMaxSide: analysis, displayMaxSide: display, cache, sourceInfo, workers, total }))
+  console.log(JSON.stringify({ analysisMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, cache, sourceInfo, workers, total }))
   const started = performance.now(), milestones = []
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   let previous = '', finished = false
@@ -122,9 +134,9 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [], 'Browser must not report errors')
   const report = {
-    status: 'passed', source: resolve(source), sourceInfo, analysisMs, analysisMaxSide: analysis, displayMaxSide: display, cache, last, fps: 60, quality: 'high',
+    status: 'passed', source: resolve(source), sourceInfo, analysisMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, cache, last, fps: 60, quality: 'high',
     requestedWorkers: workers, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs,
-    total, width: video.width, height: video.height, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
+    total, width: video.width, height: video.height, summary, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
   }
   await writeFile(`${output}.json`, `${JSON.stringify(report, null, 2)}\n`)
   console.log(`PASS: ${total} frames in ${details[1]} s after ${(analysisMs / 1000).toFixed(2)} s scene analysis; SHA256 ${hash}`)

@@ -291,6 +291,17 @@ the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 control; the default uses the prefab's 0.25. The report records the selected
 weight and full family summary alongside the video hash.
 
+The 2026-09-23 market check exported 293 frames at 1920x1080/60fps. With weight
+0, the decoded SHA-256 exactly matched the previous review:
+`56ba952ae8d446a55e41ca1d18d2a77109d594b6b5cbd1735b4f23bfccfae971`.
+At 0.25, analysis took 9.66s and rendering 6.54s (Auto, one worker), with hash
+`be51c009a4dc644cfed7f7274c55b9df5b682d440521d0c3467c68a7ad07f193`.
+Both have 16 original regions and seven families. The main background family
+retains regions `1,8,11,12,15`; smaller-family assignments change. This browser
+decode differs slightly from the frozen FFmpeg replay used in Cadence's
+`tests/regional-proximity.ts`; its manual character IDs must not be reused here.
+The new review still shows fragmented character support and identity changes.
+
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
   The texture floor scales with spatial grain estimates at several radii; weak

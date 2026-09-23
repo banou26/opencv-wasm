@@ -7,9 +7,10 @@ import { regionalKernel } from '../src/worker/regional-kernels'
 import { regionalSummary, type RegionalData } from '../src/worker/regional-data'
 import { renderRegional } from '../src/worker/regional-render'
 
-const fixture = (): RegionalData => {
+const fixture = (frameCount = 3): RegionalData => {
   const width = 72, height = 40, cellSize = 8, columns = 9, rows = 5, seeds = [20, 24]
-  const sequence: RegionalMotionSequence = { width, height, frameCount: 3, pairs: Array.from({ length: 2 }, (_, frame) => ({ frame,
+  const pairs = Array.from({ length: frameCount - 1 }, (_, frame) => frame)
+  const sequence: RegionalMotionSequence = { width, height, frameCount, pairs: pairs.map(frame => ({ frame,
     flow: { width, height, vectors: new Float32Array(width * height * 2), valid: new Uint8Array(width * height), roundTrip: new Float32Array(width * height), pan: { dx: 0, dy: 0, response: 0, used: false } },
     grids: [{ cellSize, columns, rows, cells: Array.from({ length: columns * rows }, (_, id) => ({
       x: id % columns * cellSize, y: Math.floor(id / columns) * cellSize, width: cellSize, height: cellSize, samples: 64,
@@ -18,11 +19,11 @@ const fixture = (): RegionalData => {
     })) }],
   })) }
   return { stage: 'history', sequence,
-    tracks: { width, height, cellSize, frameCount: 3, tracks: [], groups: [{ id: 1, trackIds: [] }],
-      frames: [0, 1].map(frame => ({ frame, observations: [{ id: 1, cells: [...seeds], dx: 0, dy: 0, spread: 0 }] })) },
-    scene: { asset: 'clip', first: 10, last: 12, sourceWidth: width, sourceHeight: height, frames: Array.from({ length: 3 }, () => ({ width, height, data: new Uint8Array(width * height * 3).fill(80) })) },
-    families: { width, height, cellSize, frameCount: 3, options: { tolerance: .75, minimumOverlap: 4, proximityWeight: 0 }, comparisons: [], families: [{ id: 1, regionIds: [1] }],
-      frames: [0, 1].map(frame => ({ frame, observations: [{ id: 1, regionIds: [1], cells: [...seeds], dx: 0, dy: 0, spread: 0 }] })) },
+    tracks: { width, height, cellSize, frameCount, tracks: [], groups: [{ id: 1, trackIds: [] }],
+      frames: pairs.map(frame => ({ frame, observations: [{ id: 1, cells: [...seeds], dx: 0, dy: 0, spread: 0 }] })) },
+    scene: { asset: 'clip', first: 10, last: 9 + frameCount, sourceWidth: width, sourceHeight: height, frames: Array.from({ length: frameCount }, () => ({ width, height, data: new Uint8Array(width * height * 3).fill(80) })) },
+    families: { width, height, cellSize, frameCount, options: { tolerance: .75, minimumOverlap: 4, proximityWeight: 0 }, comparisons: [], families: [{ id: 1, regionIds: [1] }],
+      frames: pairs.map(frame => ({ frame, observations: [{ id: 1, regionIds: [1], cells: [...seeds], dx: 0, dy: 0, spread: 0 }] })) },
   }
 }
 const step = (options: MotionCompletionOptions = {}) => ({ key: 'completion', node: { id: 'ncomplete', type: 'regionalComplete' as const, params: { ...defaultParams('regionalComplete'), ...options }, position: { x: 0, y: 0 } }, inputs: {}, frame: 0 })
@@ -108,12 +109,7 @@ test('cleanup provenance has distinct colors and counts without changing measure
 })
 
 test('temporal cleanup uses both adjacent pairs even when geometric completion is disabled', async () => {
-  const data = fixture()
-  data.scene.frames.push(structuredClone(data.scene.frames[1]!)); data.scene.last = 13
-  data.sequence!.frameCount = 4; data.families!.frameCount = 4; data.tracks!.frameCount = 4
-  data.sequence!.pairs.push({ ...structuredClone(data.sequence!.pairs[1]!), frame: 2 })
-  data.families!.frames.push({ ...structuredClone(data.families!.frames[1]!), frame: 2 })
-  data.tracks!.frames.push({ ...structuredClone(data.tracks!.frames[1]!), frame: 2 })
+  const data = fixture(4)
   for (const frame of [0, 2]) {
     Object.assign(data.sequence!.pairs[frame]!.grids[0]!.cells[22]!, { accepted: 64, coverage: 1, coherent: true, dx: 0, dy: 0, spread: 0 })
     data.families!.frames[frame]!.observations[0]!.cells.push(22)
@@ -131,6 +127,49 @@ test('temporal cleanup uses both adjacent pairs even when geometric completion i
       expect(value.data.completion!.frames[2]!.counts.temporal).toBe(0)
     } finally { bundle!.dispose() }
   }
+  expect(data).toEqual(original)
+})
+
+test('temporal cleanup bridges longer and leading gaps only with sufficient full-scene witnesses', async () => {
+  const cases = [
+    { witnesses: [0, 3], repaired: [1, 2] }, { witnesses: [2, 3], repaired: [0, 1] },
+    { witnesses: [3], repaired: [] }, { witnesses: [0, 1], repaired: [] },
+  ]
+  for (const { witnesses, repaired } of cases) {
+    const data = fixture(5)
+    for (const frame of witnesses) {
+      Object.assign(data.sequence!.pairs[frame]!.grids[0]!.cells[22]!, { accepted: 64, coverage: 1, coherent: true, dx: 0, dy: 0, spread: 0 })
+      data.families!.frames[frame]!.observations[0]!.cells.push(22)
+    }
+    const original = structuredClone(data), options = { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated: false }
+    const bundle = await regionalKernel(step(options), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => false)
+    try {
+      const value = bundle!.outputs['out:regions:data']!
+      if (value.kind !== 'regions') throw new Error('Missing completion')
+      expect(value.data.completion).toEqual(completeMotionSupport(data.sequence!, data.families!, options))
+      expect(value.data.completion!.frames.filter(frame => frame.observations[0]!.temporalCells.includes(22)).map(frame => frame.frame)).toEqual(repaired)
+      expect(value.data.completion!.frames).toHaveLength(4)
+    } finally { bundle!.dispose() }
+    expect(data).toEqual(original)
+  }
+})
+
+test('completion checkpoints preparation passes without exposing null checkpoints as frames', async () => {
+  const data = fixture(5), original = structuredClone(data)
+  let checkpoints = 0
+  for (const bridgeTemporal of [true, false]) {
+    checkpoints = 0
+    const bundle = await regionalKernel(step({ bridgeTemporal }), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => { checkpoints++; return false })
+    try {
+      const value = bundle!.outputs['out:regions:data']!
+      if (value.kind !== 'regions') throw new Error('Missing completion')
+      expect(value.data.completion!.frames.map(frame => frame.frame)).toEqual([0, 1, 2, 3])
+      expect(checkpoints).toBe(bridgeTemporal ? 17 : 9)
+    } finally { bundle!.dispose() }
+  }
+  checkpoints = 0
+  await expect(regionalKernel(step(), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => ++checkpoints === 2)).rejects.toThrow(/cancelled/)
+  expect(checkpoints).toBe(2)
   expect(data).toEqual(original)
 })
 

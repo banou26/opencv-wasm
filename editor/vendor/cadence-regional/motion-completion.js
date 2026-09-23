@@ -96,11 +96,11 @@ function reachable(seeds, allowed, columns, rows, limit) {
     return result;
 }
 /**
- * Independent per-pair proposals with whole-scene contradiction checks. The generator
- * lets browser workers yield between pairs without throwing away temporal evidence.
+ * Spatial proposals followed by frozen-donor temporal repair. Null yields are
+ * preprocessing checkpoints; non-null yields are final frames, never partial results.
  * Ownership is inferred; source flow, families and drawing timing remain untouched.
  */
-export function* completeMotionSupportFrames(sequence, families, options = {}) {
+export function* completeMotionSupportSteps(sequence, families, options = {}) {
     const { width, height, frameCount, cellSize, columns, rows, count, options: resolved } = layout(sequence, families, options);
     const validFrame = (frame) => Number.isSafeInteger(frame) && frame >= 0 && frame < frameCount - 1;
     const history = new Map(families.frames.map(frame => [frame.frame, frame]));
@@ -192,58 +192,117 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
         }
         return !requireWitness || witnesses > 0;
     };
-    // A rolling three-frame window keeps immutable pre-temporal donors, never bridged results.
+    const consistentTrajectory = (context, p, id) => {
+        const cell = context.grid.cells[p];
+        // A positive donor is an anchor, not permission to ignore later redraws.
+        // This only vetoes inference; unknown flow and incomplete paths certify nothing.
+        for (const direction of [-1, 1]) {
+            let dx = 0, dy = 0, at = context;
+            for (;;) {
+                const velocity = at.velocities.get(id);
+                const usableVelocity = velocity && [velocity.dx, velocity.dy].every(Number.isFinite);
+                const left = cell.x + dx, top = cell.y + dy, right = left + cell.width, bottom = top + cell.height;
+                if (left < 0 || top < 0 || right > width || bottom > height)
+                    break;
+                for (let y = Math.floor(top / cellSize); y < Math.ceil(bottom / cellSize); y++) {
+                    for (let x = Math.floor(left / cellSize); x < Math.ceil(right / cellSize); x++) {
+                        const q = y * columns + x, label = at.owner[q], raw = at.grid.cells[q];
+                        if (label >= 0 && at.observations[label].id !== id
+                            || usableVelocity && (raw.coherent || raw.dx !== null || raw.dy !== null) && !fits(raw, velocity))
+                            return false;
+                    }
+                }
+                if (!usableVelocity)
+                    break;
+                const next = byFrame.get(at.frame + direction);
+                const transport = (direction > 0 ? at : next)?.velocities.get(id);
+                if (!next || !transport || ![transport.dx, transport.dy].every(Number.isFinite))
+                    break;
+                dx += direction * transport.dx;
+                dy += direction * transport.dy;
+                at = next;
+            }
+        }
+        return true;
+    };
+    // Temporal searches read frozen spatial rasters, never previous temporal repairs.
     const completedFrames = new Map();
-    let pending;
-    const bridge = (current) => {
-        const { frame, owner } = current, before = completedFrames.get(frame.frame - 1), after = completedFrames.get(frame.frame + 1);
-        if (!resolved.bridgeTemporal || !before || !after)
-            return frame;
-        const context = byFrame.get(frame.frame), previous = byFrame.get(frame.frame - 1);
+    const infer = (current, donors, associateMotion) => {
+        const { frame, owner } = current;
+        const context = byFrame.get(frame.frame);
         const proposals = new Int32Array(count).fill(-1);
-        const agrees = (donor, cell, dx, dy, id) => {
+        const footprint = (donor, cell, dx, dy, id) => {
             const left = cell.x + dx, top = cell.y + dy, right = left + cell.width, bottom = top + cell.height;
             if (![left, top, right, bottom].every(Number.isFinite) || left < 0 || top < 0 || right > width || bottom > height)
-                return false;
+                return 'blocked';
+            let complete = true;
             // Every positively overlapped donor cell must agree, not just the shifted center.
             for (let y = Math.floor(top / cellSize); y < Math.ceil(bottom / cellSize); y++) {
                 for (let x = Math.floor(left / cellSize); x < Math.ceil(right / cellSize); x++) {
-                    const label = donor.owner[y * columns + x];
-                    if (label < 0 || donor.ids[label] !== id)
-                        return false;
+                    const p = y * columns + x, label = donor.owner[p], raw = byFrame.get(donor.frame.frame);
+                    const velocity = raw.velocities.get(id);
+                    if (label >= 0 && donor.ids[label] !== id || label === -2 && (!velocity || !fits(raw.grid.cells[p], velocity)))
+                        return 'blocked';
+                    if (label < 0)
+                        complete = false;
                 }
             }
-            return true;
+            return complete ? 'supported' : 'unknown';
+        };
+        const witness = (p, id, direction, minimum = 1) => {
+            const cell = context.grid.cells[p];
+            let dx = 0, dy = 0, at = frame.frame, witnesses = 0;
+            for (;;) {
+                const next = at + direction, donor = donors.get(next);
+                if (next === -1)
+                    return 'leading';
+                const velocity = byFrame.get(direction > 0 ? at : next)?.velocities.get(id);
+                if (!donor || !velocity || ![velocity.dx, velocity.dy].every(Number.isFinite))
+                    return 'blocked';
+                dx += direction * velocity.dx;
+                dy += direction * velocity.dy;
+                const state = footprint(donor, cell, dx, dy, id);
+                if (state === 'blocked')
+                    return 'blocked';
+                if (state === 'supported' && ++witnesses >= minimum)
+                    return 'supported';
+                at = next;
+            }
         };
         for (const [label, observation] of frame.observations.entries()) {
-            const id = observation.id, backward = previous.velocities.get(id), forward = context.velocities.get(id);
-            if (!backward || !forward || ![backward.dx, backward.dy, forward.dx, forward.dy].every(Number.isFinite))
-                continue;
+            const id = observation.id, velocity = context.velocities.get(id);
             const competitors = [];
             for (let p = 0; p < count; p++)
-                if (owner[p] === -2 || owner[p] >= 0 && owner[p] !== label)
+                if (owner[p] >= 0 && owner[p] !== label
+                    || owner[p] === -2 && !fits(context.grid.cells[p], velocity))
                     competitors.push(p);
             const clearance = distances(competitors, columns, rows);
+            // Scene donors may overcome a short reach, not the original spatial separation guard.
+            const seeds = associateMotion ? distances(observation.measuredCells, columns, rows) : null;
+            const separation = associateMotion ? distances(context.grid.cells.flatMap((cell, p) => {
+                const original = context.owner[p];
+                return original >= 0 ? original !== label ? [p] : []
+                    : original === -2 && (!fits(cell, velocity) || !temporalStable(context, p, id, false)) ? [p] : [];
+            }), columns, rows) : null;
             for (let p = 0; p < count; p++) {
-                if (owner[p] !== -1 || clearance[p] <= Math.max(1, resolved.competitorClearance))
+                if (owner[p] !== (associateMotion ? -2 : -1) || clearance[p] <= Math.max(1, resolved.competitorClearance)
+                    || associateMotion && !fits(context.grid.cells[p], velocity))
                     continue;
-                const cell = context.grid.cells[p];
-                if (!agrees(before, cell, -backward.dx, -backward.dy, id) || !agrees(after, cell, forward.dx, forward.dy, id)
-                    || !temporalStable(context, p, id, false))
+                if (seeds && separation && separation[p] <= seeds[p] + resolved.competitorClearance)
+                    continue;
+                const before = witness(p, id, -1);
+                if (before === 'blocked' || witness(p, id, 1, before === 'leading' ? 2 : 1) !== 'supported'
+                    || !temporalStable(context, p, id, false) || !consistentTrajectory(context, p, id))
                     continue;
                 proposals[p] = proposals[p] === -1 ? label : -2;
             }
         }
-        for (let p = 0; p < count; p++)
-            if (proposals[p] >= 0) {
-                frame.observations[proposals[p]].temporalCells.push(p);
-                frame.counts.temporal++;
-                frame.counts.unknown--;
-            }
-        return frame;
+        return proposals;
     };
-    for (const context of contexts) {
-        const { owner: original, observations, grid } = context, owner = original.slice();
+    const spatial = (context, supplemental, prior) => {
+        const { owner: original, grid } = context, owner = original.slice();
+        const observations = context.observations.map(o => ({ ...o, measuredCells: [...o.measuredCells],
+            motionCells: [], holeCells: [], borderCells: [], isolatedCells: [], temporalCells: [] }));
         const stable = (p, label, requireWitness) => temporalStable(context, p, observations[label].id, requireWitness);
         const originalDistances = observations.map(o => distances(o.measuredCells, columns, rows));
         const nearest = new Int32Array(count).fill(-1), first = new Float64Array(count).fill(Infinity);
@@ -279,6 +338,17 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
             observations[label].motionCells.push(p);
             owner[p] = label;
         }
+        if (supplemental)
+            for (let p = 0; p < count; p++)
+                if (supplemental[p] >= 0) {
+                    if (owner[p] !== -2)
+                        throw new Error('Temporal motion association replaces existing support');
+                    const label = supplemental[p];
+                    observations[label].motionCells.push(p);
+                    owner[p] = label;
+                }
+        for (const observation of observations)
+            observation.motionCells.sort((a, b) => a - b);
         const blockers = [];
         for (let p = 0; p < count; p++)
             if (owner[p] === -2)
@@ -310,6 +380,8 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
                 const edge = reach[p] <= maxBorderDistance && Math.min(x + 1, columns - x, y + 1, rows - y) <= maxBorderDistance;
                 if (!hole && !edge)
                     continue;
+                if (prior && prior.owner[p] !== label && !consistentTrajectory(context, p, observation.id))
+                    continue;
                 if (assigned[p] !== -1)
                     throw new Error('Ambiguous completion escaped competitor clearance');
                 assigned[p] = label;
@@ -337,6 +409,8 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
                     if (diagonals.some(q => completed[q] === -2 || completed[q] >= 0 && completed[q] !== label)
                         || !stable(p, label, false))
                         continue;
+                    if (prior && prior.owner[p] !== label && !consistentTrajectory(context, p, observations[label].id))
+                        continue;
                     observations[label].isolatedCells.push(p);
                     isolated++;
                 }
@@ -347,18 +421,44 @@ export function* completeMotionSupportFrames(sequence, families, options = {}) {
         for (const [label, observation] of observations.entries())
             for (const p of observation.isolatedCells)
                 completed[p] = label;
-        const current = { frame, owner: completed, ids: observations.map(o => o.id) };
-        completedFrames.set(context.frame, current);
-        if (pending) {
-            yield bridge(pending);
-            completedFrames.delete(pending.frame.frame - 1);
-            if (context.frame !== pending.frame.frame + 1)
-                completedFrames.delete(pending.frame.frame);
-        }
-        pending = current;
+        return { frame, owner: completed, ids: observations.map(o => o.id) };
+    };
+    for (const context of contexts) {
+        completedFrames.set(context.frame, spatial(context));
+        yield null;
     }
-    if (pending)
-        yield bridge(pending);
+    if (resolved.bridgeTemporal) {
+        // Resolve compatible rejected flow using only the first spatial pass. No feedback loop.
+        const supplements = new Map();
+        for (const [frame, current] of completedFrames) {
+            supplements.set(frame, infer(current, completedFrames, true));
+            yield null;
+        }
+        for (const context of contexts) {
+            const extra = supplements.get(context.frame);
+            if (extra.some(label => label >= 0))
+                completedFrames.set(context.frame, spatial(context, extra, completedFrames.get(context.frame)));
+            yield null;
+        }
+    }
+    for (const current of completedFrames.values()) {
+        if (resolved.bridgeTemporal) {
+            const proposals = infer(current, completedFrames, false);
+            for (let p = 0; p < count; p++)
+                if (proposals[p] >= 0) {
+                    current.frame.observations[proposals[p]].temporalCells.push(p);
+                    current.frame.counts.temporal++;
+                    current.frame.counts.unknown--;
+                }
+        }
+        yield current.frame;
+    }
+}
+/** Final frames only. Browser workers should consume Steps for preprocessing cancellation. */
+export function* completeMotionSupportFrames(sequence, families, options = {}) {
+    for (const frame of completeMotionSupportSteps(sequence, families, options))
+        if (frame !== null)
+            yield frame;
 }
 /** Source-preserving motion associations and bounded geometry; not certified silhouettes. */
 export function completeMotionSupport(sequence, families, options = {}) {

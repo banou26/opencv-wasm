@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportFrames, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -103,9 +103,9 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     if ((data.stage !== 'history' && data.stage !== 'timing') || !data.sequence || !data.families) throw new Error('Support completion requires motion-history grouping or drawing-event data with families')
     const options = { maxHoleDistance: Number(params.maxHoleDistance), maxBorderDistance: Number(params.maxBorderDistance), competitorClearance: Number(params.competitorClearance), fillIsolated: Boolean(params.fillIsolated), bridgeTemporal: Boolean(params.bridgeTemporal) }
     const completion = completeMotionSupport({ ...data.sequence, pairs: [] }, { ...data.families, frames: [] }, options)
-    for (const frame of completeMotionSupportFrames(data.sequence, data.families, options)) {
+    for (const frame of completeMotionSupportSteps(data.sequence, data.families, options)) {
       await checkpoint()
-      completion.frames.push(frame)
+      if (frame !== null) completion.frames.push(frame)
     }
     output = { ...data, stage: 'completion', completion }
   } else {

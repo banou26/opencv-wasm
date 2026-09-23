@@ -424,13 +424,25 @@ background in that baseline, and the central characters remain fragmented.
   neighbors already completed for one family. Foreign diagonal ownership,
   informative raw blockers and neighboring-pair motion contradictions veto it.
   It runs once from the pre-cleanup map, without recursively filling more cells.
-  Temporal cleanup requires the same observed family in the current pair and
-  both immediately adjacent pairs. After translation, both adjacent maps must
-  cover the entire original cell footprint with that family, without clipping.
-  Raw motion contradictions, nearby competing completed support or blockers,
-  and ambiguous family candidates veto it. Donor maps can include isolated
-  cleanup but never temporal additions. Missing neighbors, end pairs and chains
-  of missing support are not bridged. Neither pass moves or synthesizes artwork.
+  Temporal cleanup first freezes the spatial-completion maps, then checks
+  compatible but unassigned flow across the scene using entire cell footprints
+  and original family displacement chains. These time-supported associations
+  retain motion provenance. One bounded spatial rerun can use the resulting
+  evidence without adding new original-distance seeds or weakening the original
+  seed-relative competitor separation. The same toggle controls
+  this extra association step and the subsequent empty-run repair; ordinary
+  local motion association still runs when it is off. Interior gaps need complete
+  agreeing donors on both sides; multiple raw-unknown pairs can be bridged.
+  A leading gap must reach
+  the actual start of the analyzed sequence without a blocker and have two
+  complete future witnesses. There is no trailing extrapolation. Missing pair
+  keys or velocities, foreign ownership, incompatible unassigned evidence and
+  clipping stop a search. Raw motion contradictions, nearby competing support
+  and ambiguous family candidates also veto filling. Donors can include isolated
+  cleanup but never temporal additions. A separate raw-trajectory veto continues
+  beyond the first agreeing donor to catch later contradictions; incomplete or
+  unknown trajectories are not certified ownership. Neither pass moves or
+  synthesizes artwork.
   These are analysis-grid distances, not
   full-resolution pixels. The source-backed four-panel view shows source /
   measured support on top, completed support / inference distinction below.
@@ -443,8 +455,10 @@ background in that baseline, and the central characters remain fragmented.
   cannot identify entirely unobserved objects, establish correct ownership,
   recover pixels or produce a pixel-accurate silhouette. It does not change
   motion, grouping, drawing events or the measured Review inspector. Completion is
-  cached for the scene and can be cancelled between outgoing pairs without
-  discarding the neighboring-frame context needed for validation.
+  cached for the scene. The worker checkpoints after every pair in each
+  preparation pass and after every finalized temporal frame, preserving
+  whole-scene context while allowing cancellation. Preparation checkpoints are
+  not output frames.
 
   Full-shot completion export:
   ```sh

@@ -9,7 +9,7 @@ export type MotionCompletionOptions = {
     competitorClearance?: number;
     /** Fill an empty single cell enclosed by one completed family, without iterative growth. */
     fillIsolated?: boolean;
-    /** Bridge only one empty frame using agreeing motion-aligned support on both adjacent frames. */
+    /** Resolve compatible rejected motion and empty runs from frozen scene-wide support. */
     bridgeTemporal?: boolean;
 };
 export type MotionCompletionFrame = {
@@ -45,10 +45,12 @@ export type MotionCompletion = {
     frames: MotionCompletionFrame[];
 };
 /**
- * Independent per-pair proposals with whole-scene contradiction checks. The generator
- * lets browser workers yield between pairs without throwing away temporal evidence.
+ * Spatial proposals followed by frozen-donor temporal repair. Null yields are
+ * preprocessing checkpoints; non-null yields are final frames, never partial results.
  * Ownership is inferred; source flow, families and drawing timing remain untouched.
  */
+export declare function completeMotionSupportSteps(sequence: RegionalSupportSequence, families: MotionHistoryGroups, options?: MotionCompletionOptions): Generator<MotionCompletionFrame | null>;
+/** Final frames only. Browser workers should consume Steps for preprocessing cancellation. */
 export declare function completeMotionSupportFrames(sequence: RegionalSupportSequence, families: MotionHistoryGroups, options?: MotionCompletionOptions): Generator<MotionCompletionFrame>;
 /** Source-preserving motion associations and bounded geometry; not certified silhouettes. */
 export declare function completeMotionSupport(sequence: RegionalSupportSequence, families: MotionHistoryGroups, options?: MotionCompletionOptions): MotionCompletion;

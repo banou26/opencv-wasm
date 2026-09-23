@@ -61,14 +61,14 @@ test('completion accepts timing across nested custom-node interfaces and a saved
   const nested = groupNodes(grouped, undefined, ['ncompletiongroup'], 'Nested completion', 'gnested', 'nnested')
   const restored = parseDocument(JSON.parse(JSON.stringify(nested)))
   expect(planGraph(restored, 'ncompletionview', null, 3, 'clip', 8).target).toEqual(target)
-  expect(planGraph(restored, 'n5', null, 3, 'clip', 8).steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
+  expect(planGraph(restored, 'nreview', null, 3, 'clip', 8).steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
 })
 
-test('regional output 1 preserves the review and output 2 renders the completion inspector', () => {
+test('the single regional output renders completion while the measured review stays inspectable', () => {
   const doc = parseDocument(regionalLayersGraph())
-  expect(doc.nodes.filter(node => node.type === 'output').map(node => node.id)).toEqual(['n5', 'ncompletionout'])
-  const review = planGraph(doc, 'n5', null, 3, 'clip', 8)
-  const completion = planGraph(doc, 'ncompletionout', null, 3, 'clip', 8)
+  expect(doc.nodes.filter(node => node.type === 'output').map(node => node.id)).toEqual(['n5'])
+  const review = planGraph(doc, 'nreview', null, 3, 'clip', 8)
+  const completion = planGraph(doc, 'n5', null, 3, 'clip', 8)
   expect(review.steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
   expect(review.steps.filter(step => step.node.type === 'regionalInspect').map(step => step.node.params.view)).toEqual(['review'])
   expect(completion.steps.some(step => step.node.type === 'regionalComplete')).toBe(true)
@@ -90,18 +90,18 @@ test('whole-scene native analysis executes once across scrub order and exposes e
   })
   try {
     for (const time of [3, 0, 6, 2, 7]) {
-      const result = await evaluate('n5', time)
+      const result = await evaluate('nreview', time)
       try { const frame = image(result.value); expect(frame.mat.cols).toBe(256); expect(frame.mat.rows).toBe(192); expect(frame.mat.data32F.some(v => v > .5)).toBe(true) } finally { result.release() }
     }
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
     expect(calls.has('regionalComplete')).toBe(false)
     for (const time of [3, 0, 7]) {
       const completed = await evaluate('ncompletionview', time, 'out:string:summary')
-      try { if (completed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(completed.value.value).toContain('Inferred support is not measured motion') } finally { completed.release() }
+      try { if (completed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(completed.value.value).toContain('Inferred support is not measured family membership') } finally { completed.release() }
     }
     expect(calls.get('regionalComplete')).toBe(1)
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
-    const baseline = await evaluate('n5', 3)
+    const baseline = await evaluate('nreview', 3)
     let originalPixels: Float32Array
     try { originalPixels = image(baseline.value).mat.data32F.slice() } finally { baseline.release() }
     doc.nodes.find(node => node.id === 'ncomplete')!.params.maxHoleDistance = 0
@@ -109,7 +109,7 @@ test('whole-scene native analysis executes once across scrub order and exposes e
     try { if (changed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(changed.value.value).toContain('holes 0; border 6') } finally { changed.release() }
     expect(calls.get('regionalComplete')).toBe(2)
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
-    const unchanged = await evaluate('n5', 3)
+    const unchanged = await evaluate('nreview', 3)
     try { expect(image(unchanged.value).mat.data32F).toEqual(originalPixels) } finally { unchanged.release() }
     const dense = await evaluate('ndense', 5, 'out:regions:data')
     try {
@@ -154,7 +154,7 @@ test('whole-scene native analysis executes once across scrub order and exposes e
 test('rendering under cache pressure retains scene analysis and preserves pixels', async () => {
   const doc = regionalLayersGraph(), data = fixture(12), count = data.scene.frames.length
   const info = { id: 'clip', name: 'fixture', width: 128, height: 96, frameCount: count, fps: 24, codec: 'test', decoder: 'software' as const, warnings: [] }
-  const stages = ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']
+  const stages = ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete']
   const sizes: number[] = [], reference = new ResultCache<Payload>(64 * 1024 ** 2)
   const evaluator = (cache: ResultCache<Payload>, calls: Map<string, number>) => (time: number) => evaluateGraph(doc, 'n5', null, time, [], {
     cache, assets: { clip: info }, sourceId: 'clip', parameter: parameterValue, cancelled: () => false, yield: async () => {}, now: () => 0, status: () => {},
@@ -176,7 +176,7 @@ test('rendering under cache pressure retains scene analysis and preserves pixels
       try { expected.push(digest(result.value)) } finally { result.release() }
     }
   } finally { reference.clear() }
-  // Room for unique scene data and two inspector/output pairs, not six copies of the scene.
+  // Room for unique scene data and two inspector/output pairs, not copies per stage.
   const budget = Math.max(...sizes) + 4 * (256 * 192 * 16) + 128 * 1024
   expect(sizes.reduce((sum, bytes) => sum + bytes, 0)).toBeGreaterThan(budget)
   const cache = new ResultCache<Payload>(budget), calls = new Map<string, number>(), evaluate = evaluator(cache, calls)

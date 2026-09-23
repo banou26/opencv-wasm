@@ -64,8 +64,9 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
     for (const observation of frame?.observations ?? []) {
       const rgb = color(observation.id)
       paintCells(parts[1]!, observation.measuredCells, rgb)
-      for (const cells of [observation.measuredCells, observation.holeCells, observation.borderCells]) paintCells(parts[2]!, cells, rgb)
+      for (const cells of [observation.measuredCells, observation.motionCells, observation.holeCells, observation.borderCells]) paintCells(parts[2]!, cells, rgb)
       paintCells(parts[3]!, observation.measuredCells, [150, 150, 165])
+      paintCells(parts[3]!, observation.motionCells, [180, 116, 244])
       paintCells(parts[3]!, observation.holeCells, [240, 178, 72])
       paintCells(parts[3]!, observation.borderCells, [66, 220, 183])
     }
@@ -75,11 +76,11 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
       'Top: source / measured family support. Bottom: completed support / inference distinction.',
       `Source ${sourceFrame}${index < data.scene.frames.length - 1 ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`,
       `${width} x ${height} display / ${analysisWidth} x ${analysisHeight} analysis`,
-      frame ? `Cells: measured ${frame.counts.measured}; inferred holes ${frame.counts.holes}; inferred border ${frame.counts.border}; blocked ${frame.counts.blocked}; unknown ${frame.counts.unknown}` : 'No completion evidence for this frame.',
-      'Distinction: gray measured; amber inferred holes; teal inferred border; unpainted blocked/unknown.',
-      'Inferred support is not measured motion, recovered pixels or a pixel-accurate silhouette.',
+      frame ? `Cells: measured ${frame.counts.measured}; motion-associated ${frame.counts.motion}; inferred holes ${frame.counts.holes}; inferred border ${frame.counts.border}; blocked ${frame.counts.blocked}; unknown ${frame.counts.unknown}` : 'No completion evidence for this frame.',
+      'Distinction: gray measured; purple motion-associated; amber inferred holes; teal inferred border; unpainted blocked/unknown.',
+      'Inferred support is not measured family membership, recovered pixels or a pixel-accurate silhouette. Original motion measurements stay unchanged.',
       `Limits (fine-grid cells): holes ${completion.options.maxHoleDistance}; border ${completion.options.maxBorderDistance}; competitor clearance ${completion.options.competitorClearance}`,
-      ...(frame?.observations ?? []).map(observation => `Family ${observation.id}: measured ${observation.measuredCells.length}; holes ${observation.holeCells.length}; border ${observation.borderCells.length}`),
+      ...(frame?.observations ?? []).map(observation => `Family ${observation.id}: measured ${observation.measuredCells.length}; motion-associated ${observation.motionCells.length}; holes ${observation.holeCells.length}; border ${observation.borderCells.length}`),
     ].join('\n')
     return { width: width * 2, height: height * 2, pixels, summary }
   }

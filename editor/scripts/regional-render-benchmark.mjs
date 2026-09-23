@@ -15,7 +15,7 @@ const output = resolve(process.env.BENCH_OUTPUT ?? 'build-smoke/regional-render'
 const workers = Number(process.env.BENCH_WORKERS ?? 0), expectedHash = process.env.EXPECTED_HASH
 const displayMaxSide = process.env.BENCH_DISPLAY_MAX_SIDE === undefined ? undefined : Number(process.env.BENCH_DISPLAY_MAX_SIDE)
 const proximityWeight = process.env.BENCH_PROXIMITY_WEIGHT === undefined ? undefined : Number(process.env.BENCH_PROXIMITY_WEIGHT)
-const view = process.env.BENCH_VIEW ?? 'review'
+const view = process.env.BENCH_VIEW ?? 'completion'
 const expectedWidth = process.env.EXPECTED_WIDTH === undefined ? undefined : Number(process.env.EXPECTED_WIDTH)
 const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : Number(process.env.EXPECTED_HEIGHT)
 assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
@@ -75,7 +75,8 @@ try {
   assert.equal(await page.getByLabel('Motion-History Grouping Proximity weight', { exact: true }).count(), 0,
     'The rejected proximity control must not be offered by the editor')
   const proximity = 0
-  const inspector = view === 'completion' ? 'Inspect Support Completion' : 'Inspect Regional Review'
+  // The prefab has one output. Change its inspector's view for read-only controls.
+  const inspector = 'Inspect Support Completion'
   const selected = performance.now()
   await change(() => page.locator('.step-strip button').filter({ hasText: inspector }).click())
   const selectionMs = performance.now() - selected
@@ -106,7 +107,9 @@ try {
   await page.getByLabel('Render quality').selectOption('high')
   await page.getByLabel('Render workers').selectOption(String(workers))
   // Inspecting a branch does not change the movie's explicit output target.
-  const renderTarget = view === 'completion' ? 'ncompletionout' : 'n5'
+  const renderTarget = 'n5'
+  assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), [renderTarget],
+    'The regional prefab must expose exactly one render output')
   await page.getByLabel('Render target').selectOption(renderTarget)
   assert.equal(await page.getByLabel('Render target').inputValue(), renderTarget)
   const total = Number((await page.locator('.render-note').innerText()).match(/^(\d+) output frames/)?.[1])

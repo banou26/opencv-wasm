@@ -17,8 +17,7 @@ export const regionalLayersGraph = (): GraphDocument => {
     node('ntimeview', 'regionalInspect', 2530, 1340, { view: 'timeline' }),
     node('nconflictview', 'regionalInspect', 2900, 740, { view: 'conflicts' }),
     node('ncomplete', 'regionalComplete', 3270, 740), node('ncompletionview', 'regionalInspect', 3270, 1340, { view: 'completion' }),
-    node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 3270, 40),
-    node('ncompletionout', 'output', 3640, 1340),
+    node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 3640, 1340),
   ], edges: [] }
   const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => { doc = connect(doc, { source, sourceHandle, target, targetHandle }) }
   wire('n1', 'out:video:clip', 'ninfo', 'in:video:clip')
@@ -31,7 +30,6 @@ export const regionalLayersGraph = (): GraphDocument => {
   wire('ntiming', 'out:regions:data', 'ncomplete', 'in:regions:data')
   wire('ncomplete', 'out:regions:data', 'ncompletionview', 'in:regions:data')
   for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'nconflictview', 'ncompletionview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
-  wire('nreview', 'out:frame:image', 'n5', 'in:frame:image')
-  wire('ncompletionview', 'out:frame:image', 'ncompletionout', 'in:frame:image')
+  wire('ncompletionview', 'out:frame:image', 'n5', 'in:frame:image')
   return doc
 }

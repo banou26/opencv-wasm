@@ -65,8 +65,8 @@ test('completion raster separates measured and inferred support without painting
   const completed = { ...data, completion }, before = structuredClone(completed)
   const raster = renderRegional(completed, 10, 'completion', 8)
   expect([raster.width, raster.height]).toEqual([144, 80])
-  expect(raster.summary).toContain('measured 2; inferred holes 3; inferred border 0')
-  expect(raster.summary).toContain('Inferred support is not measured motion, recovered pixels or a pixel-accurate silhouette')
+  expect(raster.summary).toContain('measured 2; motion-associated 0; inferred holes 3; inferred border 0')
+  expect(raster.summary).toContain('Inferred support is not measured family membership, recovered pixels or a pixel-accurate silhouette')
   const pixel = (panel: number, cell: number) => {
     const x = panel % 2 * 72 + cell % 9 * 8 + 4, y = Math.floor(panel / 2) * 40 + Math.floor(cell / 9) * 8 + 4
     return [...raster.pixels.subarray((y * raster.width + x) * 4, (y * raster.width + x + 1) * 4)]
@@ -91,9 +91,9 @@ test('completion raster separates measured and inferred support without painting
   expect([...borderRaster.pixels.subarray(borderPixel, borderPixel + 4)]).toEqual([72, 164, 142, 255])
 })
 
-test('source-backed completion scales discrete support and keeps unassigned informative cells unpainted', () => {
+test('source-backed completion scales discrete support and keeps contradictory coherent cells unpainted', () => {
   const data = fixture(), blocker = data.sequence!.pairs[0]!.grids[0]!.cells[22]!
-  blocker.accepted = 1; blocker.coverage = 1 / 64
+  Object.assign(blocker, { accepted: 64, coverage: 1, coherent: true, dx: 4, dy: 0, spread: 0 })
   const completion = completeMotionSupport(data.sequence!, data.families!, { maxBorderDistance: 0 })
   expect(completion.frames[0]!.counts.blocked).toBeGreaterThan(0)
   expect(completion.frames[0]!.observations[0]!.holeCells).not.toContain(22)
@@ -103,4 +103,35 @@ test('source-backed completion scales discrete support and keeps unassigned info
   expect(raster.summary).toContain('145 x 81 display / 72 x 40 analysis')
   const x = source.width + Math.ceil(4 * 8 * source.width / 72) + 2, y = source.height + Math.ceil(2 * 8 * source.height / 40) + 2
   expect([...raster.pixels.subarray((y * raster.width + x) * 4, (y * raster.width + x + 1) * 4)]).toEqual([110, 110, 110, 255])
+})
+
+test('motion association retains neighboring-pair context in the kernel and has separate purple provenance', async () => {
+  const data = fixture()
+  for (const pair of data.sequence!.pairs) Object.assign(pair.grids[0]!.cells[21]!, { accepted: 64, coverage: 1, coherent: true, dx: 0, dy: 0, spread: 0 })
+  const before = structuredClone(data), expected = completeMotionSupport(data.sequence!, data.families!)
+  expect(expected.frames[0]!.observations[0]!.motionCells).toContain(21)
+  const bundle = await regionalKernel(step(), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => false)
+  try {
+    const value = bundle!.outputs['out:regions:data']!
+    if (value.kind !== 'regions') throw new Error('Missing completion')
+    expect(value.data.completion).toEqual(expected)
+    expect(regionalSummary(value.data)).toContain('motion 2')
+    const raster = renderRegional(value.data, 10, 'completion', 8)
+    const pixel = (panel: number) => {
+      const x = panel % 2 * 72 + 3 * 8 + 4, y = Math.floor(panel / 2) * 40 + 2 * 8 + 4
+      return [...raster.pixels.subarray((y * raster.width + x) * 4, (y * raster.width + x + 1) * 4)]
+    }
+    expect(pixel(1)).toEqual([80, 80, 80, 255])
+    expect(pixel(3)).toEqual([140, 102, 178, 255])
+    expect(raster.summary).toContain('motion-associated 1')
+    expect(data).toEqual(before)
+  } finally { bundle!.dispose() }
+  data.sequence!.pairs[1]!.grids[0]!.cells[21]!.dx = 4
+  const contradicted = await regionalKernel(step(), { 'in:regions:data': { kind: 'regions', data } }, () => undefined, () => false)
+  try {
+    const value = contradicted!.outputs['out:regions:data']!
+    if (value.kind !== 'regions') throw new Error('Missing completion')
+    expect(value.data.completion).toEqual(completeMotionSupport(data.sequence!, data.families!))
+    expect(value.data.completion!.frames[0]!.observations[0]!.motionCells).not.toContain(21)
+  } finally { contradicted!.dispose() }
 })

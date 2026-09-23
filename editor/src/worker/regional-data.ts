@@ -33,10 +33,10 @@ export const regionalSummary = (data: RegionalData): string => {
     lines.push(['held', 'changed', 'unknown'].map(status => `${status}: ${events.filter(s => s === status).length}`).join(' / '))
   }
   if (data.completion) {
-    const counts = data.completion.frames.reduce((sum, frame) => ({ measured: sum.measured + frame.counts.measured, holes: sum.holes + frame.counts.holes,
-      border: sum.border + frame.counts.border, blocked: sum.blocked + frame.counts.blocked, unknown: sum.unknown + frame.counts.unknown }), { measured: 0, holes: 0, border: 0, blocked: 0, unknown: 0 })
+    const counts = data.completion.frames.reduce((sum, frame) => ({ measured: sum.measured + frame.counts.measured, motion: sum.motion + frame.counts.motion, holes: sum.holes + frame.counts.holes,
+      border: sum.border + frame.counts.border, blocked: sum.blocked + frame.counts.blocked, unknown: sum.unknown + frame.counts.unknown }), { measured: 0, motion: 0, holes: 0, border: 0, blocked: 0, unknown: 0 })
     lines.push(`Support completion (cell-pair counts): ${Object.entries(counts).map(([name, value]) => `${name} ${value}`).join('; ')}`,
-      'Inferred support is not measured motion, recovered pixels or a pixel-accurate silhouette.')
+      'Inferred support is not measured family membership, recovered pixels or a pixel-accurate silhouette.')
   }
   return lines.join('\n')
 }

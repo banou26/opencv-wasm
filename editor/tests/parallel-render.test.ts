@@ -78,7 +78,7 @@ test('whole-scene scheduling follows only the chosen target, not disconnected re
 
 test('nested groups are output-selective, including inspection through an instance path', () => {
   let doc = withIndependentOutput()
-  doc = groupNodes(doc, undefined, ['nreview', 'nplain'], 'Two independent images', 'ginner', 'ninner')
+  doc = groupNodes(doc, undefined, ['ncompletionview', 'nplain'], 'Two independent images', 'ginner', 'ninner')
   doc = groupNodes(doc, undefined, ['ninner'], 'Nested images', 'gouter', 'nouter')
   const regionalPort = doc.edges.find(e => e.target === 'n5')!.sourceHandle
   const ordinaryPort = doc.edges.find(e => e.target === 'nplainoutput')!.sourceHandle
@@ -86,7 +86,7 @@ test('nested groups are output-selective, including inspection through an instan
   expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(false)
   expect(usesSceneAnalysis(doc, 'nouter', regionalPort)).toBe(true)
   expect(usesSceneAnalysis(doc, 'nouter', ordinaryPort)).toBe(false)
-  expect(usesSceneAnalysis(doc, 'nreview', null, ['nouter', 'ninner'])).toBe(true)
+  expect(usesSceneAnalysis(doc, 'ncompletionview', null, ['nouter', 'ninner'])).toBe(true)
   expect(usesSceneAnalysis(doc, 'nplain', null, ['nouter', 'ninner'])).toBe(false)
 })
 

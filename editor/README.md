@@ -212,7 +212,8 @@ finished layer extractor. Its ordinary typed nodes expose each actual stage:
 ```text
 Scene Range -> Scene Dense Motion -> Multiscale Motion Cells
             -> Whole-Scene Motion Groups -> Motion-History Grouping
-            -> Regional Drawing Events
+            -> Regional Drawing Events -> Support Completion
+            -> Inspect Support Completion -> Output
 ```
 
 Scene Range decodes a fixed inclusive range, independent of scrubbing. The prefab
@@ -277,21 +278,26 @@ Reproduce the real-clip export benchmark from `editor/` after `npm run build`:
 node scripts/regional-render-benchmark.mjs /path/to/single-shot.mp4
 ```
 
-It opens the regional prefab in an isolated browser, exports the full clip with
+It opens the regional prefab in an isolated browser, exports its single
+completion output for the full clip with
 Auto workers at 60 fps, and overwrites `build-smoke/regional-render.mp4` and
 `build-smoke/regional-render.json`, plus a review screenshot. The report separates initial scene analysis
 from rendering and verifies output frame count, dimensions, frame rate, browser
 errors and decoded-video SHA-256. Set `BENCH_LAST=4` for the short comparison,
 `BENCH_WORKERS=1` or `2` for explicit comparisons, `BENCH_OUTPUT` for an output
 filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
-`BENCH_DISPLAY_MAX_SIDE=0` reproduces the analysis-sized cache benchmark above;
+`BENCH_VIEW=review BENCH_DISPLAY_MAX_SIDE=0` reproduces the measured-support,
+analysis-sized cache benchmark above;
 the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 `EXPECTED_HEIGHT` can assert the encoded dimensions.
 The editor now always uses motion-only proposal ordering. The proximity trial
 was rejected after review; a saved experimental weight cannot reactivate it.
-The report records full family membership alongside the video hash.
+The report records the selected inspector's evidence summary and explicit output
+target alongside the video hash. The default `BENCH_VIEW=completion` shows
+measured versus completed support. `BENCH_VIEW=review` selects the old read-only
+review as a regression control; it does not add another output.
 `BENCH_VIEW=conflicts` exports the new raw-motion/appearance diagnostic instead
-of the four-panel review; use a separate filename prefix in the existing output
+of the four-panel completion view; use a separate filename prefix in the existing output
 directory. For the local 24fps market clip:
 
 ```sh
@@ -374,7 +380,7 @@ background in that baseline, and the central characters remain fragmented.
   numbers. Missing timing is explicitly `null (not measured)`, distinct from
   an observed `unknown` event. This is a diagnostic correlation, not permission
   to ignore redraws, alter flow, relax a veto or merge more families. It reads
-  the existing timing/history branch and leaves the default review unchanged.
+  the existing timing/history branch and leaves measured support unchanged.
 - **Events:** green is held, red is changed, gray is unknown. The first pair is
   intentionally unknown without independent prior support. Drawing comparison
   uses a regional translation, not a deforming optical-flow warp.
@@ -383,36 +389,47 @@ background in that baseline, and the central characters remain fragmented.
   includes complete H/C/? patterns, absolute change frames and completed hold
   lengths. Unknown intervals break holds; no on-2s/on-3s cadence is imposed.
 - **Support completion (experimental):** select **Inspect Support Completion**
-  on the separate `Regional Drawing Events -> Support Completion` branch. It
-  accepts motion-history data directly as well. To export its four-panel video,
-  set **Render -> Target** to **Output 2**. Selecting an inspector changes only
-  the preview, not the render target. **Output 1** remains the unchanged default
-  regional review. Reopen the prefab to acquire the new output in older graphs.
-  Original measured family cells
-  stay unchanged. Empty cells can be inferred only between opposing original
-  same-family seeds, or on a bounded straight ray between a measured seed and
-  the image border. Different families and unassigned informative flow veto
-  filling, including sparse accepted flow that did not form a region. Nearby
-  competitors also block inference. Inferred cells never become new seeds.
+  after `Regional Drawing Events -> Support Completion`. It accepts
+  motion-history data directly as well. Its four-panel video drives the prefab's
+  **single Output**. The measured-support, family and original review inspectors
+  remain available for comparison; selecting an inspector changes the preview,
+  not the movie output. Reopen the prefab to get the current single-output graph.
+  Existing saved graphs and their user-edited outputs are not rewritten.
+  Original measured family cells stay unchanged. Nearby unassigned coherent
+  cells can be associated with a family only when their measured motion agrees
+  locally and at least one independent neighboring pair supports that agreement.
+  Transported evidence within two pairs on either side checks for contradictions.
+  Associations stay within two fine-grid cells of original family support and
+  respect competitor clearance. Original velocities and region identities are
+  never rewritten. Empty support is completed along bounded eight-neighbor paths
+  from original same-family seeds, within their local hull for holes or a bounded
+  actual-image-edge belt for borders. Contradictory coherent motion and other
+  families veto completion. Sparse samples without a coherent estimate are
+  neutral, not automatically treated as a foreign layer. Inferred support never
+  resets distance or starts unlimited growth from new seeds.
   **Max hole distance**, **Max border distance** and **Competitor clearance**
   default to 6, 6 and 2 fine-grid cells, each adjustable from 0 to 32. A zero
-  maximum disables that inference type. These are analysis-grid distances, not
+  maximum disables that geometric inference type, not motion-backed association.
+  These are analysis-grid distances, not
   full-resolution pixels. The source-backed four-panel view shows source /
   measured support on top, completed support / inference distinction below.
-  In the distinction panel, gray is measured, amber inferred holes and teal
-  inferred border support; blocked and unknown cells stay unpainted. Counts
+  In the distinction panel, gray is original measured family support, purple
+  motion-backed association, amber inferred holes and teal inferred border
+  support; blocked and unknown cells stay unpainted. Counts
   report cells, not pixel coverage or confidence. The final source frame has
   no outgoing evidence and shows no support overlay. This conservative stage
   cannot identify entirely unobserved objects, establish correct ownership,
   recover pixels or produce a pixel-accurate silhouette. It does not change
-  motion, grouping, drawing events or the default Review output. Completion is
-  cached for the scene and can be cancelled between outgoing pairs.
+  motion, grouping, drawing events or the measured Review inspector. Completion is
+  cached for the scene and can be cancelled between outgoing pairs without
+  discarding the neighboring-frame context needed for validation.
 
-  Full-shot completion export (the benchmark explicitly selects Output 2):
+  Full-shot completion export:
   ```sh
   BENCH_VIEW=completion BENCH_OUTPUT=/home/banou/dev/cadence/test/out/layers-market-pan/diagnostics/regional-completion-review node scripts/regional-render-benchmark.mjs /home/banou/dev/cadence/test/out/layers-market-pan/original/original.mp4
   ```
-  The 2026-09-24 export produced 293 frames at 1920x1080/60fps: 9.05s initial
+  Historical 2026-09-24 conservative export, before the single-output revision:
+  293 frames at 1920x1080/60fps, 9.05s initial
   analysis, 0.62s to select/evaluate the completion branch, 5.70s to render.
   Decoded SHA-256:
   `cce1e4bd0fa7608df31215960083257ee9e0a994cd6dc6223df37f8b5ab81613`.
@@ -422,6 +439,23 @@ background in that baseline, and the central characters remain fragmented.
   resolution) adds 0.01--0.85% area at the conservative defaults; the broad
   unsupported regions are not solved. Looser clearance enters character-area
   controls, so it is not enabled by default.
+
+  Revised single-output export on the same shot: 293 frames at 1920x1080/60fps,
+  10.87s initial analysis, 0.07s to select completion and 6.80s to render with
+  one worker. Decoded SHA-256:
+  `c863558e135631e1ee47bc7b5aed64e3f88b47edd93cb9c52fa0f610e95e642d`.
+  Cadence's frozen market replay now adds 40.76% area at 320 analysis pixels
+  and covers 74.30% of outermost-cell area. The five other scenes gain
+  1.24--8.65% area; original support and identities remain unchanged. These are
+  coverage statistics, not ownership scores. Exported source frames 30, 60 and
+  90 show much broader background coverage, while the walking group remains
+  fragmented and the hooded carriage character already shares family 1 in the
+  measured input. Those identity errors are unresolved, not fixed by completion.
+  A separate `BENCH_VIEW=review` regression run through the same single output
+  exactly matches the pre-proximity `56ba952a...` decoded hash above across all
+  293 frames (9.87s analysis, 6.34s render).
+  Current validation passes 161 editor tests, typecheck, lint, build, full
+  browser smoke and regional desktop/mobile smoke.
 - **Review:** top left source, top right flow, bottom left motion families,
   bottom right original-region drawing events. Family grouping never merges
   drawing-event identities. Existing saved graphs without Motion-History

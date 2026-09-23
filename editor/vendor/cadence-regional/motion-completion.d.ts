@@ -1,11 +1,11 @@
 import type { MotionHistoryGroups } from './motion-groups.ts';
 import { type RegionalSupportSequence } from './regions.ts';
 export type MotionCompletionOptions = {
-    /** Maximum distance to each original bracketing seed, in fine-grid cells. Zero disables holes. */
+    /** Original-seed reach and local hull radius, in fine-grid cells. Zero disables holes. */
     maxHoleDistance?: number;
-    /** Maximum distance to both an original seed and the frame edge. Zero disables borders. */
+    /** Maximum path distance from original seeds and distance to the frame edge. Zero disables borders. */
     maxBorderDistance?: number;
-    /** Other-family and unassigned evidence must be farther than the seed by this many cells. */
+    /** Competing families and contradictory motion must be farther by this many cells. */
     competitorClearance?: number;
 };
 export type MotionCompletionFrame = {
@@ -13,11 +13,13 @@ export type MotionCompletionFrame = {
     observations: {
         id: number;
         measuredCells: number[];
+        motionCells: number[];
         holeCells: number[];
         borderCells: number[];
     }[];
     counts: {
         measured: number;
+        motion: number;
         holes: number;
         border: number;
         blocked: number;
@@ -35,10 +37,10 @@ export type MotionCompletion = {
     frames: MotionCompletionFrame[];
 };
 /**
- * Bounded geometric support proposals, NOT new flow measurements or layer silhouettes.
- * Original family labels and all unassigned measured cells remain immutable. A hole
- * needs agreeing opposite seeds; an edge extension needs a seed opposite the real
- * frame boundary. Competing evidence vetoes both. Inferred cells never seed growth.
- * A wholly unobserved object cannot be excluded by geometry alone.
+ * Independent per-pair proposals with whole-scene contradiction checks. The generator
+ * lets browser workers yield between pairs without throwing away temporal evidence.
+ * Ownership is inferred; source flow, families and drawing timing remain untouched.
  */
+export declare function completeMotionSupportFrames(sequence: RegionalSupportSequence, families: MotionHistoryGroups, options?: MotionCompletionOptions): Generator<MotionCompletionFrame>;
+/** Source-preserving motion associations and bounded geometry; not certified silhouettes. */
 export declare function completeMotionSupport(sequence: RegionalSupportSequence, families: MotionHistoryGroups, options?: MotionCompletionOptions): MotionCompletion;

@@ -81,8 +81,9 @@ try {
   for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect']) {
     assert.ok(stages.includes(stage), `Regional prefab is missing its editable ${stage} stage`)
   }
-  assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), ['n5', 'ncompletionout'])
-  assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'The ordinary review must remain the default render output')
+  assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), ['n5'])
+  assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'Completion must be the single render output')
+  assert.ok(project.edges.some(edge => edge.source === 'ncompletionview' && edge.target === 'n5'), 'The output must render the completion inspector')
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-computed-frame'), '6')
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
@@ -145,8 +146,9 @@ try {
   const completionSummary = await page.locator('.value-preview pre').innerText()
   assert.match(completionSummary, /Top: source \/ measured family support\. Bottom: completed support \/ inference distinction\./)
   assert.match(completionSummary, /Source 6 -> 7/)
-  assert.match(completionSummary, /Cells: measured \d+; inferred holes \d+; inferred border \d+; blocked \d+; unknown \d+/)
-  assert.match(completionSummary, /not measured motion, recovered pixels or a pixel-accurate silhouette/)
+  assert.match(completionSummary, /Cells: measured \d+; motion-associated \d+; inferred holes \d+; inferred border \d+; blocked \d+; unknown \d+/)
+  assert.match(completionSummary, /purple motion-associated/)
+  assert.match(completionSummary, /not measured family membership, recovered pixels or a pixel-accurate silhouette/)
   assert.match(completionSummary, /Limits \(fine-grid cells\): holes 6; border 6; competitor clearance 2/)
   await change(async () => {
     const input = page.getByLabel('Support Completion Max hole distance (cells)', { exact: true })

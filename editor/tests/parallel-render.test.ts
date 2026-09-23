@@ -87,7 +87,8 @@ test('whole-scene scheduling follows only the chosen target, not disconnected re
 
 test('nested groups are output-selective, including inspection through an instance path', () => {
   let doc = withIndependentOutput()
-  doc = groupNodes(doc, undefined, ['ncompletionview', 'nplain'], 'Two independent images', 'ginner', 'ninner')
+  const layouts = doc.nodes.filter(node => node.type === 'frameLayout').map(node => node.id)
+  doc = groupNodes(doc, undefined, ['ncompletionview', 'nplain', ...layouts], 'Two independent images', 'ginner', 'ninner')
   doc = groupNodes(doc, undefined, ['ninner'], 'Nested images', 'gouter', 'nouter')
   const regionalPort = doc.edges.find(e => e.target === 'n5')!.sourceHandle
   const ordinaryPort = doc.edges.find(e => e.target === 'nplainoutput')!.sourceHandle

@@ -12,14 +12,14 @@ const source = process.argv[2]
 if (!source || process.argv.length !== 3) throw new Error('Usage: node scripts/regional-render-benchmark.mjs <source.mp4>')
 await access(source)
 const output = resolve(process.env.BENCH_OUTPUT ?? 'build-smoke/regional-render')
-const workers = Number(process.env.BENCH_WORKERS ?? 0), expectedHash = process.env.EXPECTED_HASH
+const workerOverride = process.env.BENCH_WORKERS === undefined ? undefined : Number(process.env.BENCH_WORKERS), expectedHash = process.env.EXPECTED_HASH
 const displayMaxSide = process.env.BENCH_DISPLAY_MAX_SIDE === undefined ? undefined : Number(process.env.BENCH_DISPLAY_MAX_SIDE)
 const proximityWeight = process.env.BENCH_PROXIMITY_WEIGHT === undefined ? undefined : Number(process.env.BENCH_PROXIMITY_WEIGHT)
 const view = process.env.BENCH_VIEW ?? 'completion'
 const repairOverrides = { fillIsolated: process.env.BENCH_FILL_ISOLATED, bridgeTemporal: process.env.BENCH_BRIDGE_TEMPORAL }
 const expectedWidth = process.env.EXPECTED_WIDTH === undefined ? undefined : Number(process.env.EXPECTED_WIDTH)
 const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : Number(process.env.EXPECTED_HEIGHT)
-assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
+if (workerOverride !== undefined) assert.ok([0, 1, 2, 4, 8, 16].includes(workerOverride), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
 if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH must be a decoded-video SHA256')
 if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
 if (proximityWeight !== undefined) assert.equal(proximityWeight, 0, 'The editor proximity experiment was rolled back; only motion-only grouping is supported')
@@ -74,6 +74,7 @@ try {
   const opened = performance.now()
   await change(() => page.getByRole('button', { name: 'Open', exact: true }).click())
   const analysisMs = performance.now() - opened
+  assert.equal(await page.getByLabel('Render workers').inputValue(), '4', 'The editor must default to four workers')
   assert.equal(await page.getByLabel('Motion-History Grouping Proximity weight', { exact: true }).count(), 0,
     'The rejected proximity control must not be offered by the editor')
   const proximity = 0
@@ -84,8 +85,30 @@ try {
     if (value !== undefined && await control.isChecked() !== (value === 'true')) await change(() => control.setChecked(value === 'true'))
     repairs[key] = await control.isChecked()
   }
-  // The prefab has one output. Change its inspector's view for read-only controls.
-  const inspector = 'Inspect Support Completion'
+  // Legacy review controls explicitly rewire the one output through the public graph import.
+  if (view !== 'completion') {
+    await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory()
+      window.regionalBenchmarkFolder = await root.getDirectoryHandle('regional-benchmark', { create: true })
+      window.showDirectoryPicker = async () => window.regionalBenchmarkFolder
+    })
+    await page.getByRole('button', { name: 'Save graph', exact: true }).click()
+    await page.waitForFunction(() => {
+      const state = document.querySelector('[data-testid=folder-state]')
+      return state?.getAttribute('data-pending') === '0' && state.textContent.includes('Saved')
+    })
+    const project = await page.evaluate(async () => JSON.parse(await (
+      await (await window.regionalBenchmarkFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
+    const terminal = project.edges.find(edge => edge.target === 'n5')
+    assert.ok(terminal, 'The prefab output must have a connected frame')
+    terminal.source = view === 'review' ? 'nreview' : 'nconflictview'
+    terminal.sourceHandle = 'out:frame:image'
+    await change(() => page.locator('input[type=file][accept=".json"]').first().setInputFiles({
+      name: 'benchmark-graph.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)),
+    }))
+  }
+  const inspector = view === 'completion' ? 'Inspect Support Completion'
+    : view === 'review' ? 'Inspect Regional Review' : 'Inspect Motion Conflicts'
   const selected = performance.now()
   await change(() => page.locator('.step-strip button').filter({ hasText: inspector }).click())
   const selectionMs = performance.now() - selected
@@ -95,18 +118,22 @@ try {
     await change(() => displayControl.fill(String(displayMaxSide)))
   }
   const display = Number(await displayControl.inputValue())
-  const viewControl = page.getByLabel(`${inspector} View`, { exact: true })
-  if (await viewControl.inputValue() !== view) await change(() => viewControl.selectOption(view))
   const analysis = Number(await page.getByLabel('Scene Range Analysis max side', { exact: true }).inputValue())
   const cache = await page.getByTestId('engine-status').innerText()
   const sourceInfo = await page.locator('.clip-info').innerText()
-  const dimensions = (await page.locator('.view-options code').innerText()).match(/^(\d+)\s*\u00d7\s*(\d+)$/)
-  assert.ok(dimensions, 'Regional output must have known image dimensions')
   await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
   const summary = await page.locator('.value-preview pre').innerText()
   assert.match(summary, view === 'review' ? /\d+ original regions -> \d+ motion families/
     : view === 'conflicts' ? /Conflict page 0: \d+\/\d+ raw-veto pairs/ : /inferred/i)
-  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  await change(() => page.getByLabel('Output socket').selectOption(view === 'completion' ? 'out:frame:completed' : 'out:frame:image'))
+  const panelDimensions = (await page.locator('.view-options code').innerText()).match(/^(\d+)\s*\u00d7\s*(\d+)$/)?.slice(1).map(Number)
+  assert.ok(panelDimensions, 'The selected diagnostic must have known image dimensions')
+  await change(() => page.locator('.step-strip button').filter({ hasText: /Output$/ }).click())
+  assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'n5')
+  const dimensions = (await page.locator('.view-options code').innerText()).match(/^(\d+)\s*\u00d7\s*(\d+)$/)
+  assert.ok(dimensions, 'The final layout must have known image dimensions')
+  if (view === 'completion') assert.deepEqual(dimensions.slice(1).map(Number), panelDimensions.map(size => size * 2),
+    'Two horizontal rows and one vertical merge must preserve all four native-size panels')
   const availableLast = Number(await page.getByLabel('Render last frame').inputValue())
   const last = Number(process.env.BENCH_LAST ?? availableLast)
   assert.ok(Number.isSafeInteger(last) && last >= 0 && last <= availableLast, 'BENCH_LAST must be a whole frame index within the clip')
@@ -114,7 +141,8 @@ try {
   await page.getByLabel('Render last frame').fill(String(last))
   await page.getByLabel('Render fps').selectOption('60')
   await page.getByLabel('Render quality').selectOption('high')
-  await page.getByLabel('Render workers').selectOption(String(workers))
+  if (workerOverride !== undefined) await page.getByLabel('Render workers').selectOption(String(workerOverride))
+  const workers = Number(await page.getByLabel('Render workers').inputValue())
   // Inspecting a branch does not change the movie's explicit output target.
   const renderTarget = 'n5'
   assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), [renderTarget],
@@ -157,7 +185,7 @@ try {
   assert.deepEqual(errors, [], 'Browser must not report errors')
   const report = {
     status: 'passed', source: resolve(source), sourceInfo, analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, repairs, view, renderTarget, cache, last, fps: 60, quality: 'high',
-    requestedWorkers: workers, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs,
+    requestedWorkers: workers, defaultWorkers: 4, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs, panelDimensions,
     total, width: video.width, height: video.height, summary, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
   }
   await writeFile(`${output}.json`, `${JSON.stringify(report, null, 2)}\n`)

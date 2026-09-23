@@ -278,21 +278,32 @@ Reproduce the real-clip export benchmark from `editor/` after `npm run build`:
 node scripts/regional-render-benchmark.mjs /path/to/single-shot.mp4
 ```
 
-It opens the regional prefab in an isolated browser, exports its single
-completion output for the full clip with
-Auto workers at 60 fps, and overwrites `build-smoke/regional-render.mp4` and
+It opens the regional prefab in an isolated browser, asserts the default worker
+selection is four, and exports its single merged completion output for the full
+clip at 60 fps. It overwrites `build-smoke/regional-render.mp4` and
 `build-smoke/regional-render.json`, plus a review screenshot. The report separates initial scene analysis
 from rendering and verifies output frame count, dimensions, frame rate, browser
 errors and decoded-video SHA-256. Set `BENCH_LAST=4` for the short comparison,
-`BENCH_WORKERS=1` or `2` for explicit comparisons, `BENCH_OUTPUT` for an output
+`BENCH_WORKERS=0` for explicit Auto or `1`, `2`, `4`, `8`, `16` for manual
+comparisons, `BENCH_OUTPUT` for an output
 filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
 `BENCH_FILL_ISOLATED=false BENCH_BRIDGE_TEMPORAL=false` disables the two new
 cleanup passes for the previous-completion control; each also accepts `true`.
 The JSON records the actual repair toggles used by the exported output.
+It also checks the separate completion panel dimensions and their lossless
+two-by-two layout. Review/conflict controls rewire the sole output through the
+public graph save/import path, so inspecting a different node cannot silently
+benchmark the wrong render target.
 `BENCH_VIEW=review BENCH_DISPLAY_MAX_SIDE=0` reproduces the measured-support,
 analysis-sized cache benchmark above;
 the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 `EXPECTED_HEIGHT` can assert the encoded dimensions.
+On the 117-frame market-pan clip, the current four-worker default and explicit
+one-worker renders have identical decoded pixels (293 frames, 1920x1080 at
+60 fps, SHA-256 `17d387ef1b3f656433b36f0a9d19cebd6c2442e53db4dc552e2ca20954ac1683`).
+The four-worker render took 17.22s versus 7.98s with one worker, after roughly
+12s initial analysis: separate workers rebuild the scene cache. Auto retains
+one-worker cache reuse for this graph. Worker defaults are not a speed claim.
 The editor now always uses motion-only proposal ordering. The proximity trial
 was rejected after review; a saved experimental weight cannot reactivate it.
 The report records the selected inspector's evidence summary and explicit output

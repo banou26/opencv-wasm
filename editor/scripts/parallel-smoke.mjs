@@ -37,9 +37,14 @@ export const parallelSmoke = async (page, { directory, project, upload }) => {
     throw new Error('Render workers survived completion/cancellation/error')
   }
   try {
-    assert.equal(await page.getByLabel('Render workers', { exact: true }).inputValue(), '0')
-    await compareWorkerMovies(page, directory, 'procedural-parallel')
     const cores = await page.evaluate(() => navigator.hardwareConcurrency)
+    assert.equal(await page.getByLabel('Render workers', { exact: true }).inputValue(), '4')
+    assert.match(await page.locator('.movie-caption').innerText(), new RegExp(`${Math.min(4, cores)} compute worker`), 'The initial procedural render must use the default worker count')
+    await page.getByLabel('Render workers', { exact: true }).selectOption('0')
+    await render(page, 8, 24)
+    assert.match(await page.locator('.movie-caption').innerText(), /1 compute worker/, 'Explicit Auto must retain its short-render safety cap')
+    await cleaned()
+    await compareWorkerMovies(page, directory, 'procedural-parallel')
     assert.ok(seen.size >= [2, 4, 8, 16].map(n => Math.min(n, cores)).filter(n => n > 1).reduce((sum, n) => sum + n, 0), 'Every parallel choice must create the requested available workers')
     await cleaned()
     // At 60 fps several timestamps share a source interval. Compare every
@@ -68,6 +73,6 @@ export const parallelSmoke = async (page, { directory, project, upload }) => {
     await compareWorkerMovies(page, directory, 'after-render-error', [2])
     await cleaned()
     await page.getByLabel('Render fps').selectOption('60')
-    console.log('PASS: 1/2/4/8/16 worker choices and 60 fps batches produce identical generated frames; startup cancellation, failure cleanup and recovery')
+    console.log('PASS: four-worker default, explicit Auto safety cap, identical 1/2/4/8/16 worker frames and 60 fps batches; startup cancellation, failure cleanup and recovery')
   } finally { await session.detach() }
 }

@@ -1,8 +1,8 @@
 import type { AnalysisFrame, MotionCell, DrawingEvent } from 'cadence/regional'
-import { regionalFineGrid } from 'cadence/regional'
+import { motionComparisonEvidence, regionalFineGrid } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
-export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'families' | 'velocities' | 'events' | 'timeline' | 'review'
+export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'families' | 'velocities' | 'conflicts' | 'events' | 'timeline' | 'review'
 export type RegionalRaster = { width: number; height: number; pixels: Uint8Array; summary: string; labels?: { x: number; y: number; text: string }[] }
 const color = (id: number): [number, number, number] => {
   const h = (id * .61803398875) % 1
@@ -19,11 +19,12 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   if (!Number.isSafeInteger(sourceFrame) || !source) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
   const { width: analysisWidth, height: analysisHeight } = source, pair = data.sequence?.pairs[index]
   if (view !== 'source' && !data.sequence) throw new Error('This view requires dense motion data')
-  if ((view === 'tracks' || view === 'events' || view === 'review') && !data.tracks) throw new Error('This view requires whole-scene tracks')
+  if ((view === 'tracks' || view === 'events' || view === 'review' || view === 'conflicts') && !data.tracks) throw new Error('This view requires whole-scene tracks')
   if ((view === 'events' || view === 'review' || view === 'timeline') && !data.analysis) throw new Error('This view requires drawing events')
-  if ((view === 'families' || view === 'velocities') && !data.families) throw new Error('This view requires motion-history grouping')
+  if ((view === 'families' || view === 'velocities' || view === 'conflicts') && !data.families) throw new Error('This view requires motion-history grouping')
   if (view === 'timeline') return renderTiming(data, sourceFrame, groupPage)
   if (view === 'velocities') return renderVelocities(data, sourceFrame, groupPage)
+  if (view === 'conflicts') return renderConflicts(data, sourceFrame, groupPage)
   const displayed = displaySource ?? source, { width, height } = displayed
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || displayed.data.length !== width * height * 3) throw new RangeError('Display source must contain a complete BGR image')
   const sourcePixels = (): Uint8Array => {
@@ -50,7 +51,7 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   const cellPaint = (pixels: Uint8Array, cell: MotionCell, rgb: readonly number[], opacity: number) => {
     paintRect(pixels, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, rgb, opacity)
   }
-  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities'>): Uint8Array => {
+  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities' | 'conflicts'>): Uint8Array => {
     const pixels = sourcePixels()
     if (mode === 'source') return pixels
     if (mode === 'flow' || mode === 'validity') {
@@ -136,6 +137,55 @@ const renderVelocities = (data: RegionalData, sourceFrame: number, page: number)
   if (cursor < count) for (let y = top; y < top + families.length * row; y++) pixels.set([255, 255, 255, 255], (y * width + left + cursor * column) * 4)
   labels.push({ x: 4, y: height - 9, text: `Frame ${sourceFrame} | every member must agree over shared pairs` })
   if (!families.length) labels.push({ x: left, y: 68, text: 'No supported motion families' })
+  return { width, height, pixels, labels, summary: lines.join('\n') }
+}
+
+/** Show the original motion veto beside drawing evidence without changing either. */
+const renderConflicts = (data: RegionalData, sourceFrame: number, page: number): RegionalRaster => {
+  const { pairCount, comparisons } = motionComparisonEvidence(data.tracks!, data.families!, data.analysis, page)
+  const count = data.scene.frames.length - 1, column = Math.max(2, Math.min(12, Math.floor(960 / count)))
+  const left = 88, top = 58, row = 64, width = Math.max(640, left + count * column + 12), height = Math.max(144, top + comparisons.length * row + 28)
+  const pixels = new Uint8Array(width * height * 4)
+  for (let i = 0; i < width * height; i++) pixels.set([24, 25, 27, 255], i * 4)
+  const tolerance = data.families!.options.tolerance
+  const scale = Math.max(1, tolerance, ...comparisons.map(comparison => comparison.maximum)) * 1.1
+  const cursor = sourceFrame - data.scene.first
+  const current = cursor < count ? `Source ${sourceFrame} -> ${sourceFrame + 1}` : `Source ${sourceFrame}: final frame, no outgoing pair`
+  const labels = [
+    { x: left, y: 16, text: 'Raw error | red: C/C | green: H/H | gray: other/unknown' },
+    { x: left, y: 32, text: `Amber guide: ${tolerance.toFixed(3)} | scale: ${scale.toFixed(3)} analysis px/pair` },
+    { x: left, y: 48, text: 'C = changed, H = held | blank = no shared motion sample' },
+  ]
+  const lines = [`Conflict page ${page}: ${comparisons.length}/${pairCount} raw-veto pairs`, current,
+    'Sorted by mean raw velocity error; every shared sample still participates in the veto.',
+    'C/C red: both changed; H/H green: both held; gray: mixed, unknown or missing timing. Blank: no shared motion sample.']
+  for (const [r, comparison] of comparisons.entries()) {
+    const baseline = top + r * row + row - 10, plotHeight = row - 20
+    const samples = new Map(comparison.samples.map(sample => [sample.frame, sample]))
+    const event = (status: DrawingEvent['status'] | null) => status ?? 'null (not measured)'
+    const describe = (sample: (typeof comparison.samples)[number]) => `error ${sample.error.toFixed(3)}; A ${sample.dxA.toFixed(3)},${sample.dyA.toFixed(3)}; B ${sample.dxB.toFixed(3)},${sample.dyB.toFixed(3)}; events ${event(sample.eventA)}/${event(sample.eventB)}; ${sample.veto ? 'VETO' : 'within tolerance'}`
+    labels.push({ x: 4, y: baseline - 15, text: `G${comparison.a}/${comparison.b}` })
+    const history: string[] = []
+    for (let f = 0; f < count; f++) {
+      const sample = samples.get(f), x = left + f * column, absolute = f + data.scene.first
+      for (let xx = x; xx < x + column; xx++) pixels.set([57, 60, 63, 255], (baseline * width + xx) * 4)
+      history.push(`${absolute}->${absolute + 1}: ${sample ? describe(sample) : '? (unobserved)'}`)
+      if (!sample) continue
+      const rgb = sample.eventA === 'changed' && sample.eventB === 'changed' ? [246, 87, 72]
+        : sample.eventA === 'held' && sample.eventB === 'held' ? [61, 211, 139] : [150, 150, 165]
+      const y = baseline - Math.max(1, Math.round(sample.error / scale * plotHeight))
+      for (let yy = y; yy < baseline; yy++) for (let xx = x; xx < x + Math.max(1, column - 1); xx++) pixels.set([...rgb, 255], (yy * width + xx) * 4)
+    }
+    const guide = baseline - Math.round(comparison.tolerance / scale * plotHeight)
+    for (let x = left; x < left + count * column; x++) if ((x - left) % 4 < 2) pixels.set([240, 178, 72, 255], (guide * width + x) * 4)
+    const vetoes = comparison.samples.filter(sample => sample.veto).length
+    lines.push(`G${comparison.a}/${comparison.b}: families F${comparison.familyA}/F${comparison.familyB}; mean ${comparison.error.toFixed(3)}; maximum ${comparison.maximum.toFixed(3)}; tolerance ${comparison.tolerance.toFixed(3)}; vetoes ${vetoes}/${comparison.samples.length} shared pairs`)
+    if (cursor < count) lines.push(`Current ${sourceFrame}->${sourceFrame + 1}: ${samples.has(cursor) ? describe(samples.get(cursor)!) : '? (unobserved)'}`)
+    lines.push(history.join(' | '))
+  }
+  if (cursor < count) for (let y = top; y < top + comparisons.length * row; y++) pixels.set([255, 255, 255, 255], (y * width + left + cursor * column) * 4)
+  labels.push({ x: 4, y: height - 9, text: current })
+  if (!comparisons.length) labels.push({ x: left, y: 88, text: 'No raw motion conflicts' })
   return { width, height, pixels, labels, summary: lines.join('\n') }
 }
 

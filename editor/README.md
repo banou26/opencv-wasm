@@ -230,7 +230,7 @@ frames are not retained for the whole scene. The flow and colored support still
 come from the analysis grid, mapped without smoothing or invented fine boundaries.
 Changing display size does not rerun scene analysis. Set it to 0 for the original
 analysis-sized view, or up to 1280 per panel for larger output within the bounded
-cache. Timing and velocity charts keep their own layout and do not decode video.
+cache. Timing, velocity and conflict charts keep their own layout and do not decode video.
 Saved graphs automatically acquire the new default; explicit display settings
 are preserved. Re-render existing videos to use the new size.
 On the same 117-frame market shot, the source-backed HD review exported all 293
@@ -239,9 +239,9 @@ Auto used one worker, with 244 MiB estimated cache storage before export. The
 larger display adds per-frame decoding and rendering cost, not another full-scene
 analysis for every frame.
 
-Ten separate inspector branches expose source pixels, motion, validity, cells,
-original groups, motion families, velocity histories, drawing events, a timing
-timeline and the four-panel review. Only these
+Eleven separate inspector branches expose source pixels, motion, validity, cells,
+original groups, motion families, velocity histories, motion conflicts, drawing
+events, a timing timeline and the four-panel review. Only these
 inspectors connect to Time. Analysis results are cached by the clip, range and
 parameters, not accumulated as frames are visited. The final source frame has no
 outgoing pair. Memory accounting includes retained JavaScript arrays as well as
@@ -338,6 +338,19 @@ The new review still shows fragmented character support and identity changes.
   Unobserved values remain gaps, not zero motion. The summary contains full
   numeric histories and membership. Family velocities summarize the currently
   observed members, not an inferred trajectory through missing data.
+- **Motion conflicts:** eight region pairs per Group page, limited to pairs
+  rejected by the raw maximum-velocity disagreement. Rows are sorted by mean
+  error, then maximum error and region IDs. Bar height is simultaneous velocity
+  error in analysis pixels per source pair; the amber guide is the unchanged
+  tolerance. Red means both drawing events changed, green both held, gray a
+  mixed/unknown/missing event. Missing motion remains a gap, not zero error.
+  The source cursor marks the outgoing pair; the final frame has no cursor.
+  The summary lists each pair's current families, veto count, every shared
+  velocity measurement and both event statuses, with absolute source-frame
+  numbers. Missing timing is explicitly `null (not measured)`, distinct from
+  an observed `unknown` event. This is a diagnostic correlation, not permission
+  to ignore redraws, alter flow, relax a veto or merge more families. It reads
+  the existing timing/history branch and leaves the default review unchanged.
 - **Events:** green is held, red is changed, gray is unknown. The first pair is
   intentionally unknown without independent prior support. Drawing comparison
   uses a regional translation, not a deforming optical-flow warp.

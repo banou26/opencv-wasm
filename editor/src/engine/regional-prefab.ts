@@ -15,6 +15,7 @@ export const regionalLayersGraph = (): GraphDocument => {
     node('ntracksview', 'regionalInspect', 1790, 740, { view: 'tracks' }), node('nfamiliesview', 'regionalInspect', 2160, 740, { view: 'families' }),
     node('nvelocityview', 'regionalInspect', 2160, 1260, { view: 'velocities' }), node('neventsview', 'regionalInspect', 2530, 740, { view: 'events' }),
     node('ntimeview', 'regionalInspect', 2530, 1340, { view: 'timeline' }),
+    node('nconflictview', 'regionalInspect', 2900, 740, { view: 'conflicts' }),
     node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 3270, 40),
   ], edges: [] }
   const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => { doc = connect(doc, { source, sourceHandle, target, targetHandle }) }
@@ -24,7 +25,8 @@ export const regionalLayersGraph = (): GraphDocument => {
   wire('n1', 'out:video:clip', 'nscene', 'in:video:clip')
   for (const [source, target] of [['nscene', 'ndense'], ['ndense', 'npool'], ['npool', 'ntracks'], ['ntracks', 'nhistory'], ['nhistory', 'ntiming'], ['ntiming', 'nreview'], ['nscene', 'nsourceview'], ['ndense', 'nflowview'], ['ndense', 'nvalidview'], ['npool', 'ngridview'], ['ntracks', 'ntracksview'], ['nhistory', 'nfamiliesview'], ['nhistory', 'nvelocityview'], ['ntiming', 'neventsview']] as const) wire(source, 'out:regions:data', target, 'in:regions:data')
   wire('ntiming', 'out:regions:data', 'ntimeview', 'in:regions:data')
-  for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
+  wire('ntiming', 'out:regions:data', 'nconflictview', 'in:regions:data')
+  for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'nconflictview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
   wire('nreview', 'out:frame:image', 'n5', 'in:frame:image')
   return doc
 }

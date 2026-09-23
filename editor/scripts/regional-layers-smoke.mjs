@@ -123,6 +123,19 @@ try {
   await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
   await page.getByRole('button', { name: 'Fit', exact: true }).click()
   await page.screenshot({ path: resolve(directory, 'regional-layers-velocities.png') })
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Motion Conflicts' }).click())
+  await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
+  const conflictSummary = await page.locator('.value-preview pre').innerText()
+  assert.match(conflictSummary, /Conflict page 0: \d+\/\d+ raw-veto pairs/)
+  assert.match(conflictSummary, /Source 6 -> 7/)
+  assert.match(conflictSummary, /G\d+\/\d+: families F\d+\/F\d+/)
+  assert.match(conflictSummary, /vetoes \d+\/\d+ shared pairs/)
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(last)))
+  assert.match(await page.locator('.value-preview pre').innerText(), /final frame, no outgoing pair/)
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  await page.screenshot({ path: resolve(directory, 'regional-layers-conflicts.png') })
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
   const canvas = page.locator('.image-viewport canvas').filter({ visible: true }).first()
   await canvas.waitFor({ state: 'visible' })
@@ -162,8 +175,8 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [])
   await writeFile(resolve(directory, 'regional-layers-smoke.json'), JSON.stringify({
-    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, familySummary, velocitySummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
-    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png', 'regional-layers-families.png', 'regional-layers-velocities.png'],
+    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, familySummary, velocitySummary, conflictSummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
+    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png', 'regional-layers-families.png', 'regional-layers-velocities.png', 'regional-layers-conflicts.png'],
   }, null, 2) + '\n')
   console.log(`PASS: regional layers prefab processed real footage in ${processingSeconds.toFixed(2)} s; nonblank desktop/mobile previews`)
 } finally {

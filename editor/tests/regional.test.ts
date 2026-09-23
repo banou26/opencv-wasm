@@ -38,8 +38,10 @@ const step = (type: NodeType, params: Params = {}) => ({ key: 'test', node: { id
 
 test('regional prefab has real staged contracts and only inspectors depend on Time', () => {
   const doc = parseDocument(regionalLayersGraph())
-  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(10)
-  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(10)
+  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(11)
+  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(11)
+  expect(doc.edges).toContainEqual(expect.objectContaining({ source: 'ntiming', target: 'nconflictview', targetHandle: 'in:regions:data' }))
+  expect(specFor(doc.nodes.find(node => node.id === 'nconflictview')!, doc).title).toBe('Inspect Motion Conflicts')
   expect(doc.edges.filter(e => e.source === 'ntime').every(e => doc.nodes.find(n => n.id === e.target)?.type === 'regionalInspect')).toBe(true)
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(validateConnection(doc, { source: 'ndense', sourceHandle: 'out:regions:data', target: 'ngridview', targetHandle: 'in:regions:data' })).toBeNull()
@@ -102,6 +104,8 @@ test('whole-scene native analysis executes once across scrub order and exposes e
     try { if (timeline.value.kind !== 'string') throw new Error('Missing timing summary'); expect(timeline.value.value).toContain('completed hold lengths'); expect(timeline.value.value).toContain('?') } finally { timeline.release() }
     const velocities = await evaluate('nvelocityview', 2, 'out:string:summary')
     try { if (velocities.value.kind !== 'string') throw new Error('Missing velocity summary'); expect(velocities.value.value).toContain('analysis pixels per source pair'); expect(velocities.value.value).toContain('regions') } finally { velocities.release() }
+    const conflicts = await evaluate('nconflictview', 7, 'out:string:summary')
+    try { if (conflicts.value.kind !== 'string') throw new Error('Missing conflict summary'); expect(conflicts.value.value).toContain('raw-veto pairs'); expect(conflicts.value.value).toContain('final frame, no outgoing pair') } finally { conflicts.release() }
   } finally { cache.clear() }
 }, 60000)
 

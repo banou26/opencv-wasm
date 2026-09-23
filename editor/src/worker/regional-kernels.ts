@@ -104,7 +104,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     const analysis = data.scene.frames[sourceFrame - data.scene.first]
     if (!Number.isSafeInteger(sourceFrame) || !analysis) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
     let display: AnalysisFrame | undefined
-    if (view !== 'timeline' && view !== 'velocities') {
+    if (view !== 'timeline' && view !== 'velocities' && view !== 'conflicts') {
       const { width, height } = regionalDisplayGeometry(data.scene, Number(params.displayMaxSide))
       if (width !== analysis.width || height !== analysis.height) {
         const video = sourceById(data.scene.asset)

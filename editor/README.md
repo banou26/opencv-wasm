@@ -32,6 +32,29 @@ For a standalone build, use `npm run build` and `npm run preview`, then visit
 `npm run build:site` is for the combined docs build and expects `/runtime/` at the
 site root; `website/scripts/stage-editor.mjs` assembles that layout.
 
+### Engine download recovery
+
+Runtime generation publishes complete files with atomic replacement and skips
+unchanged bytes. It no longer deletes the served runtime directory before writing
+chunks; that created a window where an open editor could receive missing assets,
+HTML fallbacks or incomplete downloads during a build. Previous content-addressed
+chunks and unrelated files are retained during in-place regeneration.
+
+Each failed HTTP, truncated or HTML chunk response gets one cache-bypassing retry.
+The complete binary must still pass SHA-256 verification. Persistent errors name
+the failing URL and, for incomplete responses, expected and received byte counts.
+A fatal engine error clears pending imports and the `Indexing clip...` indicator,
+stops the worker, and rejects new processing until **Reload engine** is selected.
+After reloading, reselect any clip whose import had not completed.
+
+For missing local assets, run `npm run generate`, then reload. Do not serve the
+combined `build:site` output as a standalone editor: its `/runtime/` paths require
+the assembled website layout described above. Tests for download failures and
+import cleanup run with `npm test`; atomic-publication tests run from this folder
+with `node --test ../tests/runtime-assets.test.mjs`.
+With the local dev server running, `node scripts/engine-startup-smoke.mjs`
+checks transient failures, fatal cleanup and reload/import recovery in real Chrome.
+
 The full original Cadence Editor history is preserved as a merge parent. Use
 `git log --all --graph` from the repository root to browse both histories. The
 original standalone checkout can remain as a backup; development now happens here.

@@ -32,6 +32,13 @@ type Load = { file: File; asset: string; target?: SourceTarget }
 const loads: Load[] = []
 let loading: Load | undefined
 let restoredReference: string | undefined
+const failEngine = (error: string) => {
+  worker?.terminate()
+  active = ++serial; bakeRequest = 0; thumbnailGeneration++
+  loads.length = 0; loading = undefined; restoredReference = undefined
+  drainStatuses()
+  useEditor.setState({ error, fatal: true, ready: false, busy: 'idle', loadingSource: null, cancelling: false, progress: null, statuses: {}, result: null, pixel: null })
+}
 const nextLoad = () => {
   const state = useEditor.getState()
   if (loading || !state.ready || state.fatal || state.busy === 'bake') return
@@ -47,16 +54,19 @@ export const initialize = (canvas: HTMLCanvasElement) => {
   if (!canvas || worker) return
   try {
     worker = new Worker(new URL('../worker/index.ts', import.meta.url), { type: 'module' })
-    worker.onerror = event => useEditor.setState({ error: event.message || 'The processing worker stopped.', fatal: true, busy: 'idle' })
+    worker.onerror = event => failEngine(event.message || 'The processing worker stopped.')
+    worker.onmessageerror = () => failEngine('The processing worker sent an unreadable message.')
     worker.onmessage = ({ data: event }: MessageEvent<WorkerEvent>) => {
       const state = useEditor.getState()
+      if (state.fatal) { if (event.type === 'thumbnail') event.bitmap?.close(); return }
       if (event.type === 'thumbnail') {
         if (event.generation !== thumbnailGeneration || !state.previews[event.node] || JSON.stringify(event.path ?? []) !== JSON.stringify(state.path)) { event.bitmap?.close(); return }
         state.thumbnails[event.node]?.bitmap?.close()
         useEditor.setState(s => ({ thumbnails: { ...s.thumbnails, [event.node]: event } }))
       } else if (event.type === 'ready') { useEditor.setState({ ready: true, adapter: event.adapter }); nextLoad() }
       else if (event.type === 'error') {
-        if (event.fatal || event.request === active || event.request === bakeRequest) { drainStatuses(); useEditor.setState({ error: event.message, fatal: !!event.fatal, busy: 'idle', cancelling: false, result: null, pixel: null }) }
+        if (event.fatal) { failEngine(event.message); return }
+        if (event.request === active || event.request === bakeRequest) { drainStatuses(); useEditor.setState({ error: event.message, busy: 'idle', cancelling: false, result: null, pixel: null }) }
         if (loading && event.request === active) { loading = undefined; nextLoad() }
       } else if (event.type === 'source' && event.request === active) {
         if (loading) {
@@ -82,7 +92,7 @@ export const initialize = (canvas: HTMLCanvasElement) => {
     }
     const surface = canvas.transferControlToOffscreen()
     send({ type: 'init', canvas: surface }, [surface])
-  } catch (error) { useEditor.setState({ error: String(error), fatal: true }) }
+  } catch (error) { failEngine(String(error)) }
 }
 
 const snapshot = (): Inspection => {
@@ -99,7 +109,7 @@ export const inspect = () => {
 /** Queue imports independently of engine startup and keep each source bound to its own clip. */
 export const loadVideo = (file: File, target?: SourceTarget) => {
   const state = useEditor.getState()
-  if (state.busy === 'bake') return
+  if (state.fatal || state.busy === 'bake') return
   if (!target) {
     let node = state.view.nodes.find(n => n.id === state.focused && (n.type === 'source' || n.type === 'clip')) ?? state.view.nodes.find(n => (n.type === 'source' || n.type === 'clip'))
     if (!node) { state.add('clip', { x: 40, y: 80 }); node = useEditor.getState().view.nodes.find(n => n.id === useEditor.getState().focused && (n.type === 'source' || n.type === 'clip')) }
@@ -115,13 +125,15 @@ export const loadVideo = (file: File, target?: SourceTarget) => {
   nextLoad()
 }
 export const openProjectFolder = async () => {
+  if (useEditor.getState().fatal) return
   const restored = await chooseProjectFolder()
-  if (!restored) return
+  if (!restored || useEditor.getState().fatal) return
   restoredReference = restored.referenceAsset
   for (const entry of restored.files) loads.push({ file: entry.file, asset: entry.id })
   nextLoad()
 }
 export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high', workers: import('../engine/parallel-render').RenderWorkers = 0) => {
+  if (!useEditor.getState().ready || useEditor.getState().fatal) return
   const value = snapshot(), output = value.doc.nodes.find(n => n.id === target)
   if (output) { value.selected = output.id; value.port = null; value.path = [] }
   active = ++serial; bakeRequest = active; bakeLabel = nodeTitle(value.selected)
@@ -129,13 +141,14 @@ export const bake = (start: number, end: number, fps: number, target: string, qu
   send({ type: 'bake', request: active, value, start, end, fps, quality, workers })
 }
 export const cancel = () => {
+  if (useEditor.getState().fatal) return
   active = ++serial
   useEditor.setState({ cancelling: true })
   send({ type: 'cancel', request: active })
 }
-export const inspectPixel = (x: number, y: number) => { if (useEditor.getState().busy === 'idle') send({ type: 'pixel', request: active, x, y }) }
+export const inspectPixel = (x: number, y: number) => { const state = useEditor.getState(); if (state.ready && !state.fatal && state.busy === 'idle') send({ type: 'pixel', request: active, x, y }) }
 export const exportFrame = async () => {
-  if (await ensureProjectFolder()) send({ type: 'export', request: active })
+  if (!useEditor.getState().fatal && await ensureProjectFolder() && !useEditor.getState().fatal) send({ type: 'export', request: active })
 }
 
 /** Low-priority, opt-in node images are refreshed after the main inspection settles. */

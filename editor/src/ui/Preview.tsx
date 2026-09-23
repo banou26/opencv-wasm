@@ -5,6 +5,7 @@ import { useEditor } from './store'
 /** One native-resolution surface: zoom and pan affect presentation, never the graph data. */
 export const Preview = () => {
   const result = useEditor(s => s.result), busy = useEditor(s => s.busy), pixel = useEditor(s => s.pixel), ready = useEditor(s => s.ready), source = useEditor(s => s.source)
+  const fatal = useEditor(s => s.fatal)
   const viewport = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ width: 640, height: 360 }), [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 }), [pinned, setPinned] = useState(false)
   const pinnedPosition = useRef<{ x: number; y: number } | null>(null)
@@ -43,7 +44,7 @@ export const Preview = () => {
       }
     }}>
       <canvas ref={initialize} aria-label="Selected node result" style={{ width: width * scale, height: height * scale, left: box.width / 2 + pan.x, top: box.height / 2 + pan.y, imageRendering: scale >= 1 ? 'pixelated' : 'auto', visibility: visual ? 'visible' : 'hidden' }} />
-      {!source && !result && <div className="empty-preview"><span className="empty-icon">▷</span><h2>A frame is just the beginning.</h2><p>Open a clip, follow its data through the graph,<br />then turn your experiment into a video.</p><span className="eyebrow">{ready ? 'YOUR MEDIA STAYS ON THIS MACHINE' : 'STARTING OPENCV + PREVIEW…'}</span></div>}
+      {!source && !result && <div className="empty-preview"><span className="empty-icon">▷</span><h2>A frame is just the beginning.</h2><p>Open a clip, follow its data through the graph,<br />then turn your experiment into a video.</p><span className="eyebrow">{fatal ? 'ENGINE UNAVAILABLE' : ready ? 'YOUR MEDIA STAYS ON THIS MACHINE' : 'STARTING OPENCV + PREVIEW…'}</span></div>}
       {result?.scalar !== undefined && <div className="scalar-preview"><span className="eyebrow">SCALAR OUTPUT</span><strong>{result.scalar.toFixed(6)}</strong><span>Number · usable by another node’s parameter input</span></div>}
       {result && !visual && result.scalar === undefined && <div className="value-preview"><span className="eyebrow">{result.kind === 'video' ? 'VIDEO CLIP' : result.kind.toUpperCase()}</span><pre>{result.summary}</pre></div>}
       {result?.kind === 'frames' && <div className="preview-badge">Pyramid overview · use Pyramid Level for native pixels</div>}

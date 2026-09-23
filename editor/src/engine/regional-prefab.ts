@@ -16,7 +16,9 @@ export const regionalLayersGraph = (): GraphDocument => {
     node('nvelocityview', 'regionalInspect', 2160, 1260, { view: 'velocities' }), node('neventsview', 'regionalInspect', 2530, 740, { view: 'events' }),
     node('ntimeview', 'regionalInspect', 2530, 1340, { view: 'timeline' }),
     node('nconflictview', 'regionalInspect', 2900, 740, { view: 'conflicts' }),
+    node('ncomplete', 'regionalComplete', 3270, 740), node('ncompletionview', 'regionalInspect', 3270, 1340, { view: 'completion' }),
     node('nreview', 'regionalInspect', 2900, 40, { view: 'review' }), node('n5', 'output', 3270, 40),
+    node('ncompletionout', 'output', 3640, 1340),
   ], edges: [] }
   const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => { doc = connect(doc, { source, sourceHandle, target, targetHandle }) }
   wire('n1', 'out:video:clip', 'ninfo', 'in:video:clip')
@@ -26,7 +28,10 @@ export const regionalLayersGraph = (): GraphDocument => {
   for (const [source, target] of [['nscene', 'ndense'], ['ndense', 'npool'], ['npool', 'ntracks'], ['ntracks', 'nhistory'], ['nhistory', 'ntiming'], ['ntiming', 'nreview'], ['nscene', 'nsourceview'], ['ndense', 'nflowview'], ['ndense', 'nvalidview'], ['npool', 'ngridview'], ['ntracks', 'ntracksview'], ['nhistory', 'nfamiliesview'], ['nhistory', 'nvelocityview'], ['ntiming', 'neventsview']] as const) wire(source, 'out:regions:data', target, 'in:regions:data')
   wire('ntiming', 'out:regions:data', 'ntimeview', 'in:regions:data')
   wire('ntiming', 'out:regions:data', 'nconflictview', 'in:regions:data')
-  for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'nconflictview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
+  wire('ntiming', 'out:regions:data', 'ncomplete', 'in:regions:data')
+  wire('ncomplete', 'out:regions:data', 'ncompletionview', 'in:regions:data')
+  for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'nfamiliesview', 'nvelocityview', 'nconflictview', 'ncompletionview', 'neventsview', 'ntimeview', 'nreview']) wire('ntime', 'out:scalar:index', id, 'param:frame')
   wire('nreview', 'out:frame:image', 'n5', 'in:frame:image')
+  wire('ncompletionview', 'out:frame:image', 'ncompletionout', 'in:frame:image')
   return doc
 }

@@ -10,8 +10,10 @@ export const validateConnection = (doc: GraphDocument, c: Connection): string | 
   const output = specFor(source, doc).outputs.find(p => p.id === c.sourceHandle), input = specFor(target, doc).inputs.find(p => p.id === c.targetHandle)
   if (!output || !input) return 'Connect an output socket to an input socket'
   if (output.type === 'custom' && output.schema !== input.schema) return 'Custom record types must match'
-  // History bundles preserve original tracks, so saved tracks-to-timing graphs remain valid.
-  if (output.type === 'regions' && input.schema && output.schema !== input.schema && !(output.schema === 'history' && input.schema === 'tracks')) return 'Regional analysis stages must match'
+  // Stage compatibility follows schemas so wrapping a stage in a custom node remains valid.
+  if (output.type === 'regions' && input.schema && output.schema !== input.schema
+    && !(output.schema === 'history' && input.schema === 'tracks')
+    && !(output.schema === 'timing' && input.schema === 'history')) return 'Regional analysis stages must match'
   if (output.type !== input.type) return `A ${output.type} output cannot connect to a ${input.type} input`
   const adjacency = new Map<string, string[]>()
   for (const e of doc.edges) {

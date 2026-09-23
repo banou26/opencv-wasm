@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, analyzeRegionalTimingFrame, finishRegionalTiming, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -46,7 +46,7 @@ export const regionalDisplayGeometry = (scene: SceneData, maxSide: number) => {
 
 export const regionalKernel = async (step: Step, inputs: Record<string, Payload>, sourceById: (asset: string) => VideoSource | undefined, cancelled: () => boolean): Promise<Bundle<Payload> | undefined> => {
   const type = step.node.type
-  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalInspect'].includes(type)) return undefined
+  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect'].includes(type)) return undefined
   const checkpoint = async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)); if (cancelled()) throw new Error('Evaluation cancelled') }
   const params = step.node.params
   if (type === 'sceneRange') {
@@ -99,6 +99,18 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
   } else if (type === 'regionalHistory') {
     requireStage('tracks'); await checkpoint()
     output = { ...data, stage: 'history', families: groupMotionHistories(data.tracks!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap), proximityWeight: 0 }) }
+  } else if (type === 'regionalComplete') {
+    if ((data.stage !== 'history' && data.stage !== 'timing') || !data.sequence || !data.families) throw new Error('Support completion requires motion-history grouping or drawing-event data with families')
+    const options = { maxHoleDistance: Number(params.maxHoleDistance), maxBorderDistance: Number(params.maxBorderDistance), competitorClearance: Number(params.competitorClearance) }
+    const completion = completeMotionSupport({ ...data.sequence, pairs: [] }, { ...data.families, frames: [] }, options)
+    const observations = new Map(data.families.frames.map(frame => [frame.frame, frame]))
+    for (const pair of data.sequence.pairs) {
+      await checkpoint()
+      const frame = observations.get(pair.frame)
+      const completed = completeMotionSupport({ ...data.sequence, pairs: [pair] }, { ...data.families, frames: frame ? [frame] : [] }, options)
+      completion.frames.push(...completed.frames)
+    }
+    output = { ...data, stage: 'completion', completion }
   } else {
     const sourceFrame = Number(params.frame), view = String(params.view) as RegionalView
     const analysis = data.scene.frames[sourceFrame - data.scene.first]

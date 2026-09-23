@@ -2,7 +2,7 @@ import type { AnalysisFrame, MotionCell, DrawingEvent } from 'cadence/regional'
 import { motionComparisonEvidence, regionalFineGrid } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
-export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'families' | 'velocities' | 'conflicts' | 'events' | 'timeline' | 'review'
+export type RegionalView = 'source' | 'flow' | 'validity' | 'cells' | 'tracks' | 'families' | 'velocities' | 'conflicts' | 'completion' | 'events' | 'timeline' | 'review'
 export type RegionalRaster = { width: number; height: number; pixels: Uint8Array; summary: string; labels?: { x: number; y: number; text: string }[] }
 const color = (id: number): [number, number, number] => {
   const h = (id * .61803398875) % 1
@@ -22,6 +22,7 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   if ((view === 'tracks' || view === 'events' || view === 'review' || view === 'conflicts') && !data.tracks) throw new Error('This view requires whole-scene tracks')
   if ((view === 'events' || view === 'review' || view === 'timeline') && !data.analysis) throw new Error('This view requires drawing events')
   if ((view === 'families' || view === 'velocities' || view === 'conflicts') && !data.families) throw new Error('This view requires motion-history grouping')
+  if (view === 'completion' && !data.completion) throw new Error('This view requires support completion')
   if (view === 'timeline') return renderTiming(data, sourceFrame, groupPage)
   if (view === 'velocities') return renderVelocities(data, sourceFrame, groupPage)
   if (view === 'conflicts') return renderConflicts(data, sourceFrame, groupPage)
@@ -51,7 +52,38 @@ export const renderRegional = (data: RegionalData, sourceFrame: number, view: Re
   const cellPaint = (pixels: Uint8Array, cell: MotionCell, rgb: readonly number[], opacity: number) => {
     paintRect(pixels, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, rgb, opacity)
   }
-  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities' | 'conflicts'>): Uint8Array => {
+  if (view === 'completion') {
+    const completion = data.completion!, frame = completion.frames.find(frame => frame.frame === index)
+    const parts = [sourcePixels(), sourcePixels(), sourcePixels(), sourcePixels()]
+    const paintCells = (pixels: Uint8Array, cells: number[], rgb: readonly number[]) => {
+      for (const id of cells) {
+        const x = id % completion.columns * completion.cellSize, y = Math.floor(id / completion.columns) * completion.cellSize
+        paintRect(pixels, x, y, Math.min(analysisWidth, x + completion.cellSize), Math.min(analysisHeight, y + completion.cellSize), rgb, .6)
+      }
+    }
+    for (const observation of frame?.observations ?? []) {
+      const rgb = color(observation.id)
+      paintCells(parts[1]!, observation.measuredCells, rgb)
+      for (const cells of [observation.measuredCells, observation.holeCells, observation.borderCells]) paintCells(parts[2]!, cells, rgb)
+      paintCells(parts[3]!, observation.measuredCells, [150, 150, 165])
+      paintCells(parts[3]!, observation.holeCells, [240, 178, 72])
+      paintCells(parts[3]!, observation.borderCells, [66, 220, 183])
+    }
+    const pixels = new Uint8Array(width * height * 16)
+    for (const [p, part] of parts.entries()) for (let y = 0; y < height; y++) pixels.set(part.subarray(y * width * 4, (y + 1) * width * 4), ((y + Math.floor(p / 2) * height) * width * 2 + p % 2 * width) * 4)
+    const summary = [
+      'Top: source / measured family support. Bottom: completed support / inference distinction.',
+      `Source ${sourceFrame}${index < data.scene.frames.length - 1 ? ` -> ${sourceFrame + 1}` : ': final frame, no outgoing pair'}`,
+      `${width} x ${height} display / ${analysisWidth} x ${analysisHeight} analysis`,
+      frame ? `Cells: measured ${frame.counts.measured}; inferred holes ${frame.counts.holes}; inferred border ${frame.counts.border}; blocked ${frame.counts.blocked}; unknown ${frame.counts.unknown}` : 'No completion evidence for this frame.',
+      'Distinction: gray measured; amber inferred holes; teal inferred border; unpainted blocked/unknown.',
+      'Inferred support is not measured motion, recovered pixels or a pixel-accurate silhouette.',
+      `Limits (fine-grid cells): holes ${completion.options.maxHoleDistance}; border ${completion.options.maxBorderDistance}; competitor clearance ${completion.options.competitorClearance}`,
+      ...(frame?.observations ?? []).map(observation => `Family ${observation.id}: measured ${observation.measuredCells.length}; holes ${observation.holeCells.length}; border ${observation.borderCells.length}`),
+    ].join('\n')
+    return { width: width * 2, height: height * 2, pixels, summary }
+  }
+  const panel = (mode: Exclude<RegionalView, 'review' | 'timeline' | 'velocities' | 'conflicts' | 'completion'>): Uint8Array => {
     const pixels = sourcePixels()
     if (mode === 'source') return pixels
     if (mode === 'flow' || mode === 'validity') {

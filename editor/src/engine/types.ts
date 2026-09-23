@@ -6,7 +6,7 @@ export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 't
   | 'coverage' | 'crop' | 'paste' | 'resize' | 'rotate' | 'flip' | 'boxBlur' | 'medianBlur' | 'bilateral' | 'sobel' | 'scharr' | 'laplacian' | 'canny' | 'normalize' | 'invert' | 'brightness' | 'adaptiveThreshold' | 'erode' | 'dilate' | 'morphology' | 'equalize' | 'clahe' | 'distanceTransform'
   | 'frameList' | 'pyrDown' | 'pyrUp' | 'gaussianPyramid' | 'laplacianPyramid' | 'pyramidLevel' | 'reconstructPyramid' | 'addImages' | 'subtractImages' | 'multiplyImages' | 'blendImages' | 'channel' | 'mergeChannels' | 'magnitude' | 'phaseCorrelation' | 'makeRecord' | 'breakRecord'
   | 'farneback' | 'offsetFlow' | 'flowConsistency' | 'cornerStrength' | 'flowGrid' | 'drawFlow' | 'coordinates' | 'noise' | 'pixelMath'
-  | 'sceneRange' | 'regionalMotion' | 'regionalPool' | 'regionalTracks' | 'regionalHistory' | 'regionalTiming' | 'regionalInspect'
+  | 'sceneRange' | 'regionalMotion' | 'regionalPool' | 'regionalTracks' | 'regionalHistory' | 'regionalTiming' | 'regionalComplete' | 'regionalInspect'
 /** Serializable parameters; finite numbers only. */
 export type Params = Record<string, string | number | boolean>
 /** A typed socket; frameParam pins upstream time, while offsetParam shifts it. */

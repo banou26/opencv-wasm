@@ -239,9 +239,9 @@ Auto used one worker, with 244 MiB estimated cache storage before export. The
 larger display adds per-frame decoding and rendering cost, not another full-scene
 analysis for every frame.
 
-Eleven separate inspector branches expose source pixels, motion, validity, cells,
+Twelve separate inspector branches expose source pixels, motion, validity, cells,
 original groups, motion families, velocity histories, motion conflicts, drawing
-events, a timing timeline and the four-panel review. Only these
+events, a timing timeline, experimental support completion and the four-panel review. Only these
 inspectors connect to Time. Analysis results are cached by the clip, range and
 parameters, not accumulated as frames are visited. The final source frame has no
 outgoing pair. Memory accounting includes retained JavaScript arrays as well as
@@ -382,6 +382,46 @@ background in that baseline, and the central characters remain fragmented.
   Group page selects 32 rows at a time. The Evidence summary output
   includes complete H/C/? patterns, absolute change frames and completed hold
   lengths. Unknown intervals break holds; no on-2s/on-3s cadence is imposed.
+- **Support completion (experimental):** select **Inspect Support Completion**
+  on the separate `Regional Drawing Events -> Support Completion` branch. It
+  accepts motion-history data directly as well. To export its four-panel video,
+  set **Render -> Target** to **Output 2**. Selecting an inspector changes only
+  the preview, not the render target. **Output 1** remains the unchanged default
+  regional review. Reopen the prefab to acquire the new output in older graphs.
+  Original measured family cells
+  stay unchanged. Empty cells can be inferred only between opposing original
+  same-family seeds, or on a bounded straight ray between a measured seed and
+  the image border. Different families and unassigned informative flow veto
+  filling, including sparse accepted flow that did not form a region. Nearby
+  competitors also block inference. Inferred cells never become new seeds.
+  **Max hole distance**, **Max border distance** and **Competitor clearance**
+  default to 6, 6 and 2 fine-grid cells, each adjustable from 0 to 32. A zero
+  maximum disables that inference type. These are analysis-grid distances, not
+  full-resolution pixels. The source-backed four-panel view shows source /
+  measured support on top, completed support / inference distinction below.
+  In the distinction panel, gray is measured, amber inferred holes and teal
+  inferred border support; blocked and unknown cells stay unpainted. Counts
+  report cells, not pixel coverage or confidence. The final source frame has
+  no outgoing evidence and shows no support overlay. This conservative stage
+  cannot identify entirely unobserved objects, establish correct ownership,
+  recover pixels or produce a pixel-accurate silhouette. It does not change
+  motion, grouping, drawing events or the default Review output. Completion is
+  cached for the scene and can be cancelled between outgoing pairs.
+
+  Full-shot completion export (the benchmark explicitly selects Output 2):
+  ```sh
+  BENCH_VIEW=completion BENCH_OUTPUT=/home/banou/dev/cadence/test/out/layers-market-pan/diagnostics/regional-completion-review node scripts/regional-render-benchmark.mjs /home/banou/dev/cadence/test/out/layers-market-pan/original/original.mp4
+  ```
+  The 2026-09-24 export produced 293 frames at 1920x1080/60fps: 9.05s initial
+  analysis, 0.62s to select/evaluate the completion branch, 5.70s to render.
+  Decoded SHA-256:
+  `cce1e4bd0fa7608df31215960083257ee9e0a994cd6dc6223df37f8b5ab81613`.
+  This is held source-clock diagnostic content, not interpolated animation.
+  Sampled exported frames retain prior character fragmentation and show only
+  sparse additions. Cadence's six-scene cached replay (plus another market
+  resolution) adds 0.01--0.85% area at the conservative defaults; the broad
+  unsupported regions are not solved. Looser clearance enters character-area
+  controls, so it is not enabled by default.
 - **Review:** top left source, top right flow, bottom left motion families,
   bottom right original-region drawing events. Family grouping never merges
   drawing-event identities. Existing saved graphs without Motion-History
@@ -389,10 +429,11 @@ background in that baseline, and the central characters remain fragmented.
   analysis-resolution diagnostics are not artwork exports.
 
 `npm run typecheck` and `npm test` cover stage contracts, shared-core parity,
-unchanged per-region timing, preserved support and unknown intervals. With the
+unchanged per-region timing, preserved support, separate inference and unknown intervals. With the
 editor server running, `node scripts/regional-layers-smoke.mjs` loads real
-footage, selects both new inspectors, checks their summaries, and writes the
-current desktop/mobile, family and velocity screenshots to `build-smoke/`.
+footage, checks the family, velocity, conflict and completion inspectors and
+their summaries, and writes current desktop/mobile and diagnostic screenshots
+to `build-smoke/`.
 
 The core is a generated, committed browser-safe snapshot from Cadence under
 `vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,
@@ -585,7 +626,7 @@ including odd sizes, and adds its detail band back.
 Estimate Translation repeats **one global vector** as arrows enlarged 4×. It is
 not dense optical flow. The node catalog is a useful subset of OpenCV; it does not
 yet expose every API, feature detector, contour operation or optical-flow method.
-`Regions` carries the schema-checked scene, motion, pooled, track and timing
+`Regions` carries the schema-checked scene, motion, pooled, track, history, timing and completion
 collections in the regional prefab. Rectangle remains the crop-region value.
 
 Older saved graphs still execute their implicit-time Video Source, Frame Offset,

@@ -78,9 +78,11 @@ try {
   const project = await page.evaluate(async () => JSON.parse(await (
     await (await window.regionalSmokeFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
   const stages = project.nodes.map(node => node.type)
-  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalInspect']) {
+  for (const stage of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect']) {
     assert.ok(stages.includes(stage), `Regional prefab is missing its editable ${stage} stage`)
   }
+  assert.deepEqual(await page.getByLabel('Render target').locator('option').evaluateAll(options => options.map(option => option.value)), ['n5', 'ncompletionout'])
+  assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'The ordinary review must remain the default render output')
   await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-computed-frame'), '6')
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
@@ -136,6 +138,39 @@ try {
   await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
   await page.getByRole('button', { name: 'Fit', exact: true }).click()
   await page.screenshot({ path: resolve(directory, 'regional-layers-conflicts.png') })
+  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Support Completion' }).click())
+  assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'ncompletionview')
+  assert.equal(await page.getByLabel('Render target').inputValue(), 'n5', 'Inspector selection must not silently change the explicit render target')
+  await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
+  const completionSummary = await page.locator('.value-preview pre').innerText()
+  assert.match(completionSummary, /Top: source \/ measured family support\. Bottom: completed support \/ inference distinction\./)
+  assert.match(completionSummary, /Source 6 -> 7/)
+  assert.match(completionSummary, /Cells: measured \d+; inferred holes \d+; inferred border \d+; blocked \d+; unknown \d+/)
+  assert.match(completionSummary, /not measured motion, recovered pixels or a pixel-accurate silhouette/)
+  assert.match(completionSummary, /Limits \(fine-grid cells\): holes 6; border 6; competitor clearance 2/)
+  await change(async () => {
+    const input = page.getByLabel('Support Completion Max hole distance (cells)', { exact: true })
+    await input.fill('0'); await input.press('Enter')
+  })
+  await change(async () => {
+    const input = page.getByLabel('Support Completion Max border distance (cells)', { exact: true })
+    await input.fill('0'); await input.press('Enter')
+  })
+  assert.match(await page.locator('.value-preview pre').innerText(), /inferred holes 0; inferred border 0/)
+  for (const label of ['Max hole distance (cells)', 'Max border distance (cells)']) {
+    await change(async () => {
+      const input = page.getByLabel(`Support Completion ${label}`, { exact: true })
+      await input.fill('6'); await input.press('Enter')
+    })
+  }
+  assert.equal(await page.locator('.value-preview pre').innerText(), completionSummary)
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(last)))
+  assert.match(await page.locator('.value-preview pre').innerText(), /final frame, no outgoing pair/)
+  assert.match(await page.locator('.value-preview pre').innerText(), /No completion evidence for this frame/)
+  await change(() => page.getByLabel('Source frame', { exact: true }).fill('6'))
+  await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  await page.screenshot({ path: resolve(directory, 'regional-layers-completion.png') })
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
   const canvas = page.locator('.image-viewport canvas').filter({ visible: true }).first()
   await canvas.waitFor({ state: 'visible' })
@@ -175,8 +210,8 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [])
   await writeFile(resolve(directory, 'regional-layers-smoke.json'), JSON.stringify({
-    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, familySummary, velocitySummary, conflictSummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
-    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png', 'regional-layers-families.png', 'regional-layers-velocities.png', 'regional-layers-conflicts.png'],
+    status: 'passed', clip, processingSeconds, stages, summary, timingSummary, familySummary, velocitySummary, conflictSummary, completionSummary, mobile, canvas: { minimum, maximum, colorfulPixels: colorful },
+    screenshots: ['regional-layers-desktop.png', 'regional-layers-mobile.png', 'regional-layers-timing.png', 'regional-layers-families.png', 'regional-layers-velocities.png', 'regional-layers-conflicts.png', 'regional-layers-completion.png'],
   }, null, 2) + '\n')
   console.log(`PASS: regional layers prefab processed real footage in ${processingSeconds.toFixed(2)} s; nonblank desktop/mobile previews`)
 } finally {

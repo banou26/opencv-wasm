@@ -22,7 +22,7 @@ assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto)
 if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH must be a decoded-video SHA256')
 if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
 if (proximityWeight !== undefined) assert.equal(proximityWeight, 0, 'The editor proximity experiment was rolled back; only motion-only grouping is supported')
-assert.ok(['review', 'conflicts'].includes(view), 'BENCH_VIEW must be review or conflicts')
+assert.ok(['review', 'conflicts', 'completion'].includes(view), 'BENCH_VIEW must be review, conflicts or completion')
 for (const size of [expectedWidth, expectedHeight]) if (size !== undefined) assert.ok(Number.isSafeInteger(size) && size > 0, 'Expected image dimensions must be positive whole numbers')
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
 const freePort = () => new Promise(resolvePort => {
@@ -75,14 +75,18 @@ try {
   assert.equal(await page.getByLabel('Motion-History Grouping Proximity weight', { exact: true }).count(), 0,
     'The rejected proximity control must not be offered by the editor')
   const proximity = 0
-  const displayControl = page.getByLabel('Inspect Regional Review Display max side', { exact: true })
+  const inspector = view === 'completion' ? 'Inspect Support Completion' : 'Inspect Regional Review'
+  const selected = performance.now()
+  await change(() => page.locator('.step-strip button').filter({ hasText: inspector }).click())
+  const selectionMs = performance.now() - selected
+  const displayControl = page.getByLabel(`${inspector} Display max side`, { exact: true })
   if (displayMaxSide !== undefined && Number(await displayControl.inputValue()) !== displayMaxSide) {
     assert.ok(displayMaxSide <= Number(await displayControl.getAttribute('max')), 'BENCH_DISPLAY_MAX_SIDE exceeds the editor limit')
     await change(() => displayControl.fill(String(displayMaxSide)))
   }
   const display = Number(await displayControl.inputValue())
-  await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Regional Review' }).click())
-  if (view !== 'review') await change(() => page.getByLabel('Inspect Regional Review View', { exact: true }).selectOption(view))
+  const viewControl = page.getByLabel(`${inspector} View`, { exact: true })
+  if (await viewControl.inputValue() !== view) await change(() => viewControl.selectOption(view))
   const analysis = Number(await page.getByLabel('Scene Range Analysis max side', { exact: true }).inputValue())
   const cache = await page.getByTestId('engine-status').innerText()
   const sourceInfo = await page.locator('.clip-info').innerText()
@@ -90,7 +94,8 @@ try {
   assert.ok(dimensions, 'Regional output must have known image dimensions')
   await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
   const summary = await page.locator('.value-preview pre').innerText()
-  assert.match(summary, view === 'review' ? /\d+ original regions -> \d+ motion families/ : /Conflict page 0: \d+\/\d+ raw-veto pairs/)
+  assert.match(summary, view === 'review' ? /\d+ original regions -> \d+ motion families/
+    : view === 'conflicts' ? /Conflict page 0: \d+\/\d+ raw-veto pairs/ : /inferred/i)
   await change(() => page.getByLabel('Output socket').selectOption('out:frame:image'))
   const availableLast = Number(await page.getByLabel('Render last frame').inputValue())
   const last = Number(process.env.BENCH_LAST ?? availableLast)
@@ -100,9 +105,13 @@ try {
   await page.getByLabel('Render fps').selectOption('60')
   await page.getByLabel('Render quality').selectOption('high')
   await page.getByLabel('Render workers').selectOption(String(workers))
+  // Inspecting a branch does not change the movie's explicit output target.
+  const renderTarget = view === 'completion' ? 'ncompletionout' : 'n5'
+  await page.getByLabel('Render target').selectOption(renderTarget)
+  assert.equal(await page.getByLabel('Render target').inputValue(), renderTarget)
   const total = Number((await page.locator('.render-note').innerText()).match(/^(\d+) output frames/)?.[1])
   assert.ok(total > 0, 'Render controls must resolve a positive frame count')
-  console.log(JSON.stringify({ analysisMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, cache, sourceInfo, workers, total }))
+  console.log(JSON.stringify({ analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, renderTarget, cache, sourceInfo, workers, total }))
   const started = performance.now(), milestones = []
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   let previous = '', finished = false
@@ -135,7 +144,7 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [], 'Browser must not report errors')
   const report = {
-    status: 'passed', source: resolve(source), sourceInfo, analysisMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, cache, last, fps: 60, quality: 'high',
+    status: 'passed', source: resolve(source), sourceInfo, analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, renderTarget, cache, last, fps: 60, quality: 'high',
     requestedWorkers: workers, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs,
     total, width: video.width, height: video.height, summary, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
   }

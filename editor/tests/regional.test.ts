@@ -3,7 +3,8 @@ import { beforeAll, expect, test } from 'vite-plus/test'
 import { initOpenCV } from '@banou/opencv-wasm'
 import { groupMotionHistories, type AnalysisFrame, type RegionalTracks } from 'cadence/regional'
 import { regionalLayersGraph } from '../src/engine/regional-prefab'
-import { parseDocument, validateConnection } from '../src/engine/graph'
+import { groupNodes, parseDocument, validateConnection } from '../src/engine/graph'
+import { planGraph } from '../src/engine/plan'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { defaultParams, specFor } from '../src/engine/specs'
@@ -38,16 +39,40 @@ const step = (type: NodeType, params: Params = {}) => ({ key: 'test', node: { id
 
 test('regional prefab has real staged contracts and only inspectors depend on Time', () => {
   const doc = parseDocument(regionalLayersGraph())
-  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(11)
-  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(11)
+  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(12)
+  expect(new Set(doc.nodes.filter(n => n.type === 'regionalInspect').map(n => specFor(n, doc).title)).size).toBe(12)
   expect(doc.edges).toContainEqual(expect.objectContaining({ source: 'ntiming', target: 'nconflictview', targetHandle: 'in:regions:data' }))
   expect(specFor(doc.nodes.find(node => node.id === 'nconflictview')!, doc).title).toBe('Inspect Motion Conflicts')
+  expect(specFor(doc.nodes.find(node => node.id === 'ncompletionview')!, doc).title).toBe('Inspect Support Completion')
+  expect(validateConnection(doc, { source: 'ntiming', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toBeNull()
+  expect(validateConnection(doc, { source: 'nhistory', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toBeNull()
+  expect(validateConnection(doc, { source: 'ntracks', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(doc.edges.filter(e => e.source === 'ntime').every(e => doc.nodes.find(n => n.id === e.target)?.type === 'regionalInspect')).toBe(true)
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(validateConnection(doc, { source: 'ndense', sourceHandle: 'out:regions:data', target: 'ngridview', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'nhistory', sourceHandle: 'out:regions:data', target: 'ntiming', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'ntracks', sourceHandle: 'out:regions:data', target: 'ntiming', targetHandle: 'in:regions:data' })).toBeNull()
   expect(validateConnection(doc, { source: 'nhistory', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
+})
+
+test('completion accepts timing across nested custom-node interfaces and a saved-graph round trip', () => {
+  const doc = regionalLayersGraph(), target = planGraph(doc, 'ncompletionview', null, 3, 'clip', 8).target
+  const grouped = groupNodes(doc, undefined, ['ncomplete'], 'Completion', 'gcompletion', 'ncompletiongroup')
+  const nested = groupNodes(grouped, undefined, ['ncompletiongroup'], 'Nested completion', 'gnested', 'nnested')
+  const restored = parseDocument(JSON.parse(JSON.stringify(nested)))
+  expect(planGraph(restored, 'ncompletionview', null, 3, 'clip', 8).target).toEqual(target)
+  expect(planGraph(restored, 'n5', null, 3, 'clip', 8).steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
+})
+
+test('regional output 1 preserves the review and output 2 renders the completion inspector', () => {
+  const doc = parseDocument(regionalLayersGraph())
+  expect(doc.nodes.filter(node => node.type === 'output').map(node => node.id)).toEqual(['n5', 'ncompletionout'])
+  const review = planGraph(doc, 'n5', null, 3, 'clip', 8)
+  const completion = planGraph(doc, 'ncompletionout', null, 3, 'clip', 8)
+  expect(review.steps.some(step => step.node.type === 'regionalComplete')).toBe(false)
+  expect(review.steps.filter(step => step.node.type === 'regionalInspect').map(step => step.node.params.view)).toEqual(['review'])
+  expect(completion.steps.some(step => step.node.type === 'regionalComplete')).toBe(true)
+  expect(completion.steps.filter(step => step.node.type === 'regionalInspect').map(step => step.node.params.view)).toEqual(['completion'])
 })
 
 test('whole-scene native analysis executes once across scrub order and exposes every stage', async () => {
@@ -69,6 +94,23 @@ test('whole-scene native analysis executes once across scrub order and exposes e
       try { const frame = image(result.value); expect(frame.mat.cols).toBe(256); expect(frame.mat.rows).toBe(192); expect(frame.mat.data32F.some(v => v > .5)).toBe(true) } finally { result.release() }
     }
     for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    expect(calls.has('regionalComplete')).toBe(false)
+    for (const time of [3, 0, 7]) {
+      const completed = await evaluate('ncompletionview', time, 'out:string:summary')
+      try { if (completed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(completed.value.value).toContain('Inferred support is not measured motion') } finally { completed.release() }
+    }
+    expect(calls.get('regionalComplete')).toBe(1)
+    for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    const baseline = await evaluate('n5', 3)
+    let originalPixels: Float32Array
+    try { originalPixels = image(baseline.value).mat.data32F.slice() } finally { baseline.release() }
+    doc.nodes.find(node => node.id === 'ncomplete')!.params.maxHoleDistance = 0
+    const changed = await evaluate('ncompletionview', 3, 'out:string:summary')
+    try { if (changed.value.kind !== 'string') throw new Error('Missing completion summary'); expect(changed.value.value).toContain('holes 0; border 6') } finally { changed.release() }
+    expect(calls.get('regionalComplete')).toBe(2)
+    for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    const unchanged = await evaluate('n5', 3)
+    try { expect(image(unchanged.value).mat.data32F).toEqual(originalPixels) } finally { unchanged.release() }
     const dense = await evaluate('ndense', 5, 'out:regions:data')
     try {
       if (dense.value.kind !== 'regions') throw new Error('Missing regions')

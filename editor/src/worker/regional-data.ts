@@ -1,4 +1,4 @@
-import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups } from 'cadence/regional'
+import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion } from 'cadence/regional'
 
 export type SceneData = {
   asset: string; first: number; last: number; sourceWidth: number; sourceHeight: number
@@ -6,12 +6,13 @@ export type SceneData = {
 }
 /** Immutable JS-owned data. No borrowed WASM views or decoded VideoFrame handles. */
 export type RegionalData = {
-  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing'
+  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion'
   scene: SceneData
   sequence?: RegionalMotionSequence
   tracks?: RegionalTracks
   families?: MotionHistoryGroups
   analysis?: RegionalAnalysis
+  completion?: MotionCompletion
 }
 
 export const regionalSummary = (data: RegionalData): string => {
@@ -30,6 +31,12 @@ export const regionalSummary = (data: RegionalData): string => {
   if (data.analysis) {
     const events = data.analysis.frames.flatMap(f => f.observations.map(o => o.event.status))
     lines.push(['held', 'changed', 'unknown'].map(status => `${status}: ${events.filter(s => s === status).length}`).join(' / '))
+  }
+  if (data.completion) {
+    const counts = data.completion.frames.reduce((sum, frame) => ({ measured: sum.measured + frame.counts.measured, holes: sum.holes + frame.counts.holes,
+      border: sum.border + frame.counts.border, blocked: sum.blocked + frame.counts.blocked, unknown: sum.unknown + frame.counts.unknown }), { measured: 0, holes: 0, border: 0, blocked: 0, unknown: 0 })
+    lines.push(`Support completion (cell-pair counts): ${Object.entries(counts).map(([name, value]) => `${name} ${value}`).join('; ')}`,
+      'Inferred support is not measured motion, recovered pixels or a pixel-accurate silhouette.')
   }
   return lines.join('\n')
 }

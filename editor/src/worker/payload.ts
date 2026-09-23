@@ -1,12 +1,14 @@
 import { Mat } from '@banou/opencv-wasm'
 import type { SourceInfo } from '../protocol'
 import type { Bundle } from '../engine/types'
+import { regionalBytes, regionalSummary, type RegionalData } from './regional-data'
 
 /** Normalized float RGBA pixels; signed results retain negative values. */
 export type Frame = { kind: 'frame'; mat: Mat; range: 'unit' | 'signed' }
 /** Dense CV_32FC2 displacements in image pixels, plus an owned image for sparse previews. */
 export type Flow = { kind: 'flow'; mat: Mat; base: Frame }
 export type Payload = Frame
+  | { kind: 'regions'; data: RegionalData }
   | Flow
   | { kind: 'scalar'; value: number }
   | { kind: 'string'; value: string }
@@ -43,6 +45,7 @@ export const clonePayload = (value: Payload): Payload => {
   const allocated: Mat[] = []
   const copyFrame = (frame: Frame): Frame => { const mat = copyMat(frame.mat); allocated.push(mat); return { ...frame, mat } }
   const copy = (value: Payload): Payload => {
+    if (value.kind === 'regions') return { kind: 'regions', data: structuredClone(value.data) }
     if (value.kind === 'frame') return copyFrame(value)
     if (value.kind === 'flow') { const mat = copyMat(value.mat); allocated.push(mat); return { ...value, mat, base: copyFrame(value.base) } }
     if (value.kind === 'motion') return { ...value, preview: copyFrame(value.preview) }
@@ -55,10 +58,14 @@ export const clonePayload = (value: Payload): Payload => {
 export const payloadBundle = (outputs: Record<string, Payload>): Bundle<Payload> => {
   const matrices = new Set<Mat>()
   Object.values(outputs).forEach(value => walk(value, mat => matrices.add(mat)))
-  return { outputs, bytes: [...matrices].reduce((sum, mat) => sum + mat.rows * mat.cols * mat.elemSize(), matrices.size ? 0 : 128), dispose: () => matrices.forEach(mat => mat.delete()) }
+  const seen = new Set<object>()
+  const extra = (value: Payload): number => value.kind === 'regions' ? regionalBytes(value.data, seen) : value.kind === 'custom' ? Object.values(value.fields).reduce((sum, field) => sum + extra(field), 0) : 0
+  const bytes = Object.values(outputs).reduce((sum, value) => sum + extra(value), matrices.size ? 0 : 128)
+  return { outputs, bytes: [...matrices].reduce((sum, mat) => sum + mat.rows * mat.cols * mat.elemSize(), bytes), dispose: () => matrices.forEach(mat => mat.delete()) }
 }
 /** Summaries cross the worker boundary; native handles and full-resolution pixels stay in the worker. */
 export const payloadSummary = (value: Payload): string => {
+  if (value.kind === 'regions') return regionalSummary(value.data)
   if (value.kind === 'flow') return `${value.mat.cols} × ${value.mat.rows} displacement field\nX right / Y down · pixels per frame pair`
   if (value.kind === 'frame') return `${value.mat.cols} × ${value.mat.rows} frame`
   if (value.kind === 'scalar') return String(value.value)

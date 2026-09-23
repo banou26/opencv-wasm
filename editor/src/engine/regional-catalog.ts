@@ -1,0 +1,19 @@
+import type { NodeSpec, Parameter, Port } from './types'
+
+const number = (key: string, label: string, value: number, min: number, max: number, step = 1): Parameter => ({ kind: 'number', key, label, default: value, min, max, step })
+const regions = (direction: 'in' | 'out', schema?: string): Port => ({ id: `${direction}:regions:data`, type: 'regions', label: schema ?? 'Regional data', ...(schema ? { schema } : {}) })
+const stage = (type: NodeSpec['type'], title: string, description: string, input: string, output: string, parameters: Parameter[] = []): NodeSpec => ({ type, title, description, category: 'Regional analysis', algorithm: 'cadence/regional', version: 1, inputs: [regions('in', input)], outputs: [regions('out', output)], parameters })
+
+/** Whole-scene data stays explicit; only inspector nodes depend on timeline time. */
+export const REGIONAL_CATALOG: NodeSpec[] = [
+  { type: 'sceneRange', title: 'Scene Range', category: 'Regional analysis', description: 'Decode an inclusive, contiguous source range once. The range must contain one shot. Original pixels remain in the video; these BGR8 images are analysis-only.', algorithm: 'WebCodecs -> BGR8 -> INTER_AREA', version: 1,
+    inputs: [{ id: 'in:video:clip', label: 'Video clip', type: 'video' }], outputs: [regions('out', 'scene')],
+    parameters: [number('first', 'First frame', 0, 0, 1000000000), number('last', 'Last frame (inclusive)', 23, 1, 1000000000), number('maxSide', 'Analysis max side', 320, 96, 640)] },
+  stage('regionalMotion', 'Scene Dense Motion', 'Forward and backward optical flow across every adjacent pair, with texture, round-trip and observed-border validity. Invalid measurements remain unknown.', 'scene', 'motion', [number('window', 'Flow window', 25, 9, 61), number('levels', 'Pyramid levels', 4, 1, 6), number('roundTrip', 'Round-trip limit', 1.5, .1, 8, .1)]),
+  stage('regionalPool', 'Multiscale Motion Cells', 'Pool the same accepted dense field at 96, 48, 24, 12 and 8 pixels. These are alternate summaries, not independent votes. Mixed cells remain marked incoherent.', 'motion', 'pooled'),
+  stage('regionalTracks', 'Whole-Scene Motion Groups', 'Advect support cells and group compatible overlapping motion histories. Groups are motion evidence, not object identities or pixel silhouettes.', 'pooled', 'tracks', [number('tolerance', 'Motion tolerance', .75, .1, 4, .05), number('minimumOverlap', 'Minimum pair overlap', 4, 2, 30)]),
+  stage('regionalTiming', 'Regional Drawing Events', 'Compare supported appearance after one fitted regional translation. Report held, changed or unknown without deforming the drawings or assuming an on-2s/on-3s cadence.', 'tracks', 'timing'),
+  { type: 'regionalInspect', title: 'Inspect Regional Evidence', category: 'Regional analysis', description: 'Inspect an absolute source frame from cached whole-scene data. The final source frame has no outgoing motion pair. Colored support is not a recovered layer silhouette.', algorithm: 'Read-only diagnostic raster', version: 1,
+    inputs: [regions('in')], outputs: [{ id: 'out:frame:image', label: 'Diagnostic image', type: 'frame' }, { id: 'out:string:summary', label: 'Evidence summary', type: 'string' }],
+    parameters: [number('frame', 'Source frame', 0, 0, 1000000000), { kind: 'select', key: 'view', label: 'View', default: 'review', options: ['source', 'flow', 'validity', 'cells', 'tracks', 'events', 'timeline', 'review'] }, { kind: 'select', key: 'cellSize', label: 'Cell size', default: '24', options: ['96', '48', '24', '12', '8'] }, number('groupPage', 'Timing group page', 0, 0, 100000)] },
+]

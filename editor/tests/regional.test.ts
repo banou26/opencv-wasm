@@ -1,0 +1,116 @@
+import { beforeAll, expect, test } from 'vite-plus/test'
+import { initOpenCV } from '@banou/opencv-wasm'
+import type { AnalysisFrame } from 'cadence/regional'
+import { regionalLayersGraph } from '../src/engine/regional-prefab'
+import { parseDocument, validateConnection } from '../src/engine/graph'
+import { ResultCache } from '../src/engine/cache'
+import { evaluateGraph } from '../src/engine/evaluate'
+import { defaultParams } from '../src/engine/specs'
+import type { NodeType, Params } from '../src/engine/types'
+import { runKernel } from '../src/worker/kernels'
+import { clonePayload, image, parameterValue, payloadBundle, type Payload } from '../src/worker/payload'
+import { regionalKernel, sceneGeometry } from '../src/worker/regional-kernels'
+import type { RegionalData } from '../src/worker/regional-data'
+import { renderRegional } from '../src/worker/regional-render'
+import type { VideoSource } from '../src/video/source'
+
+beforeAll(async () => { await initOpenCV() }, 60000)
+const fixture = (count = 8): RegionalData => {
+  const width = 128, height = 96, world = new Uint8Array((width + count) * height * 3)
+  let seed = 9327
+  for (let i = 0; i < world.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; world[i] = seed >>> 24 }
+  const frames: AnalysisFrame[] = []
+  for (let f = 0; f < count; f++) {
+    const data = new Uint8Array(width * height * 3)
+    for (let y = 0; y < height; y++) data.set(world.subarray((y * (width + count) + f) * 3, (y * (width + count) + f + width) * 3), y * width * 3)
+    frames.push({ width, height, data })
+  }
+  return { stage: 'scene', scene: { asset: 'clip', first: 0, last: count - 1, sourceWidth: width, sourceHeight: height, frames } }
+}
+const step = (type: NodeType, params: Params = {}) => ({ key: 'test', node: { id: 'n1', type, params: { ...defaultParams(type), ...params }, position: { x: 0, y: 0 } }, inputs: {}, frame: 0 })
+
+test('regional prefab has real staged contracts and only inspectors depend on Time', () => {
+  const doc = parseDocument(regionalLayersGraph())
+  expect(doc.nodes.filter(n => n.type === 'regionalInspect')).toHaveLength(8)
+  expect(doc.edges.filter(e => e.source === 'ntime').every(e => doc.nodes.find(n => n.id === e.target)?.type === 'regionalInspect')).toBe(true)
+  expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ntracks', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
+  expect(validateConnection(doc, { source: 'ndense', sourceHandle: 'out:regions:data', target: 'ngridview', targetHandle: 'in:regions:data' })).toBeNull()
+})
+
+test('whole-scene native analysis executes once across scrub order and exposes every stage', async () => {
+  const doc = regionalLayersGraph(), data = fixture(), cache = new ResultCache<Payload>(64 * 1024 ** 2)
+  const info = { id: 'clip', name: 'fixture', width: 128, height: 96, frameCount: 8, fps: 24, codec: 'test', decoder: 'software' as const, warnings: [] }
+  const calls = new Map<string, number>()
+  const evaluate = (selected: string, time: number, port: string | null = null) => evaluateGraph(doc, selected, port, time, [], {
+    cache, assets: { clip: info }, sourceId: 'clip', parameter: parameterValue, cancelled: () => false, yield: async () => {}, now: () => 0, status: () => {},
+    kernel: async (step, inputs) => {
+      calls.set(step.node.type, (calls.get(step.node.type) ?? 0) + 1)
+      if (step.node.type === 'clip') return payloadBundle({ 'out:video:clip': { kind: 'video', asset: 'clip', info } })
+      if (step.node.type === 'sceneRange') return payloadBundle({ 'out:regions:data': { kind: 'regions', data } })
+      return runKernel(step, inputs, undefined, () => false, doc)
+    },
+  })
+  try {
+    for (const time of [3, 0, 6, 2, 7]) {
+      const result = await evaluate('n5', time)
+      try { const frame = image(result.value); expect(frame.mat.cols).toBe(256); expect(frame.mat.rows).toBe(192); expect(frame.mat.data32F.some(v => v > .5)).toBe(true) } finally { result.release() }
+    }
+    for (const type of ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalTiming']) expect(calls.get(type)).toBe(1)
+    const dense = await evaluate('ndense', 5, 'out:regions:data')
+    try {
+      if (dense.value.kind !== 'regions') throw new Error('Missing regions')
+      expect(dense.value.data.sequence!.pairs).toHaveLength(7)
+      expect(dense.value.data.sequence!.pairs.every(p => p.grids.length === 0)).toBe(true)
+      expect(dense.value.data.sequence!.pairs[0]!.flow.valid.some(v => v !== 0)).toBe(true)
+    } finally { dense.release() }
+    const tracks = await evaluate('ntracks', 1, 'out:regions:data')
+    try { if (tracks.value.kind !== 'regions') throw new Error('Missing tracks'); expect(tracks.value.data.tracks!.groups.length).toBeGreaterThan(0); expect(tracks.value.data.sequence!.pairs[0]!.grids.map(g => g.cellSize)).toEqual([96, 48, 24, 12, 8]) } finally { tracks.release() }
+    const final = await evaluate('nreview', 7, 'out:string:summary')
+    try { expect(final.value.kind).toBe('string'); if (final.value.kind === 'string') expect(final.value.value).toContain('final frame, no outgoing pair') } finally { final.release() }
+    for (const id of ['nsourceview', 'nflowview', 'nvalidview', 'ngridview', 'ntracksview', 'neventsview']) {
+      const result = await evaluate(id, 2, 'out:frame:image')
+      try { expect(image(result.value).mat.cols).toBe(128) } finally { result.release() }
+    }
+    const timeline = await evaluate('ntimeview', 2, 'out:string:summary')
+    try { if (timeline.value.kind !== 'string') throw new Error('Missing timing summary'); expect(timeline.value.value).toContain('completed hold lengths'); expect(timeline.value.value).toContain('?') } finally { timeline.release() }
+  } finally { cache.clear() }
+}, 60000)
+
+test('scene decoding is explicit, closes owned frames, and preserves source pixels', async () => {
+  const closed: number[] = [], requested: number[] = [], rgba = new Uint8Array(128 * 96 * 4)
+  for (let i = 0; i < 128 * 96; i++) rgba.set([200, 70, 10, 255], i * 4)
+  const original = rgba.slice()
+  const video = { info: { id: 'clip', width: 128, height: 96, frameCount: 6 }, frameAt: async (index: number) => { requested.push(index); return { displayWidth: 128, displayHeight: 96, visibleRect: null, copyTo: async (out: Uint8Array) => { out.set(rgba) }, close: () => closed.push(index) } } } as unknown as VideoSource
+  const input = { 'in:video:clip': { kind: 'video', asset: 'clip', info: video.info } } satisfies Record<string, Payload>
+  const bundle = await regionalKernel(step('sceneRange', { first: 2, last: 4, maxSide: 128 }), input, () => video, () => false)
+  try {
+    expect(requested).toEqual([2, 3, 4]); expect(closed).toEqual(requested); expect(rgba).toEqual(original)
+    const value = bundle!.outputs['out:regions:data']!
+    if (value.kind !== 'regions') throw new Error('Missing scene')
+    expect(value.data.scene.frames[0]!.data.subarray(0, 3)).toEqual(new Uint8Array([10, 70, 200]))
+    expect(bundle!.bytes).toBeGreaterThan(128 * 96 * 3 * 3)
+  } finally { bundle!.dispose() }
+  await expect(regionalKernel(step('sceneRange', { first: 2, last: 4, maxSide: 128 }), input, () => video, () => true)).rejects.toThrow(/cancelled/)
+  expect(requested).toEqual([2, 3, 4])
+})
+
+test('scene range and stage checks fail before allocation or hidden inference', async () => {
+  expect(() => sceneGeometry(1920, 1080, 0, 116, 320, 117)).not.toThrow()
+  for (const args of [[1920, 1080, 0, 117, 320, 117], [1920, 1080, 5, 5, 320, 117], [1920, 1080, 0, 499, 640, 500]] as const) expect(() => sceneGeometry(args[0], args[1], args[2], args[3], args[4], args[5])).toThrow()
+  await expect(regionalKernel(step('regionalTiming'), { 'in:regions:data': { kind: 'regions', data: fixture() } }, () => undefined, () => false)).rejects.toThrow(/requires tracks/)
+  expect(() => renderRegional(fixture(), 99, 'source', 24)).toThrow(/analyzed range/)
+  expect(() => renderRegional(fixture(), 0, 'events', 24)).toThrow(/requires dense/)
+})
+
+test('regional payload cloning owns arrays and unsupported flow is not stationary motion', () => {
+  const data = fixture(2), frame = data.scene.frames[0]!, pixels = frame.width * frame.height
+  data.stage = 'motion'; data.sequence = { width: frame.width, height: frame.height, frameCount: 2, pairs: [{ frame: 0, grids: [], flow: { width: frame.width, height: frame.height, vectors: new Float32Array(pixels * 2), valid: new Uint8Array(pixels), roundTrip: new Float32Array(pixels), pan: { dx: 0, dy: 0, response: 0, used: false } } }] }
+  data.sequence.pairs[0]!.flow.valid[1000] = 255
+  const copy = clonePayload({ kind: 'regions', data })
+  frame.data[0] = 0
+  if (copy.kind !== 'regions') throw new Error('Missing copy')
+  expect(copy.data.scene.frames[0]!.data).not.toBe(frame.data)
+  const raster = renderRegional(data, 0, 'flow', 24)
+  expect([...raster.pixels.subarray(1000 * 4, 1000 * 4 + 3)]).toEqual([245, 245, 245])
+  expect(raster.pixels[0]).toBeLessThan(100)
+})

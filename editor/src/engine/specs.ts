@@ -1,5 +1,6 @@
 import type { GraphDocument, GraphNode, NodeSpec, NodeType, Params, PortType, Parameter, Port } from './types'
 import { CATALOG } from './catalog'
+import { REGIONAL_CATALOG } from './regional-catalog'
 
 /** Port colors remain consistent in the menu, sockets, edges and preview. */
 export const PORT_COLORS: Record<PortType, string> = { frame: 'var(--cv-port-frame)', video: 'var(--cv-port-video)', scalar: 'var(--cv-port-scalar)', boolean: 'var(--cv-port-boolean)', string: 'var(--cv-port-string)', vector: 'var(--cv-port-vector)', rect: 'var(--cv-port-rect)', frames: 'var(--cv-port-frames)', custom: 'var(--cv-port-custom)', flow: 'var(--cv-port-motion)', motion: 'var(--cv-port-motion)', regions: 'var(--cv-port-regions)' }
@@ -44,7 +45,7 @@ export const withParameterSockets = (spec: NodeSpec): NodeSpec => {
   return { ...spec, inputs }
 }
 export const HIDDEN_NODES: NodeType[] = ['group', 'groupInput', 'groupOutput', 'source', 'offset', 'extractFrame', 'delta', 'motion', 'makeRecord', 'breakRecord']
-export const SPECS = Object.fromEntries([...Object.values(BASE), ...CATALOG].map(spec => [spec.type, withParameterSockets(spec)])) as Record<NodeType, NodeSpec>
+export const SPECS = Object.fromEntries([...Object.values(BASE), ...CATALOG, ...REGIONAL_CATALOG].map(spec => [spec.type, withParameterSockets(spec)])) as Record<NodeType, NodeSpec>
 
 /** Resolve a custom node against the project library, or its explicit interface context. */
 export const specFor = (node: GraphNode, doc: GraphDocument): NodeSpec => {

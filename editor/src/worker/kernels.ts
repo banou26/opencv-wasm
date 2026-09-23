@@ -9,12 +9,15 @@ import { valueKernel } from './value-kernels'
 import { imageKernel } from './image-kernels'
 import { flowKernel } from './flow-kernels'
 import { proceduralKernel } from './procedural-kernels'
+import { regionalKernel } from './regional-kernels'
 export type { Frame, Payload } from './payload'
 
 /** Execute the starter algorithms through the package's named TypeScript API. */
 export const runKernel = async (step: Step, inputs: Record<string, Payload>, source: VideoSource | undefined, cancelled: () => boolean, doc: GraphDocument = { version: 1, nodes: [], edges: [] }, sourceById: (asset: string) => VideoSource | undefined = () => source): Promise<Bundle<Payload>> => {
   const primitive = valueKernel(step, inputs, source, doc)
   if (primitive) return primitive
+  const regional = await regionalKernel(step, inputs, sourceById, cancelled)
+  if (regional) return regional
   const operation = proceduralKernel(step, inputs) ?? flowKernel(step, inputs) ?? imageKernel(step, inputs)
   if (operation) return operation
   const out = new Mat(), outputs: Record<string, Payload> = {}

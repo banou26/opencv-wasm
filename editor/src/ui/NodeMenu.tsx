@@ -10,6 +10,7 @@ export type MenuPosition = { x: number; y: number; world: { x: number; y: number
 const prefabs = [
   { id: 'texture', title: 'Procedural stripe texture', description: 'No video required: pixel coordinates + seeded noise → editable RGB arithmetic → Time-driven wrapped translation → output' },
   { id: 'motionVectors', title: 'Regional motion vectors', description: 'Motion cookbook: explicit frame pair → coarse pan → forward and reverse dense flow → texture + round-trip checks → regional medians → arrows over video' },
+  { id: 'regionalLayers', title: 'Whole-scene regional analysis', description: 'Explicit scene range -> dense motion -> multiscale cells -> temporal motion groups -> drawing events -> evidence inspectors' },
   { id: 'difference', title: 'Compare neighboring frames', description: 'Video + explicit indices → two frames → grayscale → blur → difference → output' },
   { id: 'motion', title: 'Camera in-betweens', description: 'Two explicit frames → translation × fraction → move previous → fill revealed borders from next → output' },
   { id: 'mask', title: 'Changed-pixel mask', description: 'Frame comparison → threshold → output' },
@@ -17,7 +18,7 @@ const prefabs = [
   { id: 'pyramid', title: 'Explore Laplacian pyramids', description: 'Extract frame → editable Down / Up / Subtract group → detail bands → reconstruction' },
   { id: 'filter', title: 'Prepare an image', description: 'Video → Extract Video Frame → grayscale → blur → output' },
 ] as const
-const categories = ['Input', 'Generate', 'Video', 'Frame', 'Data', 'Region', 'Color', 'Filter', 'Edges', 'Pyramid', 'Measure', 'Mask', 'Math', 'Transform', 'Compose', 'Output', 'Custom', 'Prefabs']
+const categories = ['Input', 'Generate', 'Video', 'Frame', 'Data', 'Region', 'Regional analysis', 'Color', 'Filter', 'Edges', 'Pyramid', 'Measure', 'Mask', 'Math', 'Transform', 'Compose', 'Output', 'Custom', 'Prefabs']
 
 /** Copy only selected nodes and connections between them; disconnected boundary inputs stay editable. */
 export const selectedGraph = (): GraphDocument => {

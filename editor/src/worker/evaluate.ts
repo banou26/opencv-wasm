@@ -23,6 +23,9 @@ export const evaluateInspection = async (value: Inspection, context: {
     cancelled, yield: context.yield, now: () => performance.now(), status: status => context.status?.(status),
     trace: (step, inputs) => {
       const video = inputs['in:video:clip']
+      if (step.node.type === 'sceneRange' && video?.kind === 'video') {
+        for (let frame = Number(step.node.params.first); frame <= Number(step.node.params.last); frame++) demands.set(`${video.asset}:${frame}`, { asset: video.asset, frame })
+      }
       const asset = step.node.type === 'source' ? step.asset : step.node.type === 'readFrame' && video?.kind === 'video' ? video.asset : undefined
       if (asset) {
         const frame = step.node.type === 'source' ? step.frame : Number(step.node.params.frame)

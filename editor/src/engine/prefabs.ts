@@ -1,11 +1,12 @@
 import { proceduralTextureGraph } from './procedural-prefab'
 import { motionVectorsGraph } from './motion-prefab'
+import { regionalLayersGraph } from './regional-prefab'
 import { connect } from './graph'
 import { defaultParams } from './specs'
 import { translateDefinition } from './definitions'
 import type { GraphDocument, GraphNode, NodeDefinition, NodeType, Params } from './types'
 
-export type Prefab = 'difference' | 'filter' | 'motion' | 'mask' | 'crop' | 'pyramid' | 'motionVectors' | 'texture'
+export type Prefab = 'difference' | 'filter' | 'motion' | 'mask' | 'crop' | 'pyramid' | 'motionVectors' | 'regionalLayers' | 'texture'
 const node = (id: string, type: NodeType, x: number, y: number, params: Params = {}): GraphNode => ({ id, type, params: { ...defaultParams(type), ...params }, position: { x, y } })
 
 /** Editable three-level pyramids make every downsample, expand and subtraction visible. */
@@ -39,6 +40,7 @@ export const pyramidDefinition = (laplacian: boolean): NodeDefinition => {
 export const explicitGraph = (mode: Prefab = 'difference'): GraphDocument => {
   if (mode === 'texture') return proceduralTextureGraph()
   if (mode === 'motionVectors') return motionVectorsGraph()
+  if (mode === 'regionalLayers') return regionalLayersGraph()
   let doc: GraphDocument = { version: 1, definitions: [translateDefinition(), pyramidDefinition(false), pyramidDefinition(true), borderFillDefinition()], nodes: [node('n1', 'clip', 30, 80), node('n6', 'time', 30, 520), node('nframe', 'readFrame', 360, 80), node('n5', 'output', 1350, 80)], edges: [] }
   const wire = (source: string, target: string, targetHandle = 'in:frame:image', sourceHandle = 'out:frame:image') => { doc = connect(doc, { source, target, sourceHandle, targetHandle }) }
   wire('n1', 'nframe', 'in:video:clip', 'out:video:clip'); wire('n6', 'nframe', 'param:frame', 'out:scalar:index')

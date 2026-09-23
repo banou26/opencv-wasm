@@ -179,6 +179,55 @@ Changing a port's type or removing it disconnects incompatible wires; Undo resto
 the previous interface and connections. An exported graph records clip identities
 and filenames; reattach missing clips in their source nodes after opening it.
 
+## Whole-scene regional analysis
+
+The **Whole-scene regional analysis** prefab is an evidence experiment, not a
+finished layer extractor. Its ordinary typed nodes expose each actual stage:
+
+```text
+Scene Range -> Scene Dense Motion -> Multiscale Motion Cells
+            -> Whole-Scene Motion Groups -> Regional Drawing Events
+```
+
+Scene Range decodes a fixed inclusive range, independent of scrubbing. The prefab
+defaults to the full clip through Video Info; disconnect Last frame to select a
+shorter range. Use a single shot: cuts are not automatically segmented here.
+The default longest side is 320 pixels, adjustable up to 640. A range exceeding
+500 frames or ten million analysis pixels is refused before decoding.
+
+Eight separate inspector branches expose source pixels, motion, validity, cells,
+groups, drawing events, a timing timeline and the four-panel review. Only these
+inspectors connect to Time. Analysis results are cached by the clip, range and
+parameters, not accumulated as frames are visited. The final source frame has no
+outgoing pair. Memory accounting includes retained JavaScript arrays as well as
+native matrices; the usual cache budget still applies.
+
+- **Flow:** hue is direction, saturation is magnitude; white is supported zero
+  motion, purple checkerboard is unknown. Validity shows supported pixels white.
+- **Cells:** 96, 48, 24, 12 and 8 pixels pool the same dense field. Amber marks
+  mixed evidence. These scales are not independent measurements or votes.
+- **Groups:** colored cells share supported motion histories. Co-moving objects,
+  texture holes, occlusion, brief tracks and subcell boundaries remain unresolved.
+  A colored cell is not a pixel-accurate silhouette or a recovered layer.
+- **Events:** green is held, red is changed, gray is unknown. The first pair is
+  intentionally unknown without independent prior support. Drawing comparison
+  uses a regional translation, not a deforming optical-flow warp.
+- **Timeline:** rows are motion-group IDs; columns are source-frame pairs.
+  Timing group page selects 32 rows at a time. The Evidence summary output
+  includes complete H/C/? patterns, absolute change frames and completed hold
+  lengths. Unknown intervals break holds; no on-2s/on-3s cadence is imposed.
+- **Review:** top left source, top right flow, bottom left groups, bottom right
+  drawing events. These analysis-resolution diagnostics are not artwork exports.
+
+The core is a generated, committed browser-safe snapshot from Cadence under
+`vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,
+tests and hosted builds do not require a neighboring checkout. To update it from
+Cadence, run `npm run sync:cadence` with `../../cadence` present, or set
+`CADENCE_ROOT`. The sync builds the authoritative TypeScript sources and copies
+only the regional modules and declarations, recording input/output SHA-256 hashes
+in `source-manifest.json`. Do not edit generated modules. Vite deduplicates the
+published OpenCV package so the shared core uses the initialized worker runtime.
+
 ## Save a project folder
 
 In desktop Chrome, choose **Project folder…** once and grant folder access. Saving
@@ -361,8 +410,8 @@ including odd sizes, and adds its detail band back.
 Estimate Translation repeats **one global vector** as arrows enlarged 4×. It is
 not dense optical flow. The node catalog is a useful subset of OpenCV; it does not
 yet expose every API, feature detector, contour operation or optical-flow method.
-`Regions` remains a reserved legacy interface type without collection-producing
-nodes. Rectangle is the supported crop-region value.
+`Regions` carries the schema-checked scene, motion, pooled, track and timing
+collections in the regional prefab. Rectangle remains the crop-region value.
 
 Older saved graphs still execute their implicit-time Video Source, Frame Offset,
 Extract Frame, Frame Delta and Estimate Translation nodes. These compatibility

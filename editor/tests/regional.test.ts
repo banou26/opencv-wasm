@@ -12,6 +12,7 @@ import { clonePayload, image, parameterValue, payloadBundle, type Payload } from
 import { regionalKernel, sceneGeometry } from '../src/worker/regional-kernels'
 import type { RegionalData } from '../src/worker/regional-data'
 import { renderRegional } from '../src/worker/regional-render'
+import { evaluateInspection } from '../src/worker/evaluate'
 import type { VideoSource } from '../src/video/source'
 
 beforeAll(async () => { await initOpenCV() }, 60000)
@@ -114,4 +115,16 @@ test('regional payload cloning owns arrays and unsupported flow is not stationar
   const raster = renderRegional(data, 0, 'flow', 24)
   expect([...raster.pixels.subarray(1000 * 4, 1000 * 4 + 3)]).toEqual([245, 245, 245])
   expect(raster.pixels[0]).toBeLessThan(100)
+})
+
+test('oversized ranges refuse before decoding or enumerating unbounded provenance', async () => {
+  const doc = regionalLayersGraph(), clip = doc.nodes.find(n => n.id === 'n1')!, range = doc.nodes.find(n => n.id === 'nscene')!
+  range.params.last = 1000000000
+  doc.nodes = [clip, range]; doc.edges = doc.edges.filter(e => e.source === 'n1' && e.target === 'nscene')
+  const info = { id: 'clip', name: 'oversized', width: 128, height: 96, frameCount: 1000000001, fps: 24, codec: 'test', decoder: 'software' as const, warnings: [] }
+  const video = { info, close: () => {}, frameAt: () => { throw new Error('Must not decode') } } as unknown as VideoSource
+  const cache = new ResultCache<Payload>(1024 ** 2)
+  try {
+    await expect(evaluateInspection({ doc, selected: 'nscene', port: 'out:regions:data', frame: 0, gain: 1, referenceAsset: 'clip' }, { cache, sources: new Map([['clip', video]]), cancelled: () => false, yield: async () => {} })).rejects.toThrow(/budget/)
+  } finally { cache.clear() }
 })

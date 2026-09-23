@@ -24,7 +24,12 @@ export const evaluateInspection = async (value: Inspection, context: {
     trace: (step, inputs) => {
       const video = inputs['in:video:clip']
       if (step.node.type === 'sceneRange' && video?.kind === 'video') {
-        for (let frame = Number(step.node.params.first); frame <= Number(step.node.params.last); frame++) demands.set(`${video.asset}:${frame}`, { asset: video.asset, frame })
+        const first = Number(step.node.params.first), last = Number(step.node.params.last)
+        // Trace runs before the kernel's allocation checks; invalid ranges must
+        // not turn provenance reporting into an unbounded loop.
+        if (first >= 0 && last >= first && last < video.info.frameCount && last - first < 500) {
+          for (let frame = first; frame <= last; frame++) demands.set(`${video.asset}:${frame}`, { asset: video.asset, frame })
+        }
       }
       const asset = step.node.type === 'source' ? step.asset : step.node.type === 'readFrame' && video?.kind === 'video' ? video.asset : undefined
       if (asset) {

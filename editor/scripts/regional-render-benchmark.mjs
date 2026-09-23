@@ -16,6 +16,7 @@ const workers = Number(process.env.BENCH_WORKERS ?? 0), expectedHash = process.e
 const displayMaxSide = process.env.BENCH_DISPLAY_MAX_SIDE === undefined ? undefined : Number(process.env.BENCH_DISPLAY_MAX_SIDE)
 const proximityWeight = process.env.BENCH_PROXIMITY_WEIGHT === undefined ? undefined : Number(process.env.BENCH_PROXIMITY_WEIGHT)
 const view = process.env.BENCH_VIEW ?? 'completion'
+const repairOverrides = { fillIsolated: process.env.BENCH_FILL_ISOLATED, bridgeTemporal: process.env.BENCH_BRIDGE_TEMPORAL }
 const expectedWidth = process.env.EXPECTED_WIDTH === undefined ? undefined : Number(process.env.EXPECTED_WIDTH)
 const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : Number(process.env.EXPECTED_HEIGHT)
 assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
@@ -23,6 +24,7 @@ if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH mu
 if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
 if (proximityWeight !== undefined) assert.equal(proximityWeight, 0, 'The editor proximity experiment was rolled back; only motion-only grouping is supported')
 assert.ok(['review', 'conflicts', 'completion'].includes(view), 'BENCH_VIEW must be review, conflicts or completion')
+for (const value of Object.values(repairOverrides)) if (value !== undefined) assert.ok(['true', 'false'].includes(value), 'Repair overrides must be true or false')
 for (const size of [expectedWidth, expectedHeight]) if (size !== undefined) assert.ok(Number.isSafeInteger(size) && size > 0, 'Expected image dimensions must be positive whole numbers')
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
 const freePort = () => new Promise(resolvePort => {
@@ -75,6 +77,13 @@ try {
   assert.equal(await page.getByLabel('Motion-History Grouping Proximity weight', { exact: true }).count(), 0,
     'The rejected proximity control must not be offered by the editor')
   const proximity = 0
+  const repairControls = { fillIsolated: 'Fill isolated holes', bridgeTemporal: 'Bridge temporal holes' }
+  const repairs = {}
+  for (const [key, label] of Object.entries(repairControls)) {
+    const control = page.getByLabel(`Support Completion ${label}`, { exact: true }), value = repairOverrides[key]
+    if (value !== undefined && await control.isChecked() !== (value === 'true')) await change(() => control.setChecked(value === 'true'))
+    repairs[key] = await control.isChecked()
+  }
   // The prefab has one output. Change its inspector's view for read-only controls.
   const inspector = 'Inspect Support Completion'
   const selected = performance.now()
@@ -114,7 +123,7 @@ try {
   assert.equal(await page.getByLabel('Render target').inputValue(), renderTarget)
   const total = Number((await page.locator('.render-note').innerText()).match(/^(\d+) output frames/)?.[1])
   assert.ok(total > 0, 'Render controls must resolve a positive frame count')
-  console.log(JSON.stringify({ analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, renderTarget, cache, sourceInfo, workers, total }))
+  console.log(JSON.stringify({ analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, repairs, view, renderTarget, cache, sourceInfo, workers, total }))
   const started = performance.now(), milestones = []
   await page.getByRole('button', { name: 'Render video', exact: false }).click()
   let previous = '', finished = false
@@ -147,7 +156,7 @@ try {
   assert.deepEqual(await page.getByRole('alert').allTextContents(), [])
   assert.deepEqual(errors, [], 'Browser must not report errors')
   const report = {
-    status: 'passed', source: resolve(source), sourceInfo, analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, view, renderTarget, cache, last, fps: 60, quality: 'high',
+    status: 'passed', source: resolve(source), sourceInfo, analysisMs, selectionMs, analysisMaxSide: analysis, displayMaxSide: display, proximityWeight: proximity, repairs, view, renderTarget, cache, last, fps: 60, quality: 'high',
     requestedWorkers: workers, actualWorkers: Number(details[2]), renderMs: Number(details[1]) * 1000, renderWallMs,
     total, width: video.width, height: video.height, summary, hash, ...(expectedHash ? { expectedHash } : {}), milestones, errors,
   }

@@ -286,6 +286,9 @@ from rendering and verifies output frame count, dimensions, frame rate, browser
 errors and decoded-video SHA-256. Set `BENCH_LAST=4` for the short comparison,
 `BENCH_WORKERS=1` or `2` for explicit comparisons, `BENCH_OUTPUT` for an output
 filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
+`BENCH_FILL_ISOLATED=false BENCH_BRIDGE_TEMPORAL=false` disables the two new
+cleanup passes for the previous-completion control; each also accepts `true`.
+The JSON records the actual repair toggles used by the exported output.
 `BENCH_VIEW=review BENCH_DISPLAY_MAX_SIDE=0` reproduces the measured-support,
 analysis-sized cache benchmark above;
 the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
@@ -476,8 +479,18 @@ background in that baseline, and the central characters remain fragmented.
   A separate `BENCH_VIEW=review` regression run through the same single output
   exactly matches the pre-proximity `56ba952a...` decoded hash above across all
   293 frames (9.87s analysis, 6.34s render).
-  Current validation passes 161 editor tests, typecheck, lint, build, full
-  browser smoke and regional desktop/mobile smoke.
+  Current cleanup export: 293 frames at 1920x1080/60fps, 9.71s analysis,
+  0.04s to select completion, 6.85s render, one worker. Decoded SHA-256:
+  `825a31f5840d3163eff7c0d7fd85579e2b403f94e64ccde49d466d12139a4162`.
+  Both repair toggles disabled reproduce the previous `c863558e...` completion
+  video exactly, across all 293 frames (10.57s analysis, 6.97s render).
+  The frozen market-320 replay adds 259 isolated and 345 temporal cells,
+  increasing inferred area to 41.33%, with prior assignments unchanged.
+  Current validation passes 165 editor tests, typecheck, lint, build and
+  regional desktop/mobile smoke. Full browser smoke passed on a fresh rerun
+  after one transient generated-prefab DOM-state assertion, without unrelated
+  production changes. The stable video remains in Cadence's existing
+  `test/out/layers-market-pan/diagnostics/regional-completion-review.mp4`.
 - **Review:** top left source, top right flow, bottom left motion families,
   bottom right original-region drawing events. Family grouping never merges
   drawing-event identities. Existing saved graphs without Motion-History

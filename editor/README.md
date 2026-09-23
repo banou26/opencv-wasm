@@ -228,8 +228,28 @@ inspectors connect to Time. Analysis results are cached by the clip, range and
 parameters, not accumulated as frames are visited. The final source frame has no
 outgoing pair. Memory accounting includes retained JavaScript arrays as well as
 native matrices; the usual cache budget still applies. Shared data is counted
-conservatively per cached stage, so larger scenes can evict intermediates and
-recompute them when switching inspector branches.
+once by allocation identity across cached stages, including typed-array backing
+buffers. This prevents later stages from evicting earlier stages merely because
+they retain the same scene data. Output images remain independently owned and
+evictable. The byte count is an estimate of retained data, not a browser heap cap.
+
+The 2026-09-23 cache regression used the real market shot (117 source frames,
+320 x 180 analysis, 640 x 360 four-panel review, high-quality 60 fps export).
+Previously, duplicate accounting reported 501 MiB with only seven cache entries
+and reran the entire scene analysis for each exported frame. Counting shared
+allocations once retained all stages at 216 MiB with 15 entries. In a one-worker
+comparison, exporting the same 13 output frames fell from 137.08 seconds to
+0.06 seconds after an approximately 11-second initial analysis. Decoded video
+SHA-256 matched exactly:
+`83c646770eb0dd1163d1bdeb5b3987a9ca3996e6531500cf18458637faffb53f`.
+A full 293-frame export took 1.69 seconds with one worker and 12.64 seconds with
+two workers; both produced the same decoded pixels. Each additional worker owns
+its cache and must do its own initial scene analysis. These are local measurements,
+not a throughput guarantee. Resolution, thresholds and analysis algorithms were
+unchanged. Unit tests cover shared allocation lifetimes and failed insertions;
+the native integration test forces output eviction while checking that analysis
+executes once, pixels match an unconstrained cache, and parameter edits invalidate
+the appropriate stages.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.

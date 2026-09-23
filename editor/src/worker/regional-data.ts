@@ -32,17 +32,21 @@ export const regionalSummary = (data: RegionalData): string => {
   return lines.join('\n')
 }
 
-/** Count shared buffers once per bundle; stages may conservatively overcount shared inputs. */
-export const regionalBytes = (data: RegionalData, seen = new Set<object>()): number => {
-  const visit = (value: unknown): number => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return 0
+/** Stages share immutable object graphs; buffer aliases refer to one backing allocation. */
+export const regionalResources = (data: RegionalData, resources = new Map<object, number>(), seen = new Set<object>()): Map<object, number> => {
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return
     seen.add(value)
     if (ArrayBuffer.isView(value)) {
-      if (seen.has(value.buffer)) return 0
-      seen.add(value.buffer); return value.buffer.byteLength
+      resources.set(value.buffer, value.buffer.byteLength)
+      return
     }
-    if (value instanceof ArrayBuffer) return value.byteLength
-    return 64 + Object.values(value).reduce<number>((sum, item) => sum + visit(item), 0)
+    if (value instanceof ArrayBuffer) { resources.set(value, value.byteLength); return }
+    resources.set(value, 64)
+    Object.values(value).forEach(visit)
   }
-  return visit(data)
+  visit(data)
+  return resources
 }
+
+export const regionalBytes = (data: RegionalData): number => [...regionalResources(data).values()].reduce((sum, bytes) => sum + bytes, 0)

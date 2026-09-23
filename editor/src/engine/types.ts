@@ -32,7 +32,11 @@ export type DataTypeDefinition = { id: string; name: string; fields: Port[] }
 export type GraphDocument = GraphBody & { definitions?: NodeDefinition[]; dataTypes?: DataTypeDefinition[]; interfaceId?: string }
 /** Editor connection candidates also include incomplete drags. */
 export type Connection = { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
-/** A cache-owned result bundle; dispose runs exactly once after its final lease. */
-export type Bundle<T> = { outputs: Record<string, T>; bytes: number; dispose: () => void }
+/** A cache-owned result bundle; bytes is its standalone estimate, including shared storage. */
+export type Bundle<T> = {
+  outputs: Record<string, T>; bytes: number; dispose: () => void
+  /** Immutable JS allocations, counted by identity across bundles; never native handles. */
+  shared?: ReadonlyMap<object, number>
+}
 /** A pinned result. The caller must release it when it stops using the values. */
 export type Lease<T> = { value: T; release: () => void }

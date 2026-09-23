@@ -1,7 +1,7 @@
 import { Mat } from '@banou/opencv-wasm'
 import type { SourceInfo } from '../protocol'
 import type { Bundle } from '../engine/types'
-import { regionalBytes, regionalSummary, type RegionalData } from './regional-data'
+import { regionalResources, regionalSummary, type RegionalData } from './regional-data'
 
 /** Normalized float RGBA pixels; signed results retain negative values. */
 export type Frame = { kind: 'frame'; mat: Mat; range: 'unit' | 'signed' }
@@ -59,9 +59,14 @@ export const payloadBundle = (outputs: Record<string, Payload>): Bundle<Payload>
   const matrices = new Set<Mat>()
   Object.values(outputs).forEach(value => walk(value, mat => matrices.add(mat)))
   const seen = new Set<object>()
-  const extra = (value: Payload): number => value.kind === 'regions' ? regionalBytes(value.data, seen) : value.kind === 'custom' ? Object.values(value.fields).reduce((sum, field) => sum + extra(field), 0) : 0
-  const bytes = Object.values(outputs).reduce((sum, value) => sum + extra(value), matrices.size ? 0 : 128)
-  return { outputs, bytes: [...matrices].reduce((sum, mat) => sum + mat.rows * mat.cols * mat.elemSize(), bytes), dispose: () => matrices.forEach(mat => mat.delete()) }
+  const shared = new Map<object, number>()
+  const extra = (value: Payload): void => {
+    if (value.kind === 'regions') regionalResources(value.data, shared, seen)
+    else if (value.kind === 'custom') Object.values(value.fields).forEach(extra)
+  }
+  Object.values(outputs).forEach(extra)
+  const bytes = [...shared.values()].reduce((sum, size) => sum + size, matrices.size ? 0 : 128)
+  return { outputs, bytes: [...matrices].reduce((sum, mat) => sum + mat.rows * mat.cols * mat.elemSize(), bytes), ...(shared.size ? { shared } : {}), dispose: () => matrices.forEach(mat => mat.delete()) }
 }
 /** Summaries cross the worker boundary; native handles and full-resolution pixels stay in the worker. */
 export const payloadSummary = (value: Payload): string => {

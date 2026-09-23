@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeAll, expect, test } from 'vite-plus/test'
 import { initOpenCV } from '@banou/opencv-wasm'
 import { groupMotionHistories, type AnalysisFrame, type RegionalTracks } from 'cadence/regional'
@@ -102,6 +103,53 @@ test('whole-scene native analysis executes once across scrub order and exposes e
     const velocities = await evaluate('nvelocityview', 2, 'out:string:summary')
     try { if (velocities.value.kind !== 'string') throw new Error('Missing velocity summary'); expect(velocities.value.value).toContain('analysis pixels per source pair'); expect(velocities.value.value).toContain('regions') } finally { velocities.release() }
   } finally { cache.clear() }
+}, 60000)
+
+test('rendering under cache pressure retains scene analysis and preserves pixels', async () => {
+  const doc = regionalLayersGraph(), data = fixture(12), count = data.scene.frames.length
+  const info = { id: 'clip', name: 'fixture', width: 128, height: 96, frameCount: count, fps: 24, codec: 'test', decoder: 'software' as const, warnings: [] }
+  const stages = ['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming']
+  const sizes: number[] = [], reference = new ResultCache<Payload>(64 * 1024 ** 2)
+  const evaluator = (cache: ResultCache<Payload>, calls: Map<string, number>) => (time: number) => evaluateGraph(doc, 'n5', null, time, [], {
+    cache, assets: { clip: info }, sourceId: 'clip', parameter: parameterValue, cancelled: () => false, yield: async () => {}, now: () => 0, status: () => {},
+    kernel: async (step, inputs) => {
+      calls.set(step.node.type, (calls.get(step.node.type) ?? 0) + 1)
+      const bundle = step.node.type === 'clip' ? payloadBundle({ 'out:video:clip': { kind: 'video', asset: 'clip', info } })
+        : step.node.type === 'sceneRange' ? payloadBundle({ 'out:regions:data': { kind: 'regions', data } })
+          : await runKernel(step, inputs, undefined, () => false, doc)
+      if (stages.includes(step.node.type)) sizes.push(bundle.bytes)
+      return bundle
+    },
+  })
+  const digest = (value: Payload) => createHash('sha256').update(image(value).mat.data32F).digest('hex')
+  const expected: string[] = []
+  try {
+    const evaluate = evaluator(reference, new Map())
+    for (let frame = 0; frame < count; frame++) {
+      const result = await evaluate(frame)
+      try { expected.push(digest(result.value)) } finally { result.release() }
+    }
+  } finally { reference.clear() }
+  // Room for unique scene data and two inspector/output pairs, not six copies of the scene.
+  const budget = Math.max(...sizes) + 4 * (256 * 192 * 16) + 128 * 1024
+  expect(sizes.reduce((sum, bytes) => sum + bytes, 0)).toBeGreaterThan(budget)
+  const cache = new ResultCache<Payload>(budget), calls = new Map<string, number>(), evaluate = evaluator(cache, calls)
+  try {
+    for (let output = 0; output < 90; output++) {
+      const time = output % 30 * 24 / 60, result = await evaluate(time)
+      try { expect(digest(result.value)).toBe(expected[Math.floor(time)]) } finally { result.release() }
+      expect(cache.bytes).toBeLessThanOrEqual(budget)
+    }
+    for (const type of stages) expect(calls.get(type), type).toBe(1)
+    expect(calls.get('regionalInspect')).toBeGreaterThan(count)
+    // A changed history threshold must still invalidate its downstream stages.
+    doc.nodes.find(node => node.id === 'nhistory')!.params.tolerance = .8
+    const changed = await evaluate(0)
+    changed.release()
+    for (const type of stages.slice(0, 4)) expect(calls.get(type), type).toBe(1)
+    for (const type of stages.slice(4)) expect(calls.get(type), type).toBe(2)
+  } finally { cache.clear() }
+  expect(cache.bytes).toBe(0)
 }, 60000)
 
 test('scene decoding is explicit, closes owned frames, and preserves source pixels', async () => {

@@ -2,7 +2,7 @@ import { initOpenCV } from '@banou/opencv-wasm'
 import manifest from '../wasm.generated.json'
 import { loadWasmChunks } from '../../../shared/wasm-chunks'
 import { ResultCache } from '../engine/cache'
-import { orderedParallel, renderFrameBatches, renderWorkerCount } from '../engine/parallel-render'
+import { orderedParallel, renderFrameBatches, renderWorkerCount, usesSceneAnalysis } from '../engine/parallel-render'
 import { evaluateInspection } from './evaluate'
 import { RenderPool } from './render-pool'
 import type { RenderFrame } from './render-protocol'
@@ -104,7 +104,9 @@ const work = async (job: Job) => {
   const total = outputCount(job.start, job.end, timelineFps, job.fps)
   if (total > 100_000) throw new Error('Choose a shorter output range')
   parseDocument(job.value.doc)
-  const started = performance.now(), workers = renderWorkerCount(job.workers, total, navigator.hardwareConcurrency, (navigator as WorkerNavigator & { deviceMemory?: number }).deviceMemory)
+  const started = performance.now()
+  const sceneAnalysis = job.workers === 0 && usesSceneAnalysis(job.value.doc, job.value.selected, job.value.port, job.value.path)
+  const workers = renderWorkerCount(job.workers, total, navigator.hardwareConcurrency, (navigator as WorkerNavigator & { deviceMemory?: number }).deviceMemory, sceneAnalysis)
   const controller = new AbortController(); renderAbort = controller
   let encoder: MovieEncoder | undefined, pool: RenderPool | undefined
   let count = 0, outputWidth = 0, outputHeight = 0

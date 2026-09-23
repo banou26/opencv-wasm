@@ -243,13 +243,29 @@ comparison, exporting the same 13 output frames fell from 137.08 seconds to
 SHA-256 matched exactly:
 `83c646770eb0dd1163d1bdeb5b3987a9ca3996e6531500cf18458637faffb53f`.
 A full 293-frame export took 1.69 seconds with one worker and 12.64 seconds with
-two workers; both produced the same decoded pixels. Each additional worker owns
+two workers; both produced the same decoded pixels. The final Auto check selected
+one worker and took 1.40 seconds after 9.30 seconds of scene analysis, again with
+identical decoded pixels. Each additional worker owns
 its cache and must do its own initial scene analysis. These are local measurements,
 not a throughput guarantee. Resolution, thresholds and analysis algorithms were
 unchanged. Unit tests cover shared allocation lifetimes and failed insertions;
 the native integration test forces output eviction while checking that analysis
 executes once, pixels match an unconstrained cache, and parameter edits invalidate
 the appropriate stages.
+
+Reproduce the real-clip export benchmark from `editor/` after `npm run build`:
+
+```sh
+node scripts/regional-render-benchmark.mjs /path/to/single-shot.mp4
+```
+
+It opens the regional prefab in an isolated browser, exports the full clip with
+Auto workers at 60 fps, and overwrites `build-smoke/regional-render.mp4` and
+`build-smoke/regional-render.json`. The report separates initial scene analysis
+from rendering and verifies output frame count, dimensions, frame rate, browser
+errors and decoded-video SHA-256. Set `BENCH_LAST=4` for the short comparison,
+`BENCH_WORKERS=1` or `2` for explicit comparisons, `BENCH_OUTPUT` for an output
+filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
@@ -536,8 +552,12 @@ Current limits:
 
 **Render → Workers** offers Auto, 1, 2, 4, 8 and 16. Auto uses two on machines reporting
 at least four CPU cores and 4 GiB of memory (when that hint is available), and one
-for renders shorter than 24 output frames. Explicit counts are capped by the
-reported CPU count and number of frames. Compare the time shown below the movie.
+for renders shorter than 24 output frames. Outputs depending on whole-scene
+regional analysis use one worker in Auto, reusing the interactive scene cache
+instead of repeating that analysis in new workers. This follows the selected
+output through custom groups; unrelated regional branches do not change Auto.
+Explicit counts remain available and are capped by the reported CPU count and
+number of frames. Compare the time shown below the movie.
 
 Workers independently evaluate complete output frames, including Time, custom
 groups, generated textures and multiple source clips. Neighboring output times

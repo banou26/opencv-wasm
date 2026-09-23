@@ -1,6 +1,10 @@
 import { expect, test } from 'vite-plus/test'
-import { orderedParallel, renderFrameBatches, renderWorkerCount } from '../src/engine/parallel-render'
+import { orderedParallel, renderFrameBatches, renderWorkerCount, usesSceneAnalysis } from '../src/engine/parallel-render'
 import { outputTime } from '../src/engine/time'
+import { connect, groupNodes, parseDocument } from '../src/engine/graph'
+import { regionalLayersGraph } from '../src/engine/regional-prefab'
+import { defaultParams } from '../src/engine/specs'
+import type { GraphDocument, GraphNode, NodeType } from '../src/engine/types'
 
 test('parallel results preserve frame order with bounded buffers and exclusive worker slots', async () => {
   const active = new Set<number>(), consumed: number[] = [], completion: number[] = []
@@ -46,6 +50,75 @@ test('automatic concurrency respects short renders, small machines and explicit 
   expect(renderWorkerCount(16, 3, 32, 8)).toBe(3)
   expect(renderWorkerCount(4, 2, 32, 8)).toBe(2)
   expect(renderWorkerCount(1, 100, 32, 8)).toBe(1)
+})
+
+test('automatic regional rendering reuses one scene cache while explicit worker choices remain available', () => {
+  expect(renderWorkerCount(0, 300, 32, 8, true)).toBe(1)
+  expect(renderWorkerCount(0, 300, 32, 8, false)).toBe(2)
+  for (const count of [1, 2, 4, 8, 16] as const) expect(renderWorkerCount(count, 300, 32, 8, true)).toBe(count)
+  expect(renderWorkerCount(16, 3, 8, 8, true)).toBe(3)
+})
+
+const node = (id: string, type: NodeType): GraphNode => ({ id, type, params: defaultParams(type), position: { x: 0, y: 0 } })
+const withIndependentOutput = (): GraphDocument => {
+  const doc = regionalLayersGraph()
+  doc.nodes.push(node('nplain', 'source'), node('nplainoutput', 'output'))
+  return connect(doc, { source: 'nplain', sourceHandle: 'out:frame:image', target: 'nplainoutput', targetHandle: 'in:frame:image' })
+}
+
+test('whole-scene scheduling follows only the chosen target, not disconnected regional branches', () => {
+  const doc = parseDocument(withIndependentOutput())
+  expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(false)
+  expect(usesSceneAnalysis(doc, 'n1')).toBe(false)
+  expect(usesSceneAnalysis(doc, 'nlast')).toBe(false)
+  expect(usesSceneAnalysis(doc, 'nscene')).toBe(true)
+  expect(usesSceneAnalysis(doc, 'ndense')).toBe(true)
+})
+
+test('nested groups are output-selective, including inspection through an instance path', () => {
+  let doc = withIndependentOutput()
+  doc = groupNodes(doc, undefined, ['nreview', 'nplain'], 'Two independent images', 'ginner', 'ninner')
+  doc = groupNodes(doc, undefined, ['ninner'], 'Nested images', 'gouter', 'nouter')
+  const regionalPort = doc.edges.find(e => e.target === 'n5')!.sourceHandle
+  const ordinaryPort = doc.edges.find(e => e.target === 'nplainoutput')!.sourceHandle
+  expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(false)
+  expect(usesSceneAnalysis(doc, 'nouter', regionalPort)).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nouter', ordinaryPort)).toBe(false)
+  expect(usesSceneAnalysis(doc, 'nreview', null, ['nouter', 'ninner'])).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nplain', null, ['nouter', 'ninner'])).toBe(false)
+})
+
+test('group input dependencies resolve to each instance parent without treating every input as used', () => {
+  let doc = withIndependentOutput()
+  doc.nodes.push(node('nregionalblur', 'blur'), node('nordinaryblur', 'blur'))
+  doc.edges = doc.edges.filter(e => !['n5', 'nplainoutput'].includes(e.target))
+  for (const [source, target] of [['nreview', 'nregionalblur'], ['nregionalblur', 'n5'], ['nplain', 'nordinaryblur'], ['nordinaryblur', 'nplainoutput']]) {
+    doc = connect(doc, { source: source!, sourceHandle: 'out:frame:image', target: target!, targetHandle: 'in:frame:image' })
+  }
+  doc = groupNodes(doc, undefined, ['nregionalblur', 'nordinaryblur'], 'Independent inputs', 'ginputs', 'ninputs')
+  doc = groupNodes(doc, undefined, ['ninputs'], 'Nested inputs', 'gwrapped', 'nwrapped')
+  expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(false)
+  expect(usesSceneAnalysis(doc, 'nregionalblur', null, ['nwrapped', 'ninputs'])).toBe(true)
+  expect(usesSceneAnalysis(doc, 'nordinaryblur', null, ['nwrapped', 'ninputs'])).toBe(false)
+})
+
+test('regional dependencies through parameter wires are detected without evaluating dynamic values', () => {
+  let doc = withIndependentOutput()
+  doc.nodes.push(node('nregionalinfo', 'imageInfo'), node('nordinaryblur', 'blur'))
+  doc.edges = doc.edges.filter(e => e.target !== 'nplainoutput')
+  const wires = [
+    ['nplain', 'out:frame:image', 'nordinaryblur', 'in:frame:image'],
+    ['nordinaryblur', 'out:frame:image', 'nplainoutput', 'in:frame:image'],
+    ['nreview', 'out:frame:image', 'nregionalinfo', 'in:frame:image'],
+    ['nregionalinfo', 'out:scalar:width', 'nordinaryblur', 'param:sigma'],
+  ] as const
+  for (const [source, sourceHandle, target, targetHandle] of wires) doc = connect(doc, { source, sourceHandle, target, targetHandle })
+  expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(true)
+  doc.edges = doc.edges.filter(e => e.targetHandle !== 'param:sigma')
+  expect(usesSceneAnalysis(doc, 'nplainoutput')).toBe(false)
 })
 
 test('60 fps output reuses source-frame work without losing fractional timestamps or order', () => {

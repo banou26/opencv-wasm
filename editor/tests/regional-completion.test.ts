@@ -87,6 +87,7 @@ test('completion controls use bounded whole fine-grid distances', () => {
     for (const value of [-1, .5, 33, NaN]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).not.toBeNull()
   }
   const doc = regionalLayersGraph(), spec = specFor(doc.nodes.find(node => node.id === 'ncomplete')!, doc)
+  expect(spec.version).toBe(6)
   for (const key of ['fillIsolated', 'bridgeTemporal']) {
     expect(spec.inputs.find(port => port.parameter === key)?.type).toBe('boolean')
     for (const value of [true, false]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).toBeNull()
@@ -182,10 +183,10 @@ test('temporal cleanup uses both adjacent pairs even when geometric completion i
   expect(data).toEqual(original)
 })
 
-test('temporal cleanup bridges longer and leading gaps only with sufficient full-scene witnesses', async () => {
+test('temporal cleanup bridges longer and boundary gaps only with sufficient full-scene witnesses', async () => {
   const cases = [
     { witnesses: [0, 3], repaired: [1, 2] }, { witnesses: [2, 3], repaired: [0, 1] },
-    { witnesses: [3], repaired: [] }, { witnesses: [0, 1], repaired: [] },
+    { witnesses: [3], repaired: [] }, { witnesses: [0, 1], repaired: [2, 3] }, { witnesses: [0], repaired: [] },
   ]
   for (const { witnesses, repaired } of cases) {
     const data = fixture(5)

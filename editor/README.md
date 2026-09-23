@@ -456,9 +456,12 @@ background in that baseline, and the central characters remain fragmented.
   agreeing donors on both sides; multiple raw-unknown pairs can be bridged.
   A leading gap must reach
   the actual start of the analyzed sequence without a blocker and have two
-  complete future witnesses. There is no trailing extrapolation. Missing pair
-  keys or velocities, foreign ownership, incompatible unassigned evidence and
-  clipping stop a search. Raw motion contradictions, nearby competing support
+  complete future witnesses. A trailing gap must similarly reach the actual
+  sequence end without a blocker and have two complete past witnesses. Missing
+  pair keys or velocities, foreign ownership and incompatible unassigned
+  evidence stop a search. Clipped footprints can be traversed and can veto, but
+  never count as positive donors. A footprint that leaves the viewport can only
+  reach a sequence boundary if it never re-enters. Raw motion contradictions, nearby competing support
   and ambiguous family candidates also veto filling. Donors can include isolated
   cleanup but never temporal additions. A separate raw-trajectory veto continues
   beyond the first agreeing donor to catch later contradictions; incomplete or
@@ -538,6 +541,33 @@ editor server running, `node scripts/regional-layers-smoke.mjs` loads real
 footage, checks the family, velocity, conflict and completion inspectors and
 their summaries, and writes current desktop/mobile and diagnostic screenshots
 to `build-smoke/`.
+
+For a source-indexed completion investigation, run
+`node scripts/regional-completion-probe.mjs` with the dev server running. It
+imports the original 117-frame market shot by default (`REGIONAL_CLIP` overrides
+it), exports the four actual inspector PNG ports and records per-cell diagnostic
+colors plus source-to-60fps index mapping in
+`build-smoke/regional-completion-probe.json`. Comma-separated `PROBE_FRAMES`
+selects source indices. `PROBE_IMAGE_FRAMES` limits which of those frames also
+overwrite four-panel PNG sheets; set it to an empty string for metrics only.
+The classifier's `unknown` means unpainted, including both blocked and unknown
+support. These colors identify motion-family evidence, not true object ownership.
+The probe uses a disposable browser profile and leaves the dev server running.
+
+The 2026-09-24 boundary-repair check covers every source frame 20-33 and 88-115,
+plus 84, through these actual browser exports. In the top-left ROI (fine-grid
+columns 0-8, rows 0-3), only source frame 24 still has unsupported cells: 0-5
+along the top edge. The other 13 frames in 20-33 have no unsupported cells in
+that ROI. The right-wall ROI (columns 34-38, rows 4-13) has all 50 cells covered
+at 84 and throughout 88-115. Source frame 24 maps to 60fps output frames 60-62;
+indices are zero-based. The 13 prior-frame comparison controls preserve measured
+labels and existing owners, with no new support in the checked central-party
+or hooded-character rectangles. Their pre-existing family conflation remains
+unresolved. These checks do not establish complete scene coverage or correct
+object ownership. Validation passes 175 editor tests, typecheck, lint, build and
+regional desktop/mobile smoke. Generic production smoke passed on a fresh retry
+after one backward pointer-drag seek timeout; no production change was made for
+that transient failure.
 
 The core is a generated, committed browser-safe snapshot from Cadence under
 `vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,

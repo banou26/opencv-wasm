@@ -213,10 +213,10 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                 const velocity = at.velocities.get(id);
                 const usableVelocity = velocity && [velocity.dx, velocity.dy].every(Number.isFinite);
                 const left = cell.x + dx, top = cell.y + dy, right = left + cell.width, bottom = top + cell.height;
-                if (left < 0 || top < 0 || right > width || bottom > height)
-                    break;
-                for (let y = Math.floor(top / cellSize); y < Math.ceil(bottom / cellSize); y++) {
-                    for (let x = Math.floor(left / cellSize); x < Math.ceil(right / cellSize); x++) {
+                if (![left, top, right, bottom].every(Number.isFinite))
+                    return false;
+                for (let y = Math.floor(Math.max(0, top) / cellSize); y < Math.ceil(Math.min(height, bottom) / cellSize); y++) {
+                    for (let x = Math.floor(Math.max(0, left) / cellSize); x < Math.ceil(Math.min(width, right) / cellSize); x++) {
                         const q = y * columns + x, label = at.owner[q], raw = at.grid.cells[q];
                         if (label >= 0 && at.observations[label].id !== id
                             || usableVelocity && (raw.coherent || raw.dx !== null || raw.dy !== null) && !fits(raw, velocity))
@@ -244,12 +244,14 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
         const proposals = new Int32Array(count).fill(-1);
         const footprint = (donor, cell, dx, dy, id) => {
             const left = cell.x + dx, top = cell.y + dy, right = left + cell.width, bottom = top + cell.height;
-            if (![left, top, right, bottom].every(Number.isFinite) || left < 0 || top < 0 || right > width || bottom > height)
+            if (![left, top, right, bottom].every(Number.isFinite))
                 return 'blocked';
-            let complete = true;
-            // Every positively overlapped donor cell must agree, not just the shifted center.
-            for (let y = Math.floor(top / cellSize); y < Math.ceil(bottom / cellSize); y++) {
-                for (let x = Math.floor(left / cellSize); x < Math.ceil(right / cellSize); x++) {
+            if (right <= 0 || bottom <= 0 || left >= width || top >= height)
+                return 'outside';
+            let complete = left >= 0 && top >= 0 && right <= width && bottom <= height;
+            // Clipped observations can veto or be traversed, but only full footprints are donors.
+            for (let y = Math.floor(Math.max(0, top) / cellSize); y < Math.ceil(Math.min(height, bottom) / cellSize); y++) {
+                for (let x = Math.floor(Math.max(0, left) / cellSize); x < Math.ceil(Math.min(width, right) / cellSize); x++) {
                     const p = y * columns + x, label = donor.owner[p], raw = byFrame.get(donor.frame.frame);
                     const velocity = raw.velocities.get(id);
                     if (label >= 0 && donor.ids[label] !== id || label === -2 && (!velocity || !fits(raw.grid.cells[p], velocity)))
@@ -262,11 +264,13 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
         };
         const witness = (p, id, direction, minimum = 1) => {
             const cell = context.grid.cells[p];
-            let dx = 0, dy = 0, at = frame.frame, witnesses = 0;
+            let dx = 0, dy = 0, at = frame.frame, witnesses = 0, outside = false;
             for (;;) {
                 const next = at + direction, donor = donors.get(next);
                 if (next === -1)
                     return 'leading';
+                if (next === frameCount - 1)
+                    return 'trailing';
                 const velocity = byFrame.get(direction > 0 ? at : next)?.velocities.get(id);
                 if (!donor || !velocity || ![velocity.dx, velocity.dy].every(Number.isFinite))
                     return 'blocked';
@@ -275,6 +279,10 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                 const state = footprint(donor, cell, dx, dy, id);
                 if (state === 'blocked')
                     return 'blocked';
+                if (outside && state !== 'outside')
+                    return 'blocked';
+                if (state === 'outside')
+                    outside = true;
                 if (state === 'supported' && ++witnesses >= minimum)
                     return 'supported';
                 at = next;
@@ -297,8 +305,12 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                 if (margin && margin.separation[p] <= margin.seeds[p] + resolved.competitorClearance)
                     continue;
                 const before = witness(p, id, -1);
-                if (before === 'blocked' || witness(p, id, 1, before === 'leading' ? 2 : 1) !== 'supported'
-                    || !temporalStable(context, p, id, false) || !consistentTrajectory(context, p, id))
+                if (before === 'blocked')
+                    continue;
+                const after = witness(p, id, 1, before === 'leading' ? 2 : 1);
+                const anchored = after === 'supported'
+                    || before === 'supported' && after === 'trailing' && witness(p, id, -1, 2) === 'supported';
+                if (!anchored || !temporalStable(context, p, id, false) || !consistentTrajectory(context, p, id))
                     continue;
                 proposals[p] = proposals[p] === -1 ? label : -2;
             }

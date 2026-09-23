@@ -287,9 +287,9 @@ filename prefix, and `EXPECTED_HASH` to require identical decoded pixels.
 `BENCH_DISPLAY_MAX_SIDE=0` reproduces the analysis-sized cache benchmark above;
 the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 `EXPECTED_HEIGHT` can assert the encoded dimensions.
-`BENCH_PROXIMITY_WEIGHT=0` disables the local prior for an exact motion-only
-control; the default uses the prefab's 0.25. The report records the selected
-weight and full family summary alongside the video hash.
+The editor now always uses motion-only proposal ordering. The proximity trial
+was rejected after review; a saved experimental weight cannot reactivate it.
+The report records full family membership alongside the video hash.
 `BENCH_VIEW=conflicts` exports the new raw-motion/appearance diagnostic instead
 of the four-panel review; use a separate filename prefix in the existing output
 directory. For the local 24fps market clip:
@@ -303,12 +303,14 @@ This recipe is specific to the current clip and first eight-row conflict page.
 It produces 293 frames at 1988x598/60fps. Source-panel pre-encode frame hashes
 were checked against source frame `floor(outputFrame * 24 / 60)` with no
 mismatches. The chart has its own explicit source-frame cursor. The conflict
-export took 2.33s after 8.87s analysis; the normal 1920x1080 review still decoded
-to the unchanged `be51c009...07f193` hash below. Neither the new inspector nor
+historical export took 2.33s after 8.87s analysis, before the proximity rollback;
+that normal 1920x1080 review decoded to `be51c009...07f193` below. Those are
+historical trial results, not the current motion-only output. Neither the inspector nor
 the composite changes grouping or improves interpolation; this is evidence for
 the next placement-versus-redraw experiment.
 
-The 2026-09-23 market check exported 293 frames at 1920x1080/60fps. With weight
+Historical proximity trial, rejected by the owner on 2026-09-24: the 2026-09-23
+market check exported 293 frames at 1920x1080/60fps. With weight
 0, the decoded SHA-256 exactly matched the previous review:
 `56ba952ae8d446a55e41ca1d18d2a77109d594b6b5cbd1735b4f23bfccfae971`.
 At 0.25, analysis took 9.66s and rendering 6.54s (Auto, one worker), with hash
@@ -317,7 +319,16 @@ Both have 16 original regions and seven families. The main background family
 retains regions `1,8,11,12,15`; smaller-family assignments change. This browser
 decode differs slightly from the frozen FFmpeg replay used in Cadence's
 `tests/regional-proximity.ts`; its manual character IDs must not be reused here.
-The new review still shows fragmented character support and identity changes.
+That trial still showed fragmented character support and identity changes; it
+did not establish reliable layer ownership. The shipped editor has reverted to
+motion-only ordering; the trial numbers above remain here as an audit record.
+
+The 2026-09-24 rollback check regenerated the default 1920x1080 review, with
+293 frames at 60fps. Its decoded SHA-256 exactly reproduced the pre-proximity
+`56ba952ae8d446a55e41ca1d18d2a77109d594b6b5cbd1735b4f23bfccfae971`
+output (9.10s analysis, 6.07s render). This verifies restoration, not improved
+ownership: the right-hand character was already mostly assigned to the
+background in that baseline, and the central characters remain fragmented.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
@@ -338,17 +349,13 @@ The new review still shows fragmented character support and identity changes.
   contains exactly the original supported cells; sky and texture holes are not
   filled. Matching motion is not proof of identical layer ownership. The
   Evidence summary lists full membership and currently observed members.
-  **Proximity weight** defaults to 0.25 (range 0 to 4): among already compatible
-  proposals, nearby support gets a weak ordering preference. The score is mean
-  velocity error minus `tolerance * weight * max(0, 1 - distanceCells / 4)`.
-  Distance uses symmetric median-nearest support separation over shared pairs,
-  measured in cell widths. At four cell widths and beyond the bonus is zero;
-  distant fragments can still merge. Proximity cannot override conflicting
-  velocities, missing overlap, or pairwise family consistency. Set weight to 0
-  for motion-only proposal ordering. Saved root and custom-node graphs acquire
-  the new default only when the parameter is absent; explicit values survive.
-  Changing it invalidates grouping and downstream results, not decoded scenes,
-  dense motion, cells or original tracks. This is not a silhouette refinement.
+  Proposal ordering is **motion only**. The rejected proximity control is
+  removed, and the kernel explicitly uses zero spatial weight. Opening saved
+  root or custom-node graphs strips the retired parameter and any wires to its
+  former socket while preserving other settings/connections. The history cache
+  version changed so old spatially weighted results cannot be reused. This
+  rollback keeps the HD display, caching improvements and conflict diagnostic;
+  it is not a silhouette or ownership fix.
 - **Velocity histories:** teal is horizontal velocity, amber is vertical
   velocity; each row is a motion family and each column a source-frame pair.
   Group page selects eight families, with a common vertical scale for that page.

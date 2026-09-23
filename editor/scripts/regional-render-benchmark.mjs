@@ -21,7 +21,7 @@ const expectedHeight = process.env.EXPECTED_HEIGHT === undefined ? undefined : N
 assert.ok([0, 1, 2, 4, 8, 16].includes(workers), 'BENCH_WORKERS must be 0 (Auto), 1, 2, 4, 8 or 16')
 if (expectedHash) assert.match(expectedHash, /^[a-f\d]{64}$/i, 'EXPECTED_HASH must be a decoded-video SHA256')
 if (displayMaxSide !== undefined) assert.ok(Number.isSafeInteger(displayMaxSide) && displayMaxSide >= 0, 'BENCH_DISPLAY_MAX_SIDE must be a non-negative whole number')
-if (proximityWeight !== undefined) assert.ok(Number.isFinite(proximityWeight) && proximityWeight >= 0 && proximityWeight <= 4, 'BENCH_PROXIMITY_WEIGHT must be between 0 and 4')
+if (proximityWeight !== undefined) assert.equal(proximityWeight, 0, 'The editor proximity experiment was rolled back; only motion-only grouping is supported')
 assert.ok(['review', 'conflicts'].includes(view), 'BENCH_VIEW must be review or conflicts')
 for (const size of [expectedWidth, expectedHeight]) if (size !== undefined) assert.ok(Number.isSafeInteger(size) && size > 0, 'Expected image dimensions must be positive whole numbers')
 const pause = ms => new Promise(resolvePause => setTimeout(resolvePause, ms))
@@ -72,11 +72,9 @@ try {
   const opened = performance.now()
   await change(() => page.getByRole('button', { name: 'Open', exact: true }).click())
   const analysisMs = performance.now() - opened
-  const proximityControl = page.getByLabel('Motion-History Grouping Proximity weight', { exact: true })
-  if (proximityWeight !== undefined && Number(await proximityControl.inputValue()) !== proximityWeight) {
-    await change(() => proximityControl.fill(String(proximityWeight)))
-  }
-  const proximity = Number(await proximityControl.inputValue())
+  assert.equal(await page.getByLabel('Motion-History Grouping Proximity weight', { exact: true }).count(), 0,
+    'The rejected proximity control must not be offered by the editor')
+  const proximity = 0
   const displayControl = page.getByLabel('Inspect Regional Review Display max side', { exact: true })
   if (displayMaxSide !== undefined && Number(await displayControl.inputValue()) !== displayMaxSide) {
     assert.ok(displayMaxSide <= Number(await displayControl.getAttribute('max')), 'BENCH_DISPLAY_MAX_SIDE exceeds the editor limit')

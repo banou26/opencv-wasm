@@ -152,9 +152,9 @@ test('rendering under cache pressure retains scene analysis and preserves pixels
     changed.release()
     for (const type of stages.slice(0, 4)) expect(calls.get(type), type).toBe(1)
     for (const type of stages.slice(4)) expect(calls.get(type), type).toBe(2)
-    doc.nodes.find(node => node.id === 'nhistory')!.params.proximityWeight = 0
-    const motionOnly = await evaluate(0)
-    motionOnly.release()
+    doc.nodes.find(node => node.id === 'nhistory')!.params.minimumOverlap = 5
+    const moreOverlap = await evaluate(0)
+    moreOverlap.release()
     for (const type of stages.slice(0, 4)) expect(calls.get(type), type).toBe(1)
     for (const type of stages.slice(4)) expect(calls.get(type), type).toBe(3)
   } finally { cache.clear() }

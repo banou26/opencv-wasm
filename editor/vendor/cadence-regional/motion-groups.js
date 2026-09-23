@@ -40,7 +40,7 @@ function supportDistance(one, other, x, y) {
  * Matching motion does not establish shared artwork or fill unsupported cells.
  */
 export function groupMotionHistories(tracks, options = {}) {
-    const tolerance = options.tolerance ?? .75, minimumOverlap = options.minimumOverlap ?? 4, proximityWeight = options.proximityWeight ?? .25;
+    const tolerance = options.tolerance ?? .75, minimumOverlap = options.minimumOverlap ?? 4, proximityWeight = options.proximityWeight ?? 0;
     if (!Number.isFinite(tolerance) || tolerance <= 0 || !Number.isSafeInteger(minimumOverlap) || minimumOverlap < 2
         || !Number.isFinite(proximityWeight) || proximityWeight < 0 || proximityWeight > 4) {
         throw new RangeError('Invalid motion-history tolerance, overlap or proximity weight');

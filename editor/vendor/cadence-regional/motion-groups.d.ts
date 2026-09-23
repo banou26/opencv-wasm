@@ -3,7 +3,7 @@ export type MotionHistoryOptions = {
     /** Maximum simultaneous disagreement in analysis pixels per frame pair. */
     tolerance?: number;
     minimumOverlap?: number;
-    /** Local preference among motion-compatible proposals; default .25, zero restores motion-only ordering. */
+    /** Rejected spatial experiment, opt-in for research replays only. Default zero keeps motion-only ordering. */
     proximityWeight?: number;
 };
 export type MotionHistoryComparison = {

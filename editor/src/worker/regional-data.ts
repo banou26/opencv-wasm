@@ -22,7 +22,8 @@ export const regionalSummary = (data: RegionalData): string => {
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)
   if (data.families) {
     lines.push(`${data.families.families.length} motion families; original region IDs retained`, `Velocity tolerance: ${data.families.options.tolerance} analysis pixels/pair; minimum shared pairs: ${data.families.options.minimumOverlap}`)
-    lines.push(`Proximity weight: ${data.families.options.proximityWeight}; orders compatible proposals only, not a distance gate`)
+    lines.push(data.families.options.proximityWeight === 0 ? 'Proposal order: motion only; no spatial proximity prior'
+      : `Research data only: proximity weight ${data.families.options.proximityWeight}; not produced by the editor`)
     lines.push(['compatible', 'different', 'insufficient-overlap'].map(status => `${status}: ${data.families!.comparisons.filter(pair => pair.status === status).length}`).join(' / '))
     for (const family of data.families.families) lines.push(`Family ${family.id}: regions ${family.regionIds.join(', ')}`)
   }

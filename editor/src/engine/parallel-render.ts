@@ -5,6 +5,7 @@ import type { GraphDocument, GraphNode } from './types'
 
 /** Zero chooses a conservative automatic worker count; explicit choices allow comparison. */
 export type RenderWorkers = 0 | 1 | 2 | 4 | 8 | 16
+export const DEFAULT_RENDER_WORKERS: RenderWorkers = 4
 
 /** Avoid extra native heaps on small devices and startup overhead on short renders. */
 export const renderWorkerCount = (requested: RenderWorkers, total: number, cores: number, memoryGiB?: number, sceneAnalysis = false) => {

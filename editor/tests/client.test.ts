@@ -41,6 +41,17 @@ beforeEach(async () => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+describe('render worker selection', () => {
+  it('defaults render requests to four workers and preserves explicit Auto and serial choices', () => {
+    const worker = start()
+    worker.emit({ type: 'ready', adapter: 'test' })
+    client.bake(0, 12, 60, target.node)
+    client.bake(0, 12, 60, target.node, 'high', 0)
+    client.bake(0, 12, 60, target.node, 'high', 1)
+    expect(worker.commands.filter(command => command.type === 'bake').map(command => command.workers)).toEqual([4, 0, 1])
+  })
+})
+
 describe('processing engine failure cleanup', () => {
   it('clears clips queued during startup and refuses new work or late readiness', async () => {
     const worker = start()

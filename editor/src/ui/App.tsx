@@ -6,7 +6,7 @@ import type { Prefab } from '../engine/prefabs'
 import { PORT_COLORS, PORT_LABELS, specFor } from '../engine/specs'
 import { GENERATED_FPS, outputCount } from '../engine/time'
 import type { RenderQuality } from '../engine/render-quality'
-import type { RenderWorkers } from '../engine/parallel-render'
+import { DEFAULT_RENDER_WORKERS, type RenderWorkers } from '../engine/parallel-render'
 import { bake, cancel, inspect, loadVideo, saveBlob, refreshThumbnails, openProjectFolder } from './client'
 import { computationKey, useEditor } from './store'
 import { EditorTabs } from './EditorTabs'
@@ -46,7 +46,7 @@ export const App = () => {
   const [examples, setExamples] = useState<string[]>([])
   useEffect(() => { let active = true; void fetch(`${import.meta.env.BASE_URL}samples.json`).then(response => response.json()).then(names => { if (active && Array.isArray(names)) setExamples(names.filter(name => typeof name === 'string')) }).catch(() => {}); return () => { active = false } }, [])
   const state = useEditor(), { doc, view, selected, port, frame, source, ready, busy, result } = state
-  const [preset, setPreset] = useState<Prefab>('difference'), [sample, setSample] = useState(''), [start, setStart] = useState(0), [end, setEnd] = useState(0), [fps, setFps] = useState(60), [quality, setQuality] = useState<RenderQuality>('high'), [workers, setWorkers] = useState<RenderWorkers>(0), [left, setLeft] = useState(52), [showInfo, setShowInfo] = useState(false), [pane, setPane] = useState<'graph' | 'preview'>('graph'), [renderTarget, setRenderTarget] = useState('n5')
+  const [preset, setPreset] = useState<Prefab>('difference'), [sample, setSample] = useState(''), [start, setStart] = useState(0), [end, setEnd] = useState(0), [fps, setFps] = useState(60), [quality, setQuality] = useState<RenderQuality>('high'), [workers, setWorkers] = useState<RenderWorkers>(DEFAULT_RENDER_WORKERS), [left, setLeft] = useState(52), [showInfo, setShowInfo] = useState(false), [pane, setPane] = useState<'graph' | 'preview'>('graph'), [renderTarget, setRenderTarget] = useState('n5')
   const inspector = state.inspectorView, setInspector = (inspectorView: 'frame' | 'movie') => useEditor.setState({ inspectorView })
   const moviePlayer = useRef<FramePlayerHandle>(null)
   usePreviewShortcuts(moviePlayer)

@@ -2,6 +2,7 @@ import type { Inspection, WorkerCommand, WorkerEvent } from '../protocol'
 import { nodeTitle, useEditor } from './store'
 import type { SourceTarget } from './store'
 import type { NodeStatus } from '../engine/execute'
+import { DEFAULT_RENDER_WORKERS, type RenderWorkers } from '../engine/parallel-render'
 import { rememberMedia, saveArtifact, chooseProjectFolder, ensureProjectFolder } from './workspace'
 
 let worker: Worker | undefined, serial = 0, active = 0, bakeRequest = 0, bakeLabel = '', thumbnailGeneration = 0
@@ -132,7 +133,7 @@ export const openProjectFolder = async () => {
   for (const entry of restored.files) loads.push({ file: entry.file, asset: entry.id })
   nextLoad()
 }
-export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high', workers: import('../engine/parallel-render').RenderWorkers = 0) => {
+export const bake = (start: number, end: number, fps: number, target: string, quality: import('../engine/render-quality').RenderQuality = 'high', workers: RenderWorkers = DEFAULT_RENDER_WORKERS) => {
   if (!useEditor.getState().ready || useEditor.getState().fatal) return
   const value = snapshot(), output = value.doc.nodes.find(n => n.id === target)
   if (output) { value.selected = output.id; value.port = null; value.path = [] }

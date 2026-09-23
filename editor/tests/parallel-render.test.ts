@@ -1,5 +1,5 @@
 import { expect, test } from 'vite-plus/test'
-import { orderedParallel, renderFrameBatches, renderWorkerCount, usesSceneAnalysis } from '../src/engine/parallel-render'
+import { DEFAULT_RENDER_WORKERS, orderedParallel, renderFrameBatches, renderWorkerCount, usesSceneAnalysis } from '../src/engine/parallel-render'
 import { outputTime } from '../src/engine/time'
 import { connect, groupNodes, parseDocument } from '../src/engine/graph'
 import { regionalLayersGraph } from '../src/engine/regional-prefab'
@@ -50,6 +50,15 @@ test('automatic concurrency respects short renders, small machines and explicit 
   expect(renderWorkerCount(16, 3, 32, 8)).toBe(3)
   expect(renderWorkerCount(4, 2, 32, 8)).toBe(2)
   expect(renderWorkerCount(1, 100, 32, 8)).toBe(1)
+})
+
+test('four-worker default respects device and frame limits without opting into Auto', () => {
+  expect(DEFAULT_RENDER_WORKERS).toBe(4)
+  expect(renderWorkerCount(DEFAULT_RENDER_WORKERS, 300, 32, 8, true)).toBe(4)
+  expect(renderWorkerCount(DEFAULT_RENDER_WORKERS, 300, 2, 8, true)).toBe(2)
+  expect(renderWorkerCount(DEFAULT_RENDER_WORKERS, 2, 32, 8, true)).toBe(2)
+  expect(renderWorkerCount(DEFAULT_RENDER_WORKERS, 300, 0, undefined, true)).toBe(1)
+  expect(renderWorkerCount(0, 300, 32, 8, true)).toBe(1)
 })
 
 test('automatic regional rendering reuses one scene cache while explicit worker choices remain available', () => {

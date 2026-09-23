@@ -757,7 +757,9 @@ Current limits:
 
 ### Parallel render workers
 
-**Render → Workers** offers Auto, 1, 2, 4, 8 and 16. Auto uses two on machines reporting
+**Render → Workers** starts at **4** and offers Auto, 1, 2, 4, 8 and 16. Render API
+calls that omit the worker count also request four. Auto remains an explicit
+choice: it uses two on machines reporting
 at least four CPU cores and 4 GiB of memory (when that hint is available), and one
 for renders shorter than 24 output frames. Outputs depending on whole-scene
 regional analysis use one worker in Auto, reusing the interactive scene cache

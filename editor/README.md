@@ -290,6 +290,23 @@ the default now tests the source-backed HD display. `EXPECTED_WIDTH` and
 `BENCH_PROXIMITY_WEIGHT=0` disables the local prior for an exact motion-only
 control; the default uses the prefab's 0.25. The report records the selected
 weight and full family summary alongside the video hash.
+`BENCH_VIEW=conflicts` exports the new raw-motion/appearance diagnostic instead
+of the four-panel review; use a separate filename prefix in the existing output
+directory. For the local 24fps market clip:
+
+```sh
+BENCH_VIEW=conflicts BENCH_OUTPUT=build-smoke/regional-conflicts node scripts/regional-render-benchmark.mjs ../../cadence/test/out/layers-market-pan/original/original.mp4
+ffmpeg -y -v error -i ../../cadence/test/out/layers-market-pan/original/original.mp4 -i build-smoke/regional-conflicts.mp4 -filter_complex '[0:v]fps=60,scale=960:540,pad=960:598:0:29:color=0x18191b,drawtext=text=Source footage:fontcolor=white:fontsize=16:x=12:y=7[left];[left][1:v]hstack=inputs=2:shortest=1[out]' -map '[out]' -an -frames:v 293 -c:v libx264 -crf 16 -preset fast -pix_fmt yuv420p -movflags +faststart ../../cadence/test/out/layers-market-pan/diagnostics/regional-conflict-review.mp4
+```
+
+This recipe is specific to the current clip and first eight-row conflict page.
+It produces 293 frames at 1988x598/60fps. Source-panel pre-encode frame hashes
+were checked against source frame `floor(outputFrame * 24 / 60)` with no
+mismatches. The chart has its own explicit source-frame cursor. The conflict
+export took 2.33s after 8.87s analysis; the normal 1920x1080 review still decoded
+to the unchanged `be51c009...07f193` hash below. Neither the new inspector nor
+the composite changes grouping or improves interpolation; this is evidence for
+the next placement-versus-redraw experiment.
 
 The 2026-09-23 market check exported 293 frames at 1920x1080/60fps. With weight
 0, the decoded SHA-256 exactly matched the previous review:

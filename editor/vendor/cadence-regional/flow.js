@@ -15,6 +15,29 @@ function median(values) {
     const middle = Math.floor(values.length / 2);
     return values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
 }
+function grayNoise(data, width, height, radius) {
+    const histogram = new Uint32Array(257);
+    let count = 0;
+    for (let y = radius; y < height - radius; y += 2)
+        for (let x = radius; x < width - radius; x += 2) {
+            const p = y * width + x;
+            const neighbors = [data[p - radius], data[p + radius], data[p - width * radius], data[p + width * radius]];
+            if (Math.max(...neighbors) - Math.min(...neighbors) > 24)
+                continue;
+            const detail = Math.abs(data[p] - neighbors.reduce((sum, value) => sum + value, 0) / 4);
+            histogram[Math.min(256, Math.round(detail * 4))]++;
+            count++;
+        }
+    if (count < 24)
+        return .5;
+    let cumulative = 0;
+    for (let i = 0; i < histogram.length; i++) {
+        cumulative += histogram[i];
+        if (cumulative >= count / 2)
+            return i / 4 / (.6745 * Math.sqrt(1.25));
+    }
+    return .5;
+}
 /**
  * One A-to-B measurement field shared by every later grid scale. Await
  * initOpenCV first. Raw vectors remain available even when valid is zero;
@@ -44,6 +67,14 @@ export function estimateDenseMotion(a, b, options = {}) {
         const grayA = keep(new Mat()), grayB = keep(new Mat());
         cvtColor(sourceA, grayA, COLOR_BGR2GRAY);
         cvtColor(sourceB, grayB, COLOR_BGR2GRAY);
+        // A relative corner threshold alone promotes grain to texture on a flat
+        // image. Require structure above a spatially estimated noise floor too.
+        // Wider taps also see spatially correlated grain that a one-pixel residual
+        // underestimates. Weak fine artwork may remain unknown under this gate.
+        const noise = Math.max(.5, ...[1, 2, 4].flatMap(radius => [
+            grayNoise(grayA.data, width, height, radius), grayNoise(grayB.data, width, height, radius),
+        ]));
+        const noiseFloor = 4 * (noise / 255) ** 2;
         const floatA = keep(new Mat()), floatB = keep(new Mat()), hann = keep(new Mat());
         grayA.convertTo(floatA, CV_32F);
         grayB.convertTo(floatB, CV_32F);
@@ -64,6 +95,7 @@ export function estimateDenseMotion(a, b, options = {}) {
         calcOpticalFlowFarneback(grayB, alignedA, backward, .5, levels, window, 5, 7, 1.5, 0);
         cornerMinEigenVal(grayA, texture, 7, 3);
         const peak = minMaxLoc(texture).maxVal;
+        const textureThreshold = Math.max(noiseFloor, peak * textureFraction);
         // Copy only after native allocations finish: WASM growth can detach old views.
         const vectors = forward.data32F.slice(), reverse = backward.data32F.slice(), eigen = texture.data32F.slice();
         const valid = new Uint8Array(width * height), roundTrip = new Float32Array(width * height).fill(NaN);
@@ -95,7 +127,7 @@ export function estimateDenseMotion(a, b, options = {}) {
                 if (!Number.isFinite(error))
                     continue;
                 roundTrip[p] = error;
-                if (peak <= 1e-9 || eigen[p] < peak * textureFraction || error > tolerance)
+                if (eigen[p] < textureThreshold || error > tolerance)
                     continue;
                 if (!observed(x, y) || !observed(qx, qy) || !observed(x + dx, y + dy) || !observed(qx - dx, qy - dy))
                     continue;

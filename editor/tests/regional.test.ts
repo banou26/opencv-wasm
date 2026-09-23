@@ -19,7 +19,12 @@ beforeAll(async () => { await initOpenCV() }, 60000)
 const fixture = (count = 8): RegionalData => {
   const width = 128, height = 96, world = new Uint8Array((width + count) * height * 3)
   let seed = 9327
-  for (let i = 0; i < world.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; world[i] = seed >>> 24 }
+  // Structured artwork, not independent pixel noise masquerading as texture.
+  for (let y = 0; y < height; y += 8) for (let x = 0; x < width + count; x += 8) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    const value = 35 + (seed >>> 24) % 180
+    for (let yy = y; yy < Math.min(height, y + 8); yy++) for (let xx = x; xx < Math.min(width + count, x + 8); xx++) world.fill(value, (yy * (width + count) + xx) * 3, (yy * (width + count) + xx) * 3 + 3)
+  }
   const frames: AnalysisFrame[] = []
   for (let f = 0; f < count; f++) {
     const data = new Uint8Array(width * height * 3)

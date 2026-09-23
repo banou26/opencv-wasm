@@ -206,6 +206,8 @@ native matrices; the usual cache budget still applies.
 
 - **Flow:** hue is direction, saturation is magnitude; white is supported zero
   motion, purple checkerboard is unknown. Validity shows supported pixels white.
+  The texture floor scales with spatial grain estimates at several radii; weak
+  or very fine genuine artwork may conservatively remain unknown as well.
 - **Cells:** 96, 48, 24, 12 and 8 pixels pool the same dense field. Amber marks
   mixed evidence. These scales are not independent measurements or votes.
 - **Groups:** colored cells share supported motion histories. Co-moving objects,

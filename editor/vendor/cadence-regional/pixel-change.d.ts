@@ -25,6 +25,12 @@ export type PairChangeOptions = {
     minimumNeighbors?: number;
     /** Other rigid layers of the pair, such as a sliding background; a pixel any of them explains is unchanged. */
     otherMotions?: Translation[];
+    /**
+     * Pixels of A on the antialiased rim of another rigid layer in either frame, where both layers mix. A
+     * change there is occlusion. Without it the rim is guessed as two pixels around every pixel only
+     * another motion explains, which also swallows the outline of a drawing standing in front of that layer.
+     */
+    rim?: Uint8Array;
 };
 /**
  * Flags for every pixel of A. OBSERVED marks pixels whose counterpart and search stay inside B; the

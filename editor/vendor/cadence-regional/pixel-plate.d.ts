@@ -8,13 +8,25 @@ export type PlateStatistics = {
     count: Uint16Array;
 };
 /**
+ * Per frame, a smooth additive correction in frame coordinates, per channel, on a grid of `cell` pixel
+ * cells: the lighting of the shot changing while its paint holds still (a fade, a darkening sky).
+ */
+export type PlateDrift = {
+    cell: number;
+    columns: number;
+    rows: number;
+    frames: Float32Array[];
+};
+/**
  * Background in world coordinates: the trimmed mean of every observation outside the drawings. Count 0
- * means never observed. Artwork that never changes is part of it by construction.
+ * means never observed. Artwork that never changes is part of it by construction. With `drift`, each
+ * frame sees the plate plus that frame's correction.
  */
 export type LayerPlate = {
     atlas: WorldAtlas;
     data: Float32Array;
     count: Uint16Array;
+    drift?: PlateDrift;
 };
 export declare function plateStatistics(atlas: WorldAtlas): PlateStatistics;
 /** Add one frame outside `exclude` (grown by `margin` pixels). With `reference`, only samples near it count. */
@@ -35,6 +47,19 @@ export declare function finishPlate(statistics: PlateStatistics): LayerPlate;
 export declare function renderPlate(plate: LayerPlate, camera: CameraPath, frame: number): {
     data: Float32Array;
     known: Uint8Array;
+};
+/**
+ * One frame's drift: per cell and channel the median of frame minus plate over known pixels outside
+ * `exclude`, ignoring residuals beyond `limit` codes (drawings the exclusion missed). Cells with fewer
+ * than `minimum` samples take the mean of their measured neighbors, spreading until every cell has one.
+ */
+export declare function measureDrift(rendered: {
+    data: Float32Array;
+    known: Uint8Array;
+}, pixels: PixelFrame, exclude: Uint8Array | undefined, cell?: number, limit?: number, minimum?: number): {
+    columns: number;
+    rows: number;
+    grid: Float32Array;
 };
 /** Largest per-channel difference to the rendered plate; NaN where the plate is unknown. */
 export declare function plateResidual(plate: LayerPlate, camera: CameraPath, frame: number, pixels: PixelFrame): Float32Array;

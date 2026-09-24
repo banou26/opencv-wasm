@@ -54,8 +54,9 @@ import { OTHER_LAYER, measurePairChange } from "./pixel-change.js";
 import { candidateMotions, coarseTranslation, refineTranslation } from "./pixel-camera.js";
 import { AFTER_SCENERY, BEFORE_SCENERY, VALUED, cameraPath, drawingSilhouette, frameOffset, pairEvidence, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
-import { BORDER_REPLICATE, CV_32FC1, CV_64FC1, INTER_CUBIC, Mat, WARP_INVERSE_MAP, matFromArray, warpAffine } from '@banou/opencv-wasm';
-import { addPlateSamples, finishPlate, plateReference, plateStatistics } from "./pixel-plate.js";
+import { BORDER_REPLICATE, CV_32FC1, CV_64FC1, CV_8UC1, INTER_CUBIC, MORPH_RECT, Mat, WARP_INVERSE_MAP, dilate, getStructuringElement, matFromArray, warpAffine } from '@banou/opencv-wasm';
+import { renderCover } from "./pixel-rigid.js";
+import { addPlateSamples, finishPlate, measureDrift, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
 /**
  * Candidate motions linked across pairs: each continues the track whose latest candidate, at most
  * `maxGap` pairs back, is nearest within `continuity` pixels. A static layer drops out on redraw pairs,
@@ -207,10 +208,47 @@ export async function measureCameraPath(source, options = {}) {
     }
     return { ...cameraPath(source.width, source.height, fits), fits, coarse, motions };
 }
+/** Pixels within `width` of a boundary of any rigid layer's cover at the frame. */
+function rigidRim(layers, frame, width) {
+    const env_1 = { stack: [], error: void 0, hasError: false };
+    try {
+        const first = renderCover(layers[0], frame), { width: w, height: h } = layers[0].path, edge = new Uint8Array(w * h);
+        const covers = [first, ...layers.slice(1).map(layer => renderCover(layer, frame))];
+        for (const cover of covers)
+            for (let y = 0; y < h; y++)
+                for (let x = 0; x < w; x++) {
+                    const p = y * w + x;
+                    if (cover[p] && ((x > 0 && !cover[p - 1]) || (x < w - 1 && !cover[p + 1]) || (y > 0 && !cover[p - w]) || (y < h - 1 && !cover[p + w])))
+                        edge[p] = 255;
+                }
+        const source = __addDisposableResource(env_1, matFromArray(h, w, CV_8UC1, edge), false), grown = __addDisposableResource(env_1, new Mat(), false), kernel = __addDisposableResource(env_1, getStructuringElement(MORPH_RECT, { width: 2 * width + 1, height: 2 * width + 1 }), false);
+        dilate(source, grown, kernel);
+        return grown.data.map(v => v ? 1 : 0);
+    }
+    catch (e_1) {
+        env_1.error = e_1;
+        env_1.hasError = true;
+    }
+    finally {
+        __disposeResources(env_1);
+    }
+}
+const shiftMask = (mask, dx, dy, width, height) => {
+    const out = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+            const sx = x - dx, sy = y - dy;
+            if (sx >= 0 && sy >= 0 && sx < width && sy < height)
+                out[y * width + x] = mask[sy * width + sx];
+        }
+    return out;
+};
+const unite = (a, b) => a.map((v, p) => v | b[p]);
 const otherLayer = (change) => packMask(change.flags.map(f => f & OTHER_LAYER ? 1 : 0));
 export async function measureDrawingEvidence(source, camera, options = {}) {
     const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 0;
-    const { progress, dilation: _, inkDilation: __, ...changeOptions } = options;
+    const { progress, dilation: _, inkDilation: __, rigid, rimWidth, ...changeOptions } = options;
+    const rims = rigid?.length ? (frame) => rigidRim(rigid, frame, rimWidth ?? 2) : undefined;
     const pairs = [], summaries = [], others = [], othersBackward = [];
     let previous = await source.frame(0);
     for (let pair = 0; pair < source.count - 1; pair++) {
@@ -218,8 +256,12 @@ export async function measureDrawingEvidence(source, camera, options = {}) {
         const next = await source.frame(pair + 1), step = camera.positions[pair + 1], base = camera.positions[pair];
         const d = { dx: step.dx - base.dx, dy: step.dy - base.dy };
         const layers = camera.motions?.[pair]?.slice(1) ?? [];
-        const forward = measurePairChange(previous, next, d, { ...changeOptions, otherMotions: layers });
-        const backward = measurePairChange(next, previous, { dx: -d.dx, dy: -d.dy }, { ...changeOptions, otherMotions: layers.map(m => ({ dx: -m.dx, dy: -m.dy })) });
+        // Each test's rim is its own frame's, plus the other frame's brought onto its grid.
+        const rimA = rims?.(pair), rimB = rims?.(pair + 1), sx = Math.round(d.dx), sy = Math.round(d.dy);
+        const rimForward = rimA && rimB && unite(rimA, shiftMask(rimB, -sx, -sy, source.width, source.height));
+        const rimBackward = rimA && rimB && unite(rimB, shiftMask(rimA, sx, sy, source.width, source.height));
+        const forward = measurePairChange(previous, next, d, { ...changeOptions, otherMotions: layers, ...(rimForward ? { rim: rimForward } : {}) });
+        const backward = measurePairChange(next, previous, { dx: -d.dx, dy: -d.dy }, { ...changeOptions, otherMotions: layers.map(m => ({ dx: -m.dx, dy: -m.dy })), ...(rimBackward ? { rim: rimBackward } : {}) });
         const evidence = pairEvidence(camera, atlas, pair, forward, backward, dilation, inkDilation);
         pairs.push(evidence);
         others.push(otherLayer(forward));
@@ -245,12 +287,12 @@ export async function annotateScenery(source, evidence, options = {}) {
                 slot[pair.indices[i]] = slots++;
     const frames = source.count, samples = new Uint8Array(slots * frames), seen = new Uint8Array(slots);
     for (let frame = 0; frame < frames; frame++) {
-        const env_1 = { stack: [], error: void 0, hasError: false };
+        const env_2 = { stack: [], error: void 0, hasError: false };
         try {
             await options.progress?.(frame, frames);
             const position = camera.positions[frame], offset = frameOffset(camera, atlas, frame);
-            const luma = __addDisposableResource(env_1, matFromArray(height, width, CV_32FC1, pixelLuma(await source.frame(frame))), false), warped = __addDisposableResource(env_1, new Mat(), false);
-            const transform = __addDisposableResource(env_1, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
+            const luma = __addDisposableResource(env_2, matFromArray(height, width, CV_32FC1, pixelLuma(await source.frame(frame))), false), warped = __addDisposableResource(env_2, new Mat(), false);
+            const transform = __addDisposableResource(env_2, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
             warpAffine(luma, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
             const w = warped.data32F;
             for (let y = 2; y < height - 2; y++)
@@ -261,12 +303,12 @@ export async function annotateScenery(source, evidence, options = {}) {
                     samples[k * frames + seen[k]++] = Math.max(0, Math.min(255, Math.round(w[y * width + x])));
                 }
         }
-        catch (e_1) {
-            env_1.error = e_1;
-            env_1.hasError = true;
+        catch (e_2) {
+            env_2.error = e_2;
+            env_2.hasError = true;
         }
         finally {
-            __disposeResources(env_1);
+            __disposeResources(env_2);
         }
     }
     const median = new Int16Array(slots).fill(-1), histogram = new Uint16Array(256);
@@ -327,7 +369,7 @@ export async function sceneSilhouettes(evidence, options = {}) {
 }
 /**
  * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
- * it. `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
+ * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
  * `undecided`), which show no camera scenery the plate can trust.
  */
 export async function buildLayerPlate(source, camera, silhouettes, options = {}) {
@@ -350,13 +392,25 @@ export async function buildLayerPlate(source, camera, silhouettes, options = {})
     };
     const first = plateStatistics(atlas);
     for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(frame, source.count * 2);
+        await options.progress?.(frame, source.count * 3);
         addPlateSamples(first, camera, frame, await source.frame(frame), exclude(frame), margin);
     }
     const reference = plateReference(first, options.floor ?? 4), trimmed = plateStatistics(atlas);
     for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(source.count + frame, source.count * 2);
+        await options.progress?.(source.count + frame, source.count * 3);
         addPlateSamples(trimmed, camera, frame, await source.frame(frame), exclude(frame), margin, reference);
     }
-    return finishPlate(trimmed);
+    const plate = finishPlate(trimmed), cell = options.drift ?? 64;
+    if (!cell)
+        return plate;
+    // What the held paint cannot explain but a smooth field can: the shot's lighting changing.
+    const drift = { cell, columns: 0, rows: 0, frames: [] };
+    for (let frame = 0; frame < source.count; frame++) {
+        await options.progress?.(source.count * 2 + frame, source.count * 3);
+        const measured = measureDrift(renderPlate(plate, camera, frame), await source.frame(frame), exclude(frame), cell);
+        drift.columns = measured.columns;
+        drift.rows = measured.rows;
+        drift.frames.push(measured.grid);
+    }
+    return { ...plate, drift };
 }

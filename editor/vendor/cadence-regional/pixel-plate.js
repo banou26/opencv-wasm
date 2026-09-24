@@ -147,6 +147,93 @@ export function finishPlate(statistics) {
  * interpolation tap was observed.
  */
 export function renderPlate(plate, camera, frame) {
+    const rendered = renderPaint(plate, camera, frame), drift = plate.drift;
+    if (drift)
+        addDrift(rendered.data, camera.width, camera.height, drift, frame);
+    return rendered;
+}
+/** Bilinear between cell centers, clamped at the border. */
+function addDrift(data, width, height, drift, frame) {
+    const { cell, columns, rows } = drift, grid = drift.frames[frame];
+    if (!grid)
+        return;
+    for (let y = 0; y < height; y++) {
+        const gy = Math.min(rows - 1, Math.max(0, (y + .5) / cell - .5)), y0 = Math.floor(gy), y1 = Math.min(rows - 1, y0 + 1), fy = gy - y0;
+        for (let x = 0; x < width; x++) {
+            const gx = Math.min(columns - 1, Math.max(0, (x + .5) / cell - .5)), x0 = Math.floor(gx), x1 = Math.min(columns - 1, x0 + 1), fx = gx - x0, q = (y * width + x) * 3;
+            for (let c = 0; c < 3; c++) {
+                const at = (cx, cy) => grid[(cy * columns + cx) * 3 + c];
+                data[q + c] += (at(x0, y0) * (1 - fx) + at(x1, y0) * fx) * (1 - fy) + (at(x0, y1) * (1 - fx) + at(x1, y1) * fx) * fy;
+            }
+        }
+    }
+}
+/**
+ * One frame's drift: per cell and channel the median of frame minus plate over known pixels outside
+ * `exclude`, ignoring residuals beyond `limit` codes (drawings the exclusion missed). Cells with fewer
+ * than `minimum` samples take the mean of their measured neighbors, spreading until every cell has one.
+ */
+export function measureDrift(rendered, pixels, exclude, cell = 64, limit = 24, minimum = 32) {
+    // Quarter-code bins: the correction is often a fraction of a code.
+    const { width, height } = pixels, columns = Math.ceil(width / cell), rows = Math.ceil(height / cell), steps = 4, bins = 2 * limit * steps + 1;
+    const histogram = new Uint16Array(columns * rows * 3 * bins), counts = new Uint32Array(columns * rows), v = pixels.data, w = rendered.data;
+    for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+            const p = y * width + x, q = p * 3;
+            if (!rendered.known[p] || exclude?.[p])
+                continue;
+            const r0 = v[q] - w[q], r1 = v[q + 1] - w[q + 1], r2 = v[q + 2] - w[q + 2];
+            if (Math.abs(r0) > limit || Math.abs(r1) > limit || Math.abs(r2) > limit)
+                continue;
+            const k = Math.floor(y / cell) * columns + Math.floor(x / cell), base = k * 3 * bins + limit * steps;
+            counts[k]++;
+            histogram[base + Math.round(r0 * steps)]++;
+            histogram[base + bins + Math.round(r1 * steps)]++;
+            histogram[base + 2 * bins + Math.round(r2 * steps)]++;
+        }
+    const grid = new Float32Array(columns * rows * 3), set = new Uint8Array(columns * rows);
+    for (let k = 0; k < columns * rows; k++) {
+        if (counts[k] < minimum)
+            continue;
+        set[k] = 1;
+        for (let c = 0; c < 3; c++) {
+            let cumulative = 0, b = 0;
+            for (; b < bins; b++) {
+                cumulative += histogram[(k * 3 + c) * bins + b];
+                if (cumulative * 2 >= counts[k])
+                    break;
+            }
+            grid[k * 3 + c] = (b - limit * steps) / steps;
+        }
+    }
+    for (let changed = true; changed;) {
+        changed = false;
+        const next = set.slice();
+        for (let k = 0; k < columns * rows; k++) {
+            if (set[k])
+                continue;
+            const x = k % columns, y = (k - x) / columns, sum = [0, 0, 0];
+            let n = 0;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= columns || ny >= rows || !set[ny * columns + nx])
+                    continue;
+                for (let c = 0; c < 3; c++)
+                    sum[c] += grid[(ny * columns + nx) * 3 + c];
+                n++;
+            }
+            if (!n)
+                continue;
+            for (let c = 0; c < 3; c++)
+                grid[k * 3 + c] = sum[c] / n;
+            next[k] = 1;
+            changed = true;
+        }
+        set.set(next);
+    }
+    return { columns, rows, grid };
+}
+function renderPaint(plate, camera, frame) {
     const env_3 = { stack: [], error: void 0, hasError: false };
     try {
         const { width, height } = camera, { atlas } = plate, position = camera.positions[frame];

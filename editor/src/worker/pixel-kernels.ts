@@ -63,7 +63,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelEvidence') {
     if (!data.pixelCamera) throw new Error('Redraw Ink Evidence needs Pixel Camera Path')
     const options = { reach: Number(params.reach), noiseFactor: Number(params.noiseFactor), gradientSlope: Number(params.gradientSlope), inkDelta: Number(params.inkDelta), lineDelta: Number(params.lineDelta), dilation: Number(params.dilation) }
-    output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress }) }
+    output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress, ...(data.pixelRigid?.length ? { rigid: data.pixelRigid } : {}) }) }
   } else if (type === 'pixelScenery') {
     if (!data.pixelEvidence) throw new Error('Scenery Median needs Redraw Ink Evidence')
     output = { ...data, stage: 'pixel-evidence', pixelEvidence: await annotateScenery(source, data.pixelEvidence, { tolerance: Number(params.tolerance), minimumSamples: Number(params.minimumSamples), progress }) }
@@ -74,7 +74,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
     const silhouettes = data.pixelSilhouettes, size = source.width * source.height, drawn = (frame: number) => unpackMask(silhouettes.frames[frame]!.packed, size)
     const layers = data.pixelRigid ?? [], covers = (frame: number) => layers.map(layer => renderCover(layer, frame, true))
-    const pixelPlate = await buildLayerPlate(source, data.pixelCamera, silhouettes, { margin: Number(params.margin), floor: Number(params.floor), progress, covers, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) })
+    const pixelPlate = await buildLayerPlate(source, data.pixelCamera, silhouettes, { margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), progress, covers, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) })
     // Each sliding layer's own plate, outside the drawings in front of it.
     const pixelRigid: RigidLayer[] = []
     for (const layer of layers) pixelRigid.push({ ...layer, plate: await buildRigidPlate(source, layer, drawn, { progress }) })

@@ -2,6 +2,7 @@ import { type PairChangeOptions } from './pixel-change.ts';
 import { type CandidateMotion, type TranslationFit } from './pixel-camera.ts';
 import { type CameraPath, type DrawingEvidence, type SilhouetteOptions } from './pixel-drawings.ts';
 import { type PixelFrame, type Translation } from './pixel-frame.ts';
+import { type RigidLayer } from './pixel-rigid.ts';
 import { type LayerPlate } from './pixel-plate.ts';
 import type { Box } from './types.ts';
 /** Frames of one shot, decoded on demand at full resolution. */
@@ -76,6 +77,8 @@ export declare function measureDrawingEvidence(source: PixelFrameSource, camera:
     dilation?: number;
     inkDilation?: number;
     progress?: StageProgress;
+    rigid?: RigidLayer[];
+    rimWidth?: number;
 }): Promise<MeasuredEvidence>;
 /**
  * Mark every change event whose value before or after it is the pixel's scenery: its median luma over the
@@ -109,7 +112,7 @@ export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: Si
 }): Promise<SceneSilhouettes>;
 /**
  * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
- * it. `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
+ * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
  * `undecided`), which show no camera scenery the plate can trust.
  */
 export declare function buildLayerPlate(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, options?: {
@@ -118,4 +121,5 @@ export declare function buildLayerPlate(source: PixelFrameSource, camera: Camera
     progress?: StageProgress;
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
     covers?: (frame: number) => Uint8Array[];
+    drift?: number;
 }): Promise<LayerPlate>;

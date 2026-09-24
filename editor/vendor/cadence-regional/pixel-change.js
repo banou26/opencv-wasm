@@ -327,13 +327,18 @@ export function measurePairChange(a, b, d, options = {}) {
                     }
             }
             // The antialiased rim of a sliding layer mixes both layers, so neither explains it: two pixels around
-            // covered pixels and the other layer's own count as occlusion too.
-            for (let p = 0; p < size; p++)
-                if (flags[p] & OTHER_LAYER)
-                    occluded[p] = 255;
+            // covered pixels and, unless the rim is known, the other layer's own count as occlusion too.
+            if (!options.rim)
+                for (let p = 0; p < size; p++)
+                    if (flags[p] & OTHER_LAYER)
+                        occluded[p] = 255;
             const source = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, occluded), false), grown = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 5, height: 5 }), false);
             dilate(source, grown, kernel);
             occluded = grown.data.slice();
+            if (options.rim)
+                for (let p = 0; p < size; p++)
+                    if (options.rim[p])
+                        occluded[p] = 255;
         }
         catch (e_6) {
             env_6.error = e_6;

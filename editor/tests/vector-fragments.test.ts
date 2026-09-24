@@ -83,6 +83,21 @@ test('fragment renderer rejects unlisted relabeling, unknown or dominant changes
   expect(() => renderVectorCompletionPanels(data, 1, undefined, undefined, fragments)).toThrow(/stable identity/)
 })
 
+test('partial foreground enclosure cannot absorb a fragment with substantial dominant-boundary support', () => {
+  const data = fixture(), groups = data.frameVectorGroups!, frame = groups.frames[1]!
+  for (const cell of [16, 17, 18]) frame.labels[cell] = 0
+  frame.observations = frame.observations.map(group => {
+    const cells = [...frame.labels.keys()].filter(cell => frame.labels[cell] === group.id)
+    return { ...group, cells, strongCells: cells.filter(cell => frame.confidence[cell] === 2).length }
+  })
+  const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+  const fragments = mergeFrameVectorFragments(groups, support, identities)
+  expect(fragments.frames[1]!.merges).toEqual([])
+  const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+  const original = renderVectorCompletionPanels(completed, 1, undefined, identities)
+  expect(renderVectorCompletionPanels(completed, 1, undefined, identities, fragments).panels).toEqual(original.panels)
+})
+
 test('fragment kernel retains original evidence by reference and stable-colors off bypasses inferred labels', async () => {
   const data = fixture(), before = structuredClone(data)
   const bundle = await regionalKernel(step('vectorFragments'), input(data), () => undefined, () => false)

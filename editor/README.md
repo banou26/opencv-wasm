@@ -1209,7 +1209,8 @@ The default proposal considers foreground components observed for one consecutiv
 pair: up to five measured cells for partial enclosure, or twenty for strict
 enclosure. The enclosing nonzero host must have at least four times the original
 measured area and appear in at least two scene pairs. Partial enclosure needs at
-least half the unique boundary and two cardinal directions; strict enclosure
+least half the unique boundary, twice as many host boundary cells as dominant
+background boundary cells, and two cardinal directions; strict enclosure
 needs all four directions, 75% of the unique boundary, 90% of cardinal contacts,
 and no other measured boundary owner. Unknown and dominant-group cells are never
 merged. Inferred attachments follow only unanimous original measured anchors,

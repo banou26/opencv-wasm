@@ -1092,6 +1092,16 @@ IDs are frame-local; same-cell changes are not motion-compensated identity
 tracking. Use source-frame indices, for example 15 to 20 and 71 to 73 when
 investigating 60fps output frames 42, 43, 48 and 181 from a 24000/1001fps clip.
 Sheets and the report reuse `diagnostics/` with stable filenames.
+For a bounded capture without rerendering the review movie, run
+`WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland node scripts/vector-edge-probe.mjs`.
+It opens the current Direct prefab and captures source frames 15-20 and 71-73;
+`VECTOR_FRAMES`, `VECTOR_PREFIX`, `VECTOR_OUTPUT` and `REGIONAL_CLIP` override the
+probe selection and existing destination. The default prefix is `vector-edge-before`.
+The initial browser probe reproduces measured edge groups at source 16 (three
+cells left, five right), 17 (one left) and 19 (two left). Their IDs are unchanged
+by completion. Source 72 has one group and no completed unknown cells; source 73
+has a foreground group and 51 unknown cells, including 23 on the bottom edge.
+These are diagnostic observations, not a passing temporal-stability control.
 
 The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816

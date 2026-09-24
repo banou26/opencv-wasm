@@ -240,11 +240,17 @@ reports both raw and filtered errors and comparison counts, including their
 different observation support. This filters analysis evidence only, never the
 source/display pixels. It cannot override raw evidence favoring the original
 candidate and does not change the filling algorithm.
-The proposed batch must preserve every uncorrected cell's group partition under
-both coarse grouping and the approved default full grouping, allowing foreground
-IDs to renumber but keeping dominant background ID zero. If either check fails,
-the entire pair retains its original vectors. This guard is tied to those two
-grouping configurations, not arbitrary custom downstream settings.
+The derived grid retains `refinement.originalCells` and the exact
+`refinement.correctedCells` list. Grouping first establishes the original
+assignments, then transfers only those verified cells to the existing background
+model. It does not recluster the changed grid: every unaffected ID and motion
+model remains exact, avoiding unrelated seed/median changes. Emptied groups are
+removed without renumbering the survivors, so IDs can be sparse. Both approved
+coarse and default configurations still require corrected cells to join
+background; otherwise the whole pair retains its original vectors. A custom
+tighter grouping radius preserves an incompatible corrected vector in its own
+new group rather than dropping it or violating that radius. The cache accounts
+for retained original-cell metadata, and snapshots serialize it explicitly.
 Arrows and groups consume the same derived grid. Candidate presence, coverage
 and confidence are unchanged. Disable this switch for the original pooled
 medians, including the reflected-border errors. This check is not a temporal
@@ -1140,8 +1146,8 @@ These are diagnostic observations, not a passing temporal-stability control.
 verification off/on and captures native raw panels. Each case supplies a source
 `frame`, `correctedCells` and optional `foregroundCells`. It requires exact
 source/confidence pixels, unchanged candidate coverage and dominant-background
-membership, the designated artifacts joining background, and a bijective mapping
-of all uncorrected groups even if their numeric IDs change. It separately checks
+membership, the designated artifacts joining background, and exact numeric IDs
+for every uncorrected cell. It separately checks
 the supplied genuine foreground controls. It restores verification enabled
 and the raw inspector selected. Stable `${prefix}-border-016-{off,on}.png` sheets
 and `${prefix}-border-browser.json` preserve the comparison and per-cell

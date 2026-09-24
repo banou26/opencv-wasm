@@ -85,7 +85,6 @@ const wins = (score, minimum, maximumError) => score.compared >= minimum
     && score.reference.mae <= maximumError && improves(score);
 function preservesPartition(before, after, corrected) {
     const a = before.frames[0].labels, b = after.frames[0].labels;
-    const forward = new Map(), backward = new Map();
     for (const [index, old] of a.entries()) {
         const next = b[index];
         if (corrected.has(index)) {
@@ -93,16 +92,8 @@ function preservesPartition(before, after, corrected) {
                 return false;
             continue;
         }
-        if (old < 0 || next < 0) {
-            if (old !== next)
-                return false;
-            continue;
-        }
-        if (old === 0 && next !== 0 || forward.has(old) && forward.get(old) !== next
-            || backward.has(next) && backward.get(next) !== old)
+        if (old !== next)
             return false;
-        forward.set(old, next);
-        backward.set(next, old);
     }
     return true;
 }
@@ -113,6 +104,8 @@ function preservesPartition(before, after, corrected) {
  * derived grid. This is motion refinement, not a layer-ownership measurement.
  */
 export function refineVectorBorders(a, b, grid) {
+    if (grid.refinement)
+        throw new RangeError('Border refinement requires an unrefined candidate grid');
     const { width, height } = a;
     if (![width, height].every(Number.isSafeInteger) || width < 1 || height < 1
         || b.width !== width || b.height !== height || a.data.length !== width * height * 3 || b.data.length !== a.data.length) {
@@ -171,14 +164,15 @@ export function refineVectorBorders(a, b, grid) {
             }
         }
     if (corrections.length) {
-        // Greedy velocity pooling can regroup untouched weak remnants when their
-        // border witnesses move. Accept a batch only when no other partition changes,
-        // both before and after the approved subtle-motion/proximity refinements.
+        // Preserve original assignments instead of globally reclustering around
+        // changed seeds. Keep the partition check as a separate acceptance guard.
+        output.refinement = { originalCells: grid.cells.map(cell => ({ ...cell })), correctedCells: corrections.map(correction => correction.cell) };
         const changed = new Set(corrections.map(correction => correction.cell));
         if (!preservesPartition(grouped, groupFrameVectors(sequence(output), coarseOptions), changed)
             || !preservesPartition(groupFrameVectors(sequence(grid)), groupFrameVectors(sequence(output)), changed)) {
             for (const correction of corrections)
                 output.cells[correction.cell] = { ...grid.cells[correction.cell] };
+            delete output.refinement;
             return { grid: output, corrections: [] };
         }
     }

@@ -146,3 +146,22 @@ test('successive regional stages share storage while cloned payloads stay indepe
   expect(() => cache.put('copy', copiedBundle)).toThrow('active graph exceeds')
   copiedBundle.dispose(); a.release(); b.release(); cache.clear()
 })
+
+test('verified-grid original cells are counted and cloned independently from derived vectors', () => {
+  const data = regionalFixture(), cell = { x: 0, y: 0, width: 2, height: 2, dx: 1, dy: 0, accepted: 4, coverage: 1, spread: 0, coherent: true }
+  data.sequence = { width: 2, height: 2, frameCount: 2, pairs: [{ frame: 0, grids: [{ cellSize: 2, columns: 1, rows: 1, cells: [cell] }],
+    flow: { width: 2, height: 2, vectors: new Float32Array(8), valid: new Uint8Array(4), roundTrip: new Float32Array(4), pan: { dx: 0, dy: 0, response: 0, used: false } } }] }
+  const grid = data.sequence.pairs[0]!.grids[0]!, originalBytes = regionalBytes(data)
+  grid.refinement = { originalCells: [{ ...cell, dx: 2 }], correctedCells: [0] }
+  const resources = regionalResources(data)
+  for (const value of [grid.refinement, grid.refinement.originalCells, grid.refinement.originalCells[0], grid.refinement.correctedCells]) expect(resources.get(value!)).toBe(64)
+  expect(regionalBytes(data) - originalBytes).toBe(256)
+  const clone = clonePayload({ kind: 'regions', data })
+  if (clone.kind !== 'regions') throw new Error('Expected cloned regional data')
+  const copied = clone.data.sequence!.pairs[0]!.grids[0]!
+  expect(copied.refinement).toEqual(grid.refinement)
+  expect(copied.refinement).not.toBe(grid.refinement)
+  copied.refinement!.originalCells[0]!.dx = 5
+  expect(grid.refinement.originalCells[0]!.dx).toBe(2)
+  expect(copied.cells[0]!.dx).toBe(1)
+})

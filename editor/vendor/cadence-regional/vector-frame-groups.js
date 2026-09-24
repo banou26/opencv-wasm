@@ -133,7 +133,58 @@ function splitTightCore(group, grid, tolerance, width, height) {
         return [group];
     return [core, ...coarseClusters(grid, tolerance, remaining)];
 }
+function groupRefinedGrid(grid, options, width, height) {
+    const { originalCells, correctedCells } = grid.refinement;
+    const changed = new Set(correctedCells);
+    if (originalCells.length !== grid.cells.length || changed.size !== correctedCells.length
+        || correctedCells.some(index => !Number.isSafeInteger(index) || index < 0 || index >= grid.cells.length)) {
+        throw new RangeError('Invalid vector refinement provenance');
+    }
+    const quality = ['x', 'y', 'width', 'height', 'accepted', 'coverage', 'spread', 'coherent'];
+    for (const [index, original] of originalCells.entries()) {
+        const cell = grid.cells[index];
+        if (!original || quality.some(key => !Object.is(original[key], cell[key]))
+            || (changed.has(index) ? original.dx === null || original.dy === null || cell.dx === null || cell.dy === null
+                || !Number.isFinite(original.dx) || !Number.isFinite(original.dy)
+                || original.dx === cell.dx && original.dy === cell.dy
+                : !Object.is(original.dx, cell.dx) || !Object.is(original.dy, cell.dy))) {
+            throw new RangeError('Refinement may only replace listed finite vectors');
+        }
+    }
+    const result = groupGrid({ ...grid, cells: originalCells, refinement: undefined }, options, width, height);
+    const dominant = result.observations.find(group => group.id === 0);
+    if (!dominant)
+        return result;
+    let nextId = Math.max(...result.observations.map(group => group.id)) + 1;
+    // Freeze every original identity and model. A corrected edge cannot change
+    // clustering seeds and split or recolor an unrelated background/actor cell.
+    for (const index of correctedCells) {
+        const cell = grid.cells[index];
+        const source = result.observations.find(group => group.id === result.labels[index]);
+        let target = dominant;
+        if (Math.hypot(cell.dx - dominant.dx, cell.dy - dominant.dy) > options.tolerance + 1e-9) {
+            // Custom tighter radii must still retain the candidate without violating
+            // their bound. The default border verifier refuses such a correction.
+            const id = nextId++;
+            target = { id, motionId: id, cells: [], dx: cell.dx, dy: cell.dy, strongCells: 0 };
+            result.observations.push(target);
+        }
+        if (source === target)
+            continue;
+        source.cells = source.cells.filter(value => value !== index);
+        source.strongCells -= Number(cell.coherent);
+        target.cells.push(index);
+        target.strongCells += Number(cell.coherent);
+        result.labels[index] = target.id;
+    }
+    result.observations = result.observations.filter(group => group.cells.length);
+    for (const group of result.observations)
+        group.cells.sort((a, b) => a - b);
+    return result;
+}
 function groupGrid(grid, options, width, height) {
+    if (grid.refinement)
+        return groupRefinedGrid(grid, options, width, height);
     const { tolerance, splitSubtleMotion, splitDistantRegions, proximityGap } = options;
     const coarse = coarseClusters(grid, tolerance);
     const clusters = (splitSubtleMotion ? coarse.flatMap(group => splitTightCore(group, grid, tolerance, width, height)) : coarse).sort(order);

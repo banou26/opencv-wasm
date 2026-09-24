@@ -269,7 +269,7 @@ export async function checkBorderRefinement({ page, change, output, prefix, case
   let current
   const setEnabled = async enabled => { if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const select = async () => { if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'nview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click()) }
-  const save = status => writeFile(resolve(output, `${prefix}-border-browser.json`), `${JSON.stringify({ status, description: 'Native browser PNGs compare observed-pixel border verification disabled/enabled. Candidate coverage, confidence, dominant-background membership and every uncorrected-cell partition must remain intact, allowing foreground IDs to renumber. Fixed cells are test controls, not segmentation inputs.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-border-browser.json`), `${JSON.stringify({ status, description: 'Native browser PNGs compare observed-pixel border verification disabled/enabled. Candidate coverage, confidence, dominant-background membership and every uncorrected cell ID must remain exact. Fixed cells are test controls, not segmentation inputs.', records }, null, 2)}\n`)
   try {
     await select()
     for (const sample of cases) {
@@ -299,6 +299,7 @@ export async function checkBorderRefinement({ page, change, output, prefix, case
       for (const cell of actualCorrections) assert(cells[cell]?.before >= 0, `Source ${sample.frame}: a corrected cell must have an original candidate`)
       for (const item of cells) {
         if (item.before < 0 || correctedSet.has(item.cell)) continue
+        assert.equal(item.after, item.before, `Source ${sample.frame} cell ${item.cell}: verification changed an uncorrected group ID`)
         if (beforeToAfter.has(item.before)) assert.equal(item.after, beforeToAfter.get(item.before), `Source ${sample.frame} cell ${item.cell}: verification split an uncorrected group`)
         if (afterToBefore.has(item.after)) assert.equal(item.before, afterToBefore.get(item.after), `Source ${sample.frame} cell ${item.cell}: verification merged uncorrected groups`)
         beforeToAfter.set(item.before, item.after); afterToBefore.set(item.after, item.before)

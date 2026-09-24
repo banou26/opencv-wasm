@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from 'vite-plus/test'
 import { initOpenCV, Mat, matFromArray, cvtColor, CV_8UC3, CV_32F, COLOR_BGR2RGBA } from '@banou/opencv-wasm'
-import { estimateVectorCandidates, groupFrameVectors, poolVectorCandidates, refineVectorBorders, type AnalysisFrame, type MotionCell } from 'cadence/regional'
+import { completeFrameVectorSupport, estimateVectorCandidates, groupFrameVectors, poolVectorCandidates, refineVectorBorders, type AnalysisFrame, type MotionCell } from 'cadence/regional'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { connect, groupNodes, parseDocument, validateConnection } from '../src/engine/graph'
@@ -16,6 +16,7 @@ import { runKernel } from '../src/worker/kernels'
 import { clonePayload, image, parameterValue, payloadBundle, type Frame, type Payload } from '../src/worker/payload'
 import type { RegionalData } from '../src/worker/regional-data'
 import { regionalKernel } from '../src/worker/regional-kernels'
+import { renderVectorCompletionPanels } from '../src/worker/vector-completion-render'
 import { renderVectorPanels } from '../src/worker/vector-render'
 
 beforeAll(async () => { await initOpenCV() }, 60000)
@@ -62,9 +63,9 @@ test('direct prefab keeps raw inspectors independent and completes support only 
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005, verifyBorders: true })
-  expect(specFor(doc.nodes.find(node => node.id === 'ncandidates')!, doc).version).toBe(4)
+  expect(specFor(doc.nodes.find(node => node.id === 'ncandidates')!, doc).version).toBe(5)
   expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
-  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(6)
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(7)
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')
 })
 
@@ -134,6 +135,29 @@ test('observed descriptor fallback exposes raw and filtered support counts witho
   expect(rendered.summary).toContain('raw context MAE 4.000 -> 1.000 (120 observed); filtered context MAE 2.000 -> 0.500 (80 full-tap observed)')
   delete data.vectorBorderCorrections[0]!.corrections[0]!.rawFootprint
   expect(() => renderVectorPanels(data, 7)).toThrow(/requires its raw comparison evidence/)
+})
+
+test('verified assignments retain sparse IDs and unchanged foreground colors after an empty group disappears', () => {
+  const data = candidatesFixture(), grid = data.sequence!.pairs[0]!.grids[0]!
+  for (const [index, cell] of grid.cells.entries()) Object.assign(cell, { dx: [0, 0, 4, 8, 8][index], dy: 0, accepted: 32, coverage: .5, spread: .1, coherent: true })
+  const before = groupFrameVectors(data.sequence!), baseline = renderVectorPanels({ ...data, stage: 'vector-groups', frameVectorGroups: before }, 7)
+  expect(before.frames[0]!.observations.map(group => group.id)).toEqual([0, 1, 2])
+  grid.refinement = { originalCells: grid.cells.map(cell => ({ ...cell })), correctedCells: [3, 4] }
+  grid.cells[3]!.dx = 0; grid.cells[4]!.dx = 0
+  const after = groupFrameVectors(data.sequence!), rendered = renderVectorPanels({ ...data, stage: 'vector-groups', frameVectorGroups: after }, 7)
+  expect(after.frames[0]!.observations.map(group => group.id)).toEqual([0, 2])
+  expect(Array.from(after.frames[0]!.labels)).toEqual([0, 0, 2, 0, 0])
+  for (const port of ['source', 'confidence'] as const) expect(rendered.panels[port]).toEqual(baseline.panels[port])
+  for (let y = 0; y < 8; y++) expect(rendered.panels.groups.slice(y * 40 * 4, (y * 40 + 24) * 4)).toEqual(baseline.panels.groups.slice(y * 40 * 4, (y * 40 + 24) * 4))
+  expect(rendered.summary).toContain('Group 2: 1 cells; 1 coherent; velocity 4.000, 0.000')
+  expect(rendered.summary).not.toContain('Group 1:')
+  expect(after.frames[0]!.observations.find(group => group.id === 2)).toEqual(before.frames[0]!.observations.find(group => group.id === 2))
+  const completed = renderVectorCompletionPanels({ ...data, stage: 'vector-completion', frameVectorGroups: after, frameVectorSupport: completeFrameVectorSupport(after) }, 7)
+  expect(completed.panels.measured).toEqual(rendered.panels.groups)
+  expect(completed.panels.completed).toEqual(rendered.panels.groups)
+  const serialized = JSON.parse(JSON.stringify(grid))
+  expect(serialized.refinement.originalCells[3].dx).toBe(8)
+  expect(serialized.cells[3].dx).toBe(0)
 })
 
 test('saved direct-motion graphs retire history controls and wires while preserving velocity tolerance', () => {

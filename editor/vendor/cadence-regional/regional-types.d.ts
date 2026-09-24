@@ -31,6 +31,11 @@ export type MotionGrid = {
     columns: number;
     rows: number;
     cells: MotionCell[];
+    /** Verified vector replacements retain the original grouping, not a new global clustering. */
+    refinement?: {
+        originalCells: MotionCell[];
+        correctedCells: number[];
+    };
 };
 /** Tracked support sites in frame A. Occluded or unobserved sites must not become change evidence. */
 export type TimingSupport = {

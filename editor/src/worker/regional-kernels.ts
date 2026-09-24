@@ -80,7 +80,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     output = { ...data, stage: 'vector-candidates', sequence }
   } else if (type === 'vectorGroups') {
     requireStage('vector-candidates'); await checkpoint()
-    output = { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!, { tolerance: Number(params.tolerance) }) }
+    output = { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!, { tolerance: Number(params.tolerance), splitSubtleMotion: Boolean(params.splitSubtleMotion) }) }
   } else if (type === 'regionalMotion') {
     requireStage('scene')
     const frames = data.scene.frames, { width, height } = frames[0]!

@@ -67,7 +67,7 @@ export const renderVectorPanels = (data: RegionalData, sourceFrame: number, disp
       : `Ungrouped candidate confidence: unknown ${counts[0]}; weak ${counts[1]}; coherent ${counts[2]}. Motion-group panel is unpainted before grouping.`,
     'Confidence colors: gray missing vector; amber mixed; teal coherent.',
     'No hole filling. Group colors are motion proposals, not pixel ownership or recovered artwork.',
-    ...(data.frameVectorGroups ? [`${grouped?.observations.length ?? 0} frame-local motion groups; tolerance ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, 'Velocities are recomputed per pair, allowing easing and direction changes.', 'Group IDs and colors are frame-local, not tracked identities. Candidate arrows remain raw medians.'] : []),
+    ...(data.frameVectorGroups ? [`${grouped?.observations.length ?? 0} frame-local motion groups; maximum radius ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, `Subtle motion separation: ${data.frameVectorGroups.options.splitSubtleMotion ? 'enabled' : 'disabled'}; candidate support preserved`, 'Velocities are recomputed per pair, allowing easing and direction changes.', 'Group IDs and colors are frame-local, not tracked identities. Candidate arrows remain raw medians.'] : []),
     ...(grouped?.observations ?? []).map(observation => `Group ${observation.id}: ${observation.cells.length} cells; ${observation.strongCells} coherent; velocity ${observation.dx.toFixed(3)}, ${observation.dy.toFixed(3)}`),
   ].join('\n')
   return { width, height, panels, summary }

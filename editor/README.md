@@ -226,8 +226,13 @@ layer ownership. Default cells are 8 analysis pixels; their size, texture cutoff
 flow settings and grouping tolerance remain editable.
 
 Frame Velocity Groups clusters every available candidate by its measured dx/dy
-within each frame. **Velocity tolerance** defaults to 0.75 analysis pixels per
-neighboring pair. A mixed measurement still receives a group: its confidence
+within each frame. **Maximum velocity radius** defaults to 0.75 analysis pixels
+per neighboring pair. **Separate subtle motion**, enabled by default, refines a
+dominant tight cluster using its measured variation, so a small consistent
+character movement need not disappear inside the broad initial radius. Disable
+it to compare the earlier radius-only behavior using the same cached vectors.
+This refinement is local to each pair, not a constant-velocity assumption.
+A mixed measurement still receives a group: its confidence
 does not remove its support. There is no minimum group size, minimum history,
 temporal ambiguity rejection, or spatial/temporal hole filling. A cell is
 unpainted only when it has no finite candidate vector. Every grouped inspector
@@ -244,9 +249,11 @@ true rotation or scale remain limitations.
 This replaces the earlier experimental history filter, which incorrectly dropped
 many visible candidate vectors from the first-pass preview. Saved graphs retire
 the former minimum-history and mode-consensus controls and their wires while
-preserving velocity tolerance. The grouping cache version is incremented, so
-the previous filtered groups cannot be reused. Tolerance edits still reuse the
-cached scene vectors. The old history algorithm remains available in the Cadence
+preserving velocity tolerance. Saved graphs missing the subtle-motion option
+acquire its enabled default; explicit disabled settings and their wires survive.
+The grouping cache version is incremented, so previous groups cannot be reused.
+Radius and subtle-motion edits still reuse the cached scene vectors. The old
+history algorithm remains available in the Cadence
 research core, but this prefab no longer executes or displays it.
 
 Two inspectors expose the evidence before and after grouping. Each provides four
@@ -1013,6 +1020,13 @@ existing `test/out/layers-market-pan/diagnostics/` directory; override the clip,
 directory or filenames with `REGIONAL_CLIP`, `VECTOR_OUTPUT` and `VECTOR_PREFIX`.
 On this workstation run browser tests under the Wayland graphics session
 (`WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland`).
+
+`scripts/vector-character-check.mjs` adds focused moving-versus-held checks to
+that browser session. It exports the four native PNG ports, decodes group colors
+at fixed diagnostic cells, checks moving cells against a background control, and
+checks held frames do not fabricate that separation. Controls are test-only,
+never segmentation inputs; they compare IDs within one frame, not across time.
+Sheets and the report reuse `diagnostics/` with stable filenames.
 
 This is an experiment, not a replacement for Whole-scene regional analysis.
 The earlier history-filtered version assigned only 33.6% of native market cells

@@ -6,6 +6,7 @@ export type FrameVectorGroups = {
     cellSize: number;
     options: {
         tolerance: number;
+        splitSubtleMotion: boolean;
     };
     frames: {
         frame: number;
@@ -29,4 +30,5 @@ export type FrameVectorGroups = {
  */
 export declare function groupFrameVectors(sequence: RegionalSupportSequence, options?: {
     tolerance?: number;
+    splitSubtleMotion?: boolean;
 }): FrameVectorGroups;

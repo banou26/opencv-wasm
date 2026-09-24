@@ -24,7 +24,7 @@ export const regionalSummary = (data: RegionalData): string => {
   if (data.frameVectorGroups) {
     const candidates = data.sequence!.pairs.reduce((sum, pair) => sum + pair.grids[0]!.cells.filter(cell => cell.dx !== null && cell.dy !== null && Number.isFinite(cell.dx) && Number.isFinite(cell.dy)).length, 0)
     const grouped = data.frameVectorGroups.frames.reduce((sum, frame) => sum + frame.labels.reduce((count, label) => count + Number(label >= 0), 0), 0)
-    lines.push(`Candidate cells: ${candidates}; grouped cells: ${grouped}; temporal filtering: none`, `Velocity tolerance: ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, 'Group IDs and colors are frame-local, not tracked artwork identities')
+    lines.push(`Candidate cells: ${candidates}; grouped cells: ${grouped}; temporal filtering: none`, `Maximum velocity radius: ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, `Subtle motion separation: ${data.frameVectorGroups.options.splitSubtleMotion ? 'enabled' : 'disabled'}; candidate support preserved`, 'Group IDs and colors are frame-local, not tracked artwork identities')
   }
   if (data.stage === 'pooled' || data.tracks) lines.push('Cells: 96, 48, 24, 12, 8; one shared dense field')
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)

@@ -110,6 +110,7 @@ export const parseDocument = (value: unknown): GraphDocument => {
       if (n?.type !== 'vectorGroups' || !n.params) return n
       const params = { ...n.params }
       for (const key of retiredVectorControls) delete params[key]
+      if (params.splitSubtleMotion === undefined) params.splitSubtleMotion = true
       return { ...n, params }
     }), edges: body.edges.filter(e => !(vectorGroups.has(e?.target) && retiredVectorControls.has(e.targetHandle?.replace(/^param:/, '') ?? ''))) }
     // Retire the rejected spatial prior, including saved wires to its former control.

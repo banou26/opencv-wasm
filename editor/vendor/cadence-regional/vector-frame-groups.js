@@ -8,10 +8,11 @@ const center = (cells, raw) => ({ cells,
     dx: median(cells.map(index => raw[index].dx)), dy: median(cells.map(index => raw[index].dy)) });
 const order = (a, b) => b.cells.length - a.cells.length || a.dx - b.dx || a.dy - b.dy;
 const withinRadius = (group, raw, tolerance) => group.cells.every(index => Math.hypot(raw[index].dx - group.dx, raw[index].dy - group.dy) <= tolerance + 1e-9);
-function groupGrid(grid, tolerance) {
+function coarseClusters(grid, tolerance, included) {
     // The arrows already passed measurement acceptance. Even a mixed median or
     // singleton is a valid first-pass proposal; neither needs a temporal witness.
-    const modes = poolVectorModes({ ...grid, cells: grid.cells.map(cell => ({ ...cell, coherent: cell.dx !== null })) }, { tolerance, minimumCells: 1 });
+    const modes = poolVectorModes({ ...grid, cells: grid.cells.map((cell, index) => included && !included.has(index)
+            ? { ...cell, dx: null, dy: null, coherent: false } : { ...cell, coherent: cell.dx !== null }) }, { tolerance, minimumCells: 1 });
     const grouped = new Map(), remaining = [];
     for (const [index, cell] of modes.cells.entries()) {
         if (cell.dx === null)
@@ -64,7 +65,66 @@ function groupGrid(grid, tolerance) {
                 break outer;
             }
     }
-    clusters.sort(order);
+    return clusters.sort(order);
+}
+function splitTightCore(group, grid, tolerance, maxSide) {
+    const strong = group.cells.filter(index => grid.cells[index].coherent);
+    if (strong.length < 12)
+        return [group];
+    const dominant = center(strong, grid.cells);
+    const residual = (index) => Math.hypot(grid.cells[index].dx - dominant.dx, grid.cells[index].dy - dominant.dy);
+    // A broad velocity radius is not a noise estimate. Protect a tightly measured
+    // dominant motion, using the same minimum image-relative displacement at each resolution.
+    const radius = Math.max(.03 * maxSide / 320, 4 * median(strong.map(residual)));
+    if (radius >= tolerance / 2)
+        return [group];
+    const outliers = new Set(strong.filter(index => residual(index) > radius));
+    if (outliers.size > strong.length / 4 || outliers.size < 3)
+        return [group];
+    const neighbors = (index) => {
+        const x = index % grid.columns, y = Math.floor(index / grid.columns), result = [];
+        for (let j = -1; j <= 1; j++)
+            for (let i = -1; i <= 1; i++) {
+                if ((!i && !j) || x + i < 0 || x + i >= grid.columns || y + j < 0 || y + j >= grid.rows)
+                    continue;
+                result.push((y + j) * grid.columns + x + i);
+            }
+        return result;
+    };
+    // Local support rejects isolated grain excursions. It does not assign object
+    // identities: disconnected supported residuals still group by velocity below.
+    const supported = new Set(), seen = new Set();
+    for (const index of outliers) {
+        if (seen.has(index))
+            continue;
+        const component = [index];
+        seen.add(index);
+        for (let cursor = 0; cursor < component.length; cursor++)
+            for (const next of neighbors(component[cursor])) {
+                if (!outliers.has(next) || seen.has(next))
+                    continue;
+                seen.add(next);
+                component.push(next);
+            }
+        if (component.length >= 3)
+            for (const cell of component)
+                supported.add(cell);
+    }
+    if (!supported.size)
+        return [group];
+    const remaining = new Set(supported);
+    for (const index of group.cells) {
+        if (!grid.cells[index].coherent && residual(index) > radius && neighbors(index).some(next => supported.has(next)))
+            remaining.add(index);
+    }
+    const core = center(group.cells.filter(index => !remaining.has(index)), grid.cells);
+    if (!withinRadius(core, grid.cells, tolerance))
+        return [group];
+    return [core, ...coarseClusters(grid, tolerance, remaining)];
+}
+function groupGrid(grid, tolerance, splitSubtleMotion, maxSide) {
+    const coarse = coarseClusters(grid, tolerance);
+    const clusters = (splitSubtleMotion ? coarse.flatMap(group => splitTightCore(group, grid, tolerance, maxSide)) : coarse).sort(order);
     const labels = new Int32Array(grid.cells.length).fill(-1), confidence = new Uint8Array(grid.cells.length);
     const observations = clusters.map((group, id) => {
         group.cells.sort((a, b) => a - b);
@@ -82,9 +142,12 @@ function groupGrid(grid, tolerance) {
  * between frames, including easing and reversal. No missing cells are filled.
  */
 export function groupFrameVectors(sequence, options = {}) {
-    const tolerance = options.tolerance ?? .75, { width, height, frameCount, pairs } = sequence;
+    const tolerance = options.tolerance ?? .75, splitSubtleMotion = options.splitSubtleMotion ?? true;
+    const { width, height, frameCount, pairs } = sequence;
     if (!Number.isFinite(tolerance) || tolerance <= 0)
         throw new RangeError('Velocity radius must be positive and finite');
+    if (typeof splitSubtleMotion !== 'boolean')
+        throw new TypeError('Subtle motion splitting must be a boolean');
     if (![width, height, frameCount].every(Number.isSafeInteger) || width < 1 || height < 1 || frameCount < 2
         || pairs.length !== frameCount - 1)
         throw new RangeError('Expected one contiguous candidate scene');
@@ -109,7 +172,7 @@ export function groupFrameVectors(sequence, options = {}) {
                 || (cell.coherent && cell.dx === null))
                 throw new RangeError('Invalid candidate measurement');
         }
-        return { ...groupGrid(grid, tolerance), frame };
+        return { ...groupGrid(grid, tolerance, splitSubtleMotion, Math.max(width, height)), frame };
     });
-    return { width, height, frameCount, cellSize, options: { tolerance }, frames };
+    return { width, height, frameCount, cellSize, options: { tolerance, splitSubtleMotion }, frames };
 }

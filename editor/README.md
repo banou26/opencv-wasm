@@ -1243,7 +1243,7 @@ sampled parent. The helper writes `${prefix}-fragment-{frame}-{original,merged}.
 and `${prefix}-fragment-browser.json` in the existing diagnostics directory,
 preserves failing captures, and restores the enabled tracked view.
 
-Verified on 2026-09-25 local: 221 tests, typecheck, lint, build and the complete
+Verified on 2026-09-25 local: 222 tests, typecheck, lint, build and the complete
 dedicated desktop/mobile browser smoke pass. Source pairs 82/85/115 merge 15/16/1
 cells into the enclosing pink/purple character groups; independent/held
 controls 109/101 merge zero. Each checks 518,400 completed-support pixels,

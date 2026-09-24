@@ -322,8 +322,6 @@ export function measurePairChange(a, b, d, options = {}) {
                 flags[p] |= OCCLUDED;
                 continue;
             }
-            if (boiled(x, y))
-                flags[p] |= NEAR;
             let neighbors = 0;
             for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++)
                 for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++)
@@ -332,6 +330,9 @@ export function measurePairChange(a, b, d, options = {}) {
                 continue;
             const difference = lumaA[p] - lumaB[p];
             const here = difference < -inkDelta && lumaA[p] < meanA[p] - lineDelta, there = difference > inkDelta && lumaB[p] < meanB[p] - lineDelta;
+            // Only inked changes are ever asked whether they boiled.
+            if ((here || there) && boiled(x, y))
+                flags[p] |= NEAR;
             flags[p] |= CHANGED | (here ? INK_HERE : there ? INK_THERE : 0);
             changed++;
         }

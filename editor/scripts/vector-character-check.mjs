@@ -268,7 +268,7 @@ export async function checkBorderRefinement({ page, change, output, prefix, case
   const control = page.getByLabel('Scene Vector Candidates Verify border vectors', { exact: true }), records = []
   const setEnabled = async enabled => { if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const select = async () => { if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'nview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click()) }
-  const save = status => writeFile(resolve(output, `${prefix}-border-browser.json`), `${JSON.stringify({ status, description: 'Native browser PNGs compare observed-pixel border verification disabled/enabled. Candidate coverage, confidence, dominant-background membership and sampled genuine foreground partitions must remain intact. Fixed cells are test controls, not segmentation inputs.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-border-browser.json`), `${JSON.stringify({ status, description: 'Native browser PNGs compare observed-pixel border verification disabled/enabled. Candidate coverage, confidence, dominant-background membership and every uncorrected-cell partition must remain intact, allowing foreground IDs to renumber. Fixed cells are test controls, not segmentation inputs.', records }, null, 2)}\n`)
   try {
     await select()
     for (const sample of cases) {
@@ -285,6 +285,16 @@ export async function checkBorderRefinement({ page, change, output, prefix, case
         assert.equal(item.before >= 0, item.after >= 0, `Source ${sample.frame} cell ${item.cell}: verification changed candidate coverage`)
         if (item.before === 0) assert.equal(item.after, 0, `Source ${sample.frame} cell ${item.cell}: verification changed dominant background`)
       }
+      const actualCorrections = [...after.summary.matchAll(/^Border cell (\d+):/gm)].map(match => Number(match[1]))
+      const correctedSet = new Set(actualCorrections), beforeToAfter = new Map(), afterToBefore = new Map()
+      assert.equal(actualCorrections.length, correctedSet.size, 'Correction evidence must list each cell once')
+      for (const cell of actualCorrections) assert(cells[cell]?.before >= 0, `Source ${sample.frame}: a corrected cell must have an original candidate`)
+      for (const item of cells) {
+        if (item.before < 0 || correctedSet.has(item.cell)) continue
+        if (beforeToAfter.has(item.before)) assert.equal(item.after, beforeToAfter.get(item.before), `Source ${sample.frame} cell ${item.cell}: verification split an uncorrected group`)
+        if (afterToBefore.has(item.after)) assert.equal(item.before, afterToBefore.get(item.after), `Source ${sample.frame} cell ${item.cell}: verification merged uncorrected groups`)
+        beforeToAfter.set(item.before, item.after); afterToBefore.set(item.after, item.before)
+      }
       const corrected = sample.correctedCells.map(cell => cells[cell])
       for (const item of corrected) {
         assert(item && item.before > 0, `Source ${sample.frame}: correction control must begin outside background`)
@@ -296,7 +306,7 @@ export async function checkBorderRefinement({ page, change, output, prefix, case
       const names = ['off', 'on'].map(mode => `${prefix}-border-${String(sample.frame).padStart(3, '0')}-${mode}.png`)
       saveSheet(before, output, names[0]); saveSheet(after, output, names[1])
       const backgroundCells = cells.filter(cell => cell.before === 0).length
-      records.push({ frame: sample.frame, corrected, foreground, candidateCells: cells.filter(cell => cell.before >= 0).length, backgroundCells, beforeSummary: before.summary, afterSummary: after.summary, images: names })
+      records.push({ frame: sample.frame, corrected, actualCorrections, preservedPartitions: Object.fromEntries(beforeToAfter), foreground, candidateCells: cells.filter(cell => cell.before >= 0).length, backgroundCells, beforeSummary: before.summary, afterSummary: after.summary, images: names })
       await save('incomplete')
       console.log(`Border source ${sample.frame}: ${corrected.length} artifact controls corrected; ${foreground.length} foreground controls and ${backgroundCells} background cells preserved`)
     }

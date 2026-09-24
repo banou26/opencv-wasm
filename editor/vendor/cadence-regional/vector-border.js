@@ -42,6 +42,29 @@ function compare(a, b, bounds, candidate, reference) {
 const wins = (score, minimum, maximumError) => score.compared >= minimum
     && score.reference.mae <= maximumError && score.candidate.mae - score.reference.mae >= .5
     && score.reference.mae <= score.candidate.mae * .5 && score.reference.mse <= score.candidate.mse * .5;
+function preservesPartition(before, after, corrected) {
+    const a = before.frames[0].labels, b = after.frames[0].labels;
+    const forward = new Map(), backward = new Map();
+    for (const [index, old] of a.entries()) {
+        const next = b[index];
+        if (corrected.has(index)) {
+            if (next !== 0)
+                return false;
+            continue;
+        }
+        if (old < 0 || next < 0) {
+            if (old !== next)
+                return false;
+            continue;
+        }
+        if (old === 0 && next !== 0 || forward.has(old) && forward.get(old) !== next
+            || backward.has(next) && backward.get(next) !== old)
+            return false;
+        forward.set(old, next);
+        backward.set(next, old);
+    }
+    return true;
+}
 /**
  * Check border-only velocity modes against a well-supported interior motion.
  * Only genuinely observed pixels may overturn a candidate. Raw flow, the input
@@ -54,8 +77,10 @@ export function refineVectorBorders(a, b, grid) {
         || b.width !== width || b.height !== height || a.data.length !== width * height * 3 || b.data.length !== a.data.length) {
         throw new RangeError('Border refinement requires matching analysis frames');
     }
-    const grouped = groupFrameVectors({ width, height, frameCount: 2,
-        pairs: [{ frame: 0, flow: { width, height }, grids: [grid] }] }, { splitSubtleMotion: false, splitDistantRegions: false });
+    const sequence = (candidateGrid) => ({ width, height, frameCount: 2,
+        pairs: [{ frame: 0, flow: { width, height }, grids: [candidateGrid] }] });
+    const coarseOptions = { splitSubtleMotion: false, splitDistantRegions: false };
+    const grouped = groupFrameVectors(sequence(grid), coarseOptions);
     const output = { ...grid, cells: grid.cells.map(cell => ({ ...cell })) }, corrections = [];
     const groups = grouped.frames[0].observations, dominant = groups[0], margin = grid.cellSize * 2;
     if (!dominant || dominant.cells.filter(index => interior(grid.cells[index], width, height, margin)).length < 12) {
@@ -84,6 +109,18 @@ export function refineVectorBorders(a, b, grid) {
                 continue;
             output.cells[index] = { ...cell, ...reference };
             corrections.push({ cell: index, motionId: group.motionId, original, replacement: { ...reference }, footprint, context });
+        }
+    }
+    if (corrections.length) {
+        // Greedy velocity pooling can regroup untouched weak remnants when their
+        // border witnesses move. Accept a batch only when no other partition changes,
+        // both before and after the approved subtle-motion/proximity refinements.
+        const changed = new Set(corrections.map(correction => correction.cell));
+        if (!preservesPartition(grouped, groupFrameVectors(sequence(output), coarseOptions), changed)
+            || !preservesPartition(groupFrameVectors(sequence(grid)), groupFrameVectors(sequence(output)), changed)) {
+            for (const correction of corrections)
+                output.cells[correction.cell] = { ...grid.cells[correction.cell] };
+            return { grid: output, corrections: [] };
         }
     }
     return { grid: output, corrections };

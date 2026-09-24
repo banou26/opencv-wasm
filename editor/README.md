@@ -229,6 +229,11 @@ needs substantial error improvement in both, cannot discard pixels that the
 original candidate could see, and never changes an interior cell or a mode
 with even one coherent interior witness. Raw dense flow remains retained; explicit
 per-pair corrections record original/replacement vectors and both scores.
+The proposed batch must preserve every uncorrected cell's group partition under
+both coarse grouping and the approved default full grouping, allowing foreground
+IDs to renumber but keeping dominant background ID zero. If either check fails,
+the entire pair retains its original vectors. This guard is tied to those two
+grouping configurations, not arbitrary custom downstream settings.
 Arrows and groups consume the same derived grid. Candidate presence, coverage
 and confidence are unchanged. Disable this switch for the original pooled
 medians, including the reflected-border errors. This check is not a temporal
@@ -1119,8 +1124,9 @@ These are diagnostic observations, not a passing temporal-stability control.
 verification off/on and captures native raw panels. Each case supplies a source
 `frame`, `correctedCells` and optional `foregroundCells`. It requires exact
 source/confidence pixels, unchanged candidate coverage and dominant-background
-membership, the designated artifacts joining background, and retained foreground
-partitions even if their numeric IDs change. It restores verification enabled
+membership, the designated artifacts joining background, and a bijective mapping
+of all uncorrected groups even if their numeric IDs change. It separately checks
+the supplied genuine foreground controls. It restores verification enabled
 and the raw inspector selected. Stable `${prefix}-border-016-{off,on}.png` sheets
 and `${prefix}-border-browser.json` preserve the comparison and per-cell
 correction summaries with original/replacement velocities and observed errors.

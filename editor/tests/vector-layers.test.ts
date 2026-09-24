@@ -62,7 +62,7 @@ test('direct prefab keeps raw inspectors independent and completes support only 
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005, verifyBorders: true })
-  expect(specFor(doc.nodes.find(node => node.id === 'ncandidates')!, doc).version).toBe(2)
+  expect(specFor(doc.nodes.find(node => node.id === 'ncandidates')!, doc).version).toBe(3)
   expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(6)
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')

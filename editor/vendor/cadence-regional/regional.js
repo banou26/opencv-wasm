@@ -6,6 +6,7 @@ export * from "./motion-groups.js";
 export * from "./motion-evidence.js";
 export * from "./motion-completion.js";
 export * from "./vector-candidates.js";
+export * from "./vector-border.js";
 export * from "./vector-layers.js";
 export * from "./vector-modes.js";
 export * from "./vector-frame-groups.js";

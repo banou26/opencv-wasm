@@ -222,9 +222,20 @@ and backward Farneback flow, a fixed relative corner-strength threshold and a
 round-trip check, followed by cell medians. It retains mixed-cell candidates
 instead of rejecting their medians. It does not add the older whole-scene
 pipeline's grain-dependent texture threshold or border exclusion margin.
-Reflected-border estimates and mixed medians are still uncertain, not observed
-layer ownership. Default cells are 8 analysis pixels; their size, texture cutoff,
-flow settings and grouping tolerance remain editable.
+**Verify border vectors**, enabled by default, then compares border-only motion
+proposals against the dominant interior-supported translation using genuinely
+observed pixels in both the cell footprint and a larger context. A replacement
+needs substantial error improvement in both, cannot discard pixels that the
+original candidate could see, and never changes an interior cell or a mode
+with even one coherent interior witness. Raw dense flow remains retained; explicit
+per-pair corrections record original/replacement vectors and both scores.
+Arrows and groups consume the same derived grid. Candidate presence, coverage
+and confidence are unchanged. Disable this switch for the original pooled
+medians, including the reflected-border errors. This check is not a temporal
+filter, silhouette measurement or guarantee of ownership. Default cells are
+8 analysis pixels; their size, texture cutoff, flow settings and grouping
+tolerance remain editable. Existing saved candidate nodes gain the enabled
+default; explicit disabled values and parameter wires remain intact.
 
 Frame Velocity Groups clusters every available candidate by its measured dx/dy
 within each frame. **Maximum velocity radius** defaults to 0.75 analysis pixels
@@ -1096,12 +1107,23 @@ For a bounded capture without rerendering the review movie, run
 `WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland node scripts/vector-edge-probe.mjs`.
 It opens the current Direct prefab and captures source frames 15-20 and 71-73;
 `VECTOR_FRAMES`, `VECTOR_PREFIX`, `VECTOR_OUTPUT` and `REGIONAL_CLIP` override the
-probe selection and existing destination. The default prefix is `vector-edge-before`.
-The initial browser probe reproduces measured edge groups at source 16 (three
+probe selection and existing destination. The default prefix is `vector-edge`.
+`VECTOR_VERIFY_BORDERS=false` selects the original pooled-vector control;
+otherwise the probe uses the prefab's enabled default and records it.
+The initial `vector-edge-before` browser probe reproduces measured edge groups at source 16 (three
 cells left, five right), 17 (one left) and 19 (two left). Their IDs are unchanged
 by completion. Source 72 has one group and no completed unknown cells; source 73
 has a foreground group and 51 unknown cells, including 23 on the bottom edge.
 These are diagnostic observations, not a passing temporal-stability control.
+`checkBorderRefinement({ page, change, output, prefix, cases })` toggles border
+verification off/on and captures native raw panels. Each case supplies a source
+`frame`, `correctedCells` and optional `foregroundCells`. It requires exact
+source/confidence pixels, unchanged candidate coverage and dominant-background
+membership, the designated artifacts joining background, and retained foreground
+partitions even if their numeric IDs change. It restores verification enabled
+and the raw inspector selected. Stable `${prefix}-border-016-{off,on}.png` sheets
+and `${prefix}-border-browser.json` preserve the comparison and per-cell
+correction summaries with original/replacement velocities and observed errors.
 
 The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816

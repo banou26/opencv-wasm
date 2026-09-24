@@ -5,6 +5,7 @@ export * from './motion-groups.ts';
 export * from './motion-evidence.ts';
 export * from './motion-completion.ts';
 export * from './vector-candidates.ts';
+export * from './vector-border.ts';
 export * from './vector-layers.ts';
 export * from './vector-modes.ts';
 export * from './vector-frame-groups.ts';

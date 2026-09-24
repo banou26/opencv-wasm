@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, groupFrameVectors, completeFrameVectorSupport, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, refineVectorBorders, groupFrameVectors, completeFrameVectorSupport, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -73,12 +73,16 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     requireStage('scene')
     const frames = data.scene.frames, { width, height } = frames[0]!
     const sequence: RegionalMotionSequence = { width, height, frameCount: frames.length, pairs: [] }
+    const vectorBorderCorrections: NonNullable<RegionalData['vectorBorderCorrections']> = []
     for (let frame = 0; frame < frames.length - 1; frame++) {
       await checkpoint()
       const flow = estimateVectorCandidates(frames[frame]!, frames[frame + 1]!, { window: Number(params.window), levels: Number(params.levels), roundTrip: Number(params.roundTrip), textureFraction: Number(params.textureFraction) })
-      sequence.pairs.push({ frame, flow, grids: [poolVectorCandidates(flow, Number(params.cellSize))] })
+      const pooled = poolVectorCandidates(flow, Number(params.cellSize))
+      const verified = params.verifyBorders ? refineVectorBorders(frames[frame]!, frames[frame + 1]!, pooled) : undefined
+      if (verified) vectorBorderCorrections.push({ frame, corrections: verified.corrections })
+      sequence.pairs.push({ frame, flow, grids: [verified?.grid ?? pooled] })
     }
-    output = { ...data, stage: 'vector-candidates', sequence }
+    output = { ...data, stage: 'vector-candidates', sequence, ...(params.verifyBorders ? { vectorBorderCorrections } : {}) }
   } else if (type === 'vectorGroups') {
     requireStage('vector-candidates'); await checkpoint()
     output = { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!, { tolerance: Number(params.tolerance), splitSubtleMotion: Boolean(params.splitSubtleMotion), splitDistantRegions: Boolean(params.splitDistantRegions), proximityGap: Number(params.proximityGap) }) }

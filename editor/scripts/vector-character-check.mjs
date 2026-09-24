@@ -220,6 +220,7 @@ export async function captureSupportFlashes({ page, change, output, prefix, fram
   assert(frames.length > 0 && frames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
   const records = [], settings = {
     analysisMaxSide: Number(await page.getByLabel('Scene Range Analysis max side', { exact: true }).inputValue()),
+    verifyBorders: await page.getByLabel('Scene Vector Candidates Verify border vectors', { exact: true }).isChecked(),
     tolerance: Number(await page.getByLabel('Frame Velocity Groups Maximum velocity radius', { exact: true }).inputValue()),
     splitSubtleMotion: await page.getByLabel('Frame Velocity Groups Separate subtle motion', { exact: true }).isChecked(),
     splitDistantRegions: await page.getByLabel('Frame Velocity Groups Separate distant regions', { exact: true }).isChecked(),
@@ -260,4 +261,46 @@ export async function captureSupportFlashes({ page, change, output, prefix, fram
   }
   await save('passed')
   return records
+}
+
+/** Border verification may refine velocities, not delete candidates or absorb observed foreground. */
+export async function checkBorderRefinement({ page, change, output, prefix, cases }) {
+  const control = page.getByLabel('Scene Vector Candidates Verify border vectors', { exact: true }), records = []
+  const setEnabled = async enabled => { if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
+  const select = async () => { if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'nview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click()) }
+  const save = status => writeFile(resolve(output, `${prefix}-border-browser.json`), `${JSON.stringify({ status, description: 'Native browser PNGs compare observed-pixel border verification disabled/enabled. Candidate coverage, confidence, dominant-background membership and sampled genuine foreground partitions must remain intact. Fixed cells are test controls, not segmentation inputs.', records }, null, 2)}\n`)
+  try {
+    await select()
+    for (const sample of cases) {
+      await setEnabled(false)
+      const before = await capture(page, change, sample.frame)
+      await setEnabled(true)
+      const after = await capture(page, change, sample.frame)
+      assert.match(before.summary, /Border vector verification: disabled/)
+      assert.match(after.summary, /Border vector verification: enabled/)
+      assert.deepEqual([before.width, before.height, before.analysisWidth, before.analysisHeight, before.size], [after.width, after.height, after.analysisWidth, after.analysisHeight, after.size])
+      for (const port of ['source', 'confidence']) assert(before.rasters[port].equals(after.rasters[port]), `Source ${sample.frame}: border verification changed ${port}`)
+      const cells = Array.from({ length: before.cells }, (_, cell) => ({ cell, before: before.labelAt(cell).label, after: after.labelAt(cell).label }))
+      for (const item of cells) {
+        assert.equal(item.before >= 0, item.after >= 0, `Source ${sample.frame} cell ${item.cell}: verification changed candidate coverage`)
+        if (item.before === 0) assert.equal(item.after, 0, `Source ${sample.frame} cell ${item.cell}: verification changed dominant background`)
+      }
+      const corrected = sample.correctedCells.map(cell => cells[cell])
+      for (const item of corrected) {
+        assert(item && item.before > 0, `Source ${sample.frame}: correction control must begin outside background`)
+        assert.equal(item.after, 0, `Source ${sample.frame} cell ${item.cell}: border artifact was not corrected`)
+      }
+      const foreground = (sample.foregroundCells ?? []).map(cell => cells[cell])
+      assert(foreground.every(item => item && item.before > 0 && item.after > 0), `Source ${sample.frame}: foreground control was missing or absorbed`)
+      for (const a of foreground) for (const b of foreground) assert.equal(a.before === b.before, a.after === b.after, `Source ${sample.frame}: foreground partition changed`)
+      const names = ['off', 'on'].map(mode => `${prefix}-border-${String(sample.frame).padStart(3, '0')}-${mode}.png`)
+      saveSheet(before, output, names[0]); saveSheet(after, output, names[1])
+      const backgroundCells = cells.filter(cell => cell.before === 0).length
+      records.push({ frame: sample.frame, corrected, foreground, candidateCells: cells.filter(cell => cell.before >= 0).length, backgroundCells, beforeSummary: before.summary, afterSummary: after.summary, images: names })
+      await save('incomplete')
+      console.log(`Border source ${sample.frame}: ${corrected.length} artifact controls corrected; ${foreground.length} foreground controls and ${backgroundCells} background cells preserved`)
+    }
+    await save('passed')
+    return records
+  } finally { await setEnabled(true); await select() }
 }

@@ -104,6 +104,7 @@ export const parseDocument = (value: unknown): GraphDocument => {
       bridgeTemporal: n.params.bridgeTemporal === undefined ? true : n.params.bridgeTemporal,
     } } : n) }
     // Frame-local grouping replaces the experimental history filter and its controls.
+    body = { ...body, nodes: body.nodes.map(n => n?.type === 'vectorCandidates' && n.params && n.params.verifyBorders === undefined ? { ...n, params: { ...n.params, verifyBorders: true } } : n) }
     const vectorGroups = new Set(body.nodes.filter(n => n?.type === 'vectorGroups').map(n => n.id))
     const retiredVectorControls = new Set(['minimumOverlap', 'modeRadius', 'minimumModeCells'])
     body = { ...body, nodes: body.nodes.map(n => {

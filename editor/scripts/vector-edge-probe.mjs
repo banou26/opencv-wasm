@@ -10,7 +10,7 @@ import { captureSupportFlashes } from './vector-character-check.mjs'
 
 const clip = process.env.REGIONAL_CLIP ?? '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const output = resolve(process.env.VECTOR_OUTPUT ?? '../../cadence/test/out/layers-market-pan/diagnostics')
-const prefix = process.env.VECTOR_PREFIX ?? 'vector-edge-before'
+const prefix = process.env.VECTOR_PREFIX ?? 'vector-edge'
 const frames = (process.env.VECTOR_FRAMES ?? '15,16,17,18,19,20,71,72,73').split(',').map(Number)
 assert.match(prefix, /^[a-z0-9-]+$/)
 assert((await stat(output)).isDirectory(), 'Reuse an existing results directory')
@@ -51,6 +51,11 @@ try {
   const started = performance.now()
   await change(() => page.getByRole('button', { name: 'Open', exact: true }).click())
   console.log(`Direct scene analysis: ${(performance.now() - started).toFixed(0)} ms`)
+  if (process.env.VECTOR_VERIFY_BORDERS !== undefined) {
+    assert(['true', 'false'].includes(process.env.VECTOR_VERIFY_BORDERS), 'VECTOR_VERIFY_BORDERS must be true or false')
+    const control = page.getByLabel('Scene Vector Candidates Verify border vectors', { exact: true }), enabled = process.env.VECTOR_VERIFY_BORDERS === 'true'
+    if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled))
+  }
   await captureSupportFlashes({ page, change, output, prefix, frames })
   assert.deepEqual(errors, [])
   console.log(`PASS edge probe: ${frames.length} source frames, raw/completed native PNGs; no movie render`)

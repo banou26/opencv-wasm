@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from 'vite-plus/test'
 import { initOpenCV, Mat, matFromArray, cvtColor, CV_8UC3, CV_32F, COLOR_BGR2RGBA } from '@banou/opencv-wasm'
-import { estimateVectorCandidates, groupFrameVectors, poolVectorCandidates, type AnalysisFrame, type MotionCell } from 'cadence/regional'
+import { estimateVectorCandidates, groupFrameVectors, poolVectorCandidates, refineVectorBorders, type AnalysisFrame, type MotionCell } from 'cadence/regional'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { connect, groupNodes, parseDocument, validateConnection } from '../src/engine/graph'
@@ -61,7 +61,8 @@ test('direct prefab keeps raw inspectors independent and completes support only 
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ngroups', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
-  expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005 })
+  expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005, verifyBorders: true })
+  expect(specFor(doc.nodes.find(node => node.id === 'ncandidates')!, doc).version).toBe(2)
   expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(6)
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')
@@ -79,6 +80,47 @@ test('candidate rendering retains weak arrows, distinguishes unknown support and
   expect(rendered.summary).toContain('Candidate vectors: 4; mixed/weak 1')
   expect(rendered.summary).toContain('Motion-group panel is unpainted before grouping')
   expect(data).toEqual(original)
+})
+
+test('saved candidate nodes default to border verification and retain an explicit disabled wire in a custom scope', () => {
+  const original = vectorLayersGraph(), candidate = original.nodes.find(node => node.id === 'ncandidates')!
+  delete candidate.params.verifyBorders
+  expect(parseDocument(original).nodes.find(node => node.id === 'ncandidates')!.params.verifyBorders).toBe(true)
+  expect(candidate.params.verifyBorders).toBeUndefined()
+  candidate.params.verifyBorders = false
+  original.nodes.push({ id: 'nverify', type: 'boolean', params: { value: false }, position: { x: 1000, y: 500 } })
+  const wire = { source: 'nverify', sourceHandle: 'out:boolean:value', target: 'ncandidates', targetHandle: 'param:verifyBorders' }
+  expect(validateConnection(original, wire)).toBeNull()
+  const nested = groupNodes(connect(original, wire), undefined, ['nverify', 'ncandidates'], 'Verified candidates', 'gverified', 'nverified')
+  const restored = parseDocument(JSON.parse(JSON.stringify(nested))), body = restored.definitions![0]!.graph
+  expect(body.edges).toContainEqual(expect.objectContaining(wire))
+  expect(body.nodes.find(node => node.type === 'vectorCandidates')!.params.verifyBorders).toBe(false)
+  const plan = planGraph(restored, 'ncandidateview', 'out:frame:candidates', 0, 'clip', 7)
+  expect(plan.steps.some(step => step.node.type === 'boolean' && step.node.params.value === false)).toBe(true)
+})
+
+test('empty border-verification evidence changes the summary but not any diagnostic pixels', () => {
+  const data = groupedFixture(), raw = renderVectorPanels(data, 7)
+  const verified = renderVectorPanels({ ...data, vectorBorderCorrections: [{ frame: 0, corrections: [] }] }, 7)
+  expect(verified.panels).toEqual(raw.panels)
+  expect(raw.summary).toContain('Border vector verification: disabled; original pooled vectors')
+  expect(verified.summary).toContain('Border vector verification: enabled; 0 corrected cells; original dense flow retained')
+})
+
+test('verified vectors drive both arrows and grouping while raw flow, source and confidence remain unchanged', () => {
+  const data = candidatesFixture(), before = structuredClone(data), raw = renderVectorPanels(data, 7), cell = data.sequence!.pairs[0]!.grids[0]!.cells[4]!
+  cell.dx = -2
+  const score = { compared: 32, candidateVisible: 32, candidate: { mae: 4, mse: 20 }, reference: { mae: 1, mse: 2 } }
+  data.vectorBorderCorrections = [{ frame: 0, corrections: [{ cell: 4, motionId: 1, original: { dx: 1, dy: 0 }, replacement: { dx: -2, dy: 0 }, footprint: score, context: score }] }]
+  data.frameVectorGroups = groupFrameVectors(data.sequence!)
+  data.stage = 'vector-groups'
+  const verified = renderVectorPanels(data, 7)
+  expect(verified.panels.source).toEqual(raw.panels.source)
+  expect(verified.panels.confidence).toEqual(raw.panels.confidence)
+  expect(verified.panels.candidates).not.toEqual(raw.panels.candidates)
+  expect(data.sequence!.pairs[0]!.flow).toEqual(before.sequence!.pairs[0]!.flow)
+  expect(data.frameVectorGroups.frames[0]!.observations.find(group => group.cells.includes(4))!.dx).toBe(-2)
+  expect(verified.summary).toContain('Border cell 4: 1.000, 0.000 -> -2.000, 0.000; footprint MAE 4.000 -> 1.000 (32 observed)')
 })
 
 test('saved direct-motion graphs retire history controls and wires while preserving velocity tolerance', () => {
@@ -221,8 +263,19 @@ test('native candidate and direct grouping stages use the shared core without re
     if (candidate.kind !== 'regions') throw new Error('Expected candidate data')
     expect(candidate.data.sequence!.pairs).toHaveLength(6)
     const expected = estimateVectorCandidates(data.scene.frames[0]!, data.scene.frames[1]!)
+    const refined = refineVectorBorders(data.scene.frames[0]!, data.scene.frames[1]!, poolVectorCandidates(expected, 8))
     expect(candidate.data.sequence!.pairs[0]!.flow).toEqual(expected)
-    expect(candidate.data.sequence!.pairs[0]!.grids).toEqual([poolVectorCandidates(expected, 8)])
+    expect(candidate.data.sequence!.pairs[0]!.grids).toEqual([refined.grid])
+    expect(candidate.data.vectorBorderCorrections).toHaveLength(6)
+    expect(candidate.data.vectorBorderCorrections![0]).toEqual({ frame: 0, corrections: refined.corrections })
+    const disabledBundle = await regionalKernel(step('vectorCandidates', { verifyBorders: false }), input(data), () => undefined, () => false)
+    try {
+      const disabled = disabledBundle!.outputs['out:regions:data']!
+      if (disabled.kind !== 'regions') throw new Error('Expected candidate data')
+      expect(disabled.data.vectorBorderCorrections).toBeUndefined()
+      expect(disabled.data.sequence!.pairs[0]!.flow).toEqual(expected)
+      expect(disabled.data.sequence!.pairs[0]!.grids).toEqual([poolVectorCandidates(expected, 8)])
+    } finally { disabledBundle!.dispose() }
     const groupedBundle = await regionalKernel(step('vectorGroups'), input(candidate.data), () => undefined, () => false)
     try {
       const grouped = groupedBundle!.outputs['out:regions:data']!
@@ -335,5 +388,12 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     doc.nodes.find(node => node.id === 'ncandidates')!.params.cellSize = 12
     const candidates = await evaluate('ncandidateview', 2, 'out:frame:candidates'); candidates.release()
     expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(4)
+    doc.nodes.find(node => node.id === 'ncandidates')!.params.verifyBorders = false
+    const verification = await evaluate('ncandidateview', 2, 'out:string:summary')
+    try {
+      expect(verification.value.kind).toBe('string')
+      if (verification.value.kind === 'string') expect(verification.value.value).toContain('Border vector verification: disabled')
+    } finally { verification.release() }
+    expect(calls.get('sceneRange')).toBe(1); expect(calls.get('vectorCandidates')).toBe(3); expect(calls.get('vectorGroups')).toBe(4)
   } finally { cache.clear() }
 })

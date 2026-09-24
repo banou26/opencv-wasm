@@ -1,4 +1,4 @@
-import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport } from 'cadence/regional'
+import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport, VectorBorderCorrection } from 'cadence/regional'
 
 export type SceneData = {
   asset: string; first: number; last: number; sourceWidth: number; sourceHeight: number
@@ -15,6 +15,7 @@ export type RegionalData = {
   completion?: MotionCompletion
   frameVectorGroups?: FrameVectorGroups
   frameVectorSupport?: FrameVectorSupport
+  vectorBorderCorrections?: { frame: number; corrections: VectorBorderCorrection[] }[]
 }
 
 export const regionalSummary = (data: RegionalData): string => {
@@ -22,6 +23,9 @@ export const regionalSummary = (data: RegionalData): string => {
   const lines = [`${data.stage}: frames ${data.scene.first} to ${data.scene.last} (inclusive)`, `${frame.width} x ${frame.height} analysis / ${data.scene.sourceWidth} x ${data.scene.sourceHeight} source`]
   if (data.sequence) lines.push(`${data.sequence.pairs.length} forward pairs; invalid pixels are unknown`)
   if (data.stage === 'vector-candidates' || data.stage === 'vector-groups') lines.push('Regional motion vectors candidates; mixed cell medians retained; no spatial or temporal hole filling')
+  if (data.stage.startsWith('vector-')) lines.push(data.vectorBorderCorrections
+    ? `Border vector verification: enabled; ${data.vectorBorderCorrections.reduce((sum, pair) => sum + pair.corrections.length, 0)} corrected cells; original dense flow retained`
+    : 'Border vector verification: disabled; original pooled vectors')
   if (data.frameVectorGroups) {
     const candidates = data.sequence!.pairs.reduce((sum, pair) => sum + pair.grids[0]!.cells.filter(cell => cell.dx !== null && cell.dy !== null && Number.isFinite(cell.dx) && Number.isFinite(cell.dy)).length, 0)
     const grouped = data.frameVectorGroups.frames.reduce((sum, frame) => sum + frame.labels.reduce((count, label) => count + Number(label >= 0), 0), 0)

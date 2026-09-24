@@ -1,3 +1,4 @@
+import type { LayerFrames, LayerPlate, MeasuredCamera, MeasuredEvidence, SceneSilhouettes } from 'cadence/regional'
 import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport, FrameVectorIdentities, FrameVectorFragments, VectorBorderCorrection } from 'cadence/regional'
 
 export type SceneData = {
@@ -7,6 +8,7 @@ export type SceneData = {
 /** Immutable JS-owned data. No borrowed WASM views or decoded VideoFrame handles. */
 export type RegionalData = {
   stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion' | 'vector-candidates' | 'vector-groups' | 'vector-identities' | 'vector-completion' | 'vector-fragments'
+    | 'pixel-camera' | 'pixel-evidence' | 'pixel-silhouettes' | 'pixel-plate' | 'pixel-frames'
   scene: SceneData
   sequence?: RegionalMotionSequence
   tracks?: RegionalTracks
@@ -18,6 +20,13 @@ export type RegionalData = {
   frameVectorIdentities?: FrameVectorIdentities
   frameVectorFragments?: FrameVectorFragments
   vectorBorderCorrections?: { frame: number; corrections: VectorBorderCorrection[] }[]
+  pixelCamera?: MeasuredCamera
+  pixelEvidence?: MeasuredEvidence
+  pixelSilhouettes?: SceneSilhouettes
+  pixelPlate?: LayerPlate
+  pixelFrames?: LayerFrames
+  /** One RGBA thumbnail per held drawing, cut from its first frame; alpha 0 outside the layer. */
+  pixelDrawings?: { layer: number; drawing: number; width: number; height: number; rgba: Uint8Array }[]
 }
 
 export const regionalSummary = (data: RegionalData): string => {
@@ -45,6 +54,24 @@ export const regionalSummary = (data: RegionalData): string => {
     'Identity mapping does not change local groups or support. Dormant tracks do not recover foreground masks on background-only held frames.')
   if (data.frameVectorFragments) lines.push(`Transient fragment merging: ${data.frameVectorFragments.options.enabled ? 'enabled' : 'disabled'}; ${data.frameVectorFragments.frames.reduce((sum, frame) => sum + frame.merges.length, 0)} inferred component merges`,
     'Fragment labels are derived display membership. Raw measured groups, completed support and identity associations remain unchanged.')
+  if (data.pixelCamera) {
+    const steps = data.pixelCamera.fits, last = data.pixelCamera.positions[data.pixelCamera.positions.length - 1]!
+    lines.push(`Pixel camera: ${steps.length} pairs at ${data.pixelCamera.width} x ${data.pixelCamera.height}; total ${last.dx.toFixed(2)}, ${last.dy.toFixed(2)} px; median fit residual ${steps.map(s => s.residual).sort((a, b) => a - b)[steps.length >> 1]?.toFixed(3)} codes`)
+  }
+  if (data.pixelEvidence) {
+    const counts = data.pixelEvidence.summaries.map(s => s.forward), sorted = [...counts].sort((a, b) => a - b)
+    lines.push(`Redraw evidence: changed pixels per pair median ${sorted[sorted.length >> 1]}, max ${sorted[sorted.length - 1]}; world atlas ${data.pixelEvidence.atlas.width} x ${data.pixelEvidence.atlas.height}`,
+      `Pairs over 5,000 changed pixels: ${counts.flatMap((count, pair) => count > 5000 ? [pair] : []).join(', ') || 'none'}`)
+  }
+  if (data.pixelSilhouettes) {
+    const areas = data.pixelSilhouettes.frames.map(f => f.area)
+    lines.push(`Drawing silhouettes: close ${data.pixelSilhouettes.options.closeRadius ?? 6} px, minimum area ${data.pixelSilhouettes.options.minimumArea ?? 800} px; frames with a drawing ${areas.filter(a => a > 0).length}/${areas.length}; largest ${Math.max(...areas)} px`)
+  }
+  if (data.pixelPlate) {
+    const known = data.pixelPlate.count.reduce((sum, n) => sum + Number(n > 0), 0)
+    lines.push(`Background plate: ${data.pixelPlate.atlas.width} x ${data.pixelPlate.atlas.height}; observed ${(100 * known / data.pixelPlate.count.length).toFixed(1)}%`)
+  }
+  if (data.pixelFrames) lines.push(`Layer frames: ${data.pixelFrames.layers.length} layers; ${data.pixelFrames.layers.map(layer => `layer ${layer.id} ${layer.drawings.length} drawings`).join(', ')}`)
   if (data.stage === 'pooled' || data.tracks) lines.push('Cells: 96, 48, 24, 12, 8; one shared dense field')
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)
   if (data.families) {

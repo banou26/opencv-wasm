@@ -204,6 +204,31 @@ Changing a port's type or removing it disconnects incompatible wires; Undo resto
 the previous interface and connections. An exported graph records clip identities
 and filenames; reattach missing clips in their source nodes after opening it.
 
+## Pixel layers (redraw ink)
+
+Full-resolution layer and layer-frame extraction from Cadence `src/pixel-*.ts`. Open
+**Pixel layers (redraw ink)**, drop a clip onto its Video Source and scrub the timeline.
+Every stage is its own node, so each can be inspected or rewired:
+
+1. **Scene Range** selects the shot (its analysis frames are unused here).
+2. **Pixel Camera Path**: sub-pixel camera between every pair, at full resolution.
+3. **Redraw Ink Evidence**: every pixel tested against the other frame, displaced by the
+   camera, within half a pixel. Changes are kept in world coordinates with an ink sign.
+4. **Drawing Silhouettes**: per frame, the ink of the drawing held there, closed and filled.
+5. **Background Plate**: trimmed mean of every frame outside its silhouettes.
+6. **Layer Frames**: silhouettes linked into layers and split into held drawings.
+7. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
+   changes to the next frame (green ink arriving, magenta leaving, yellow other) and the
+   held ink with its silhouette in cyan; the layer over a checkerboard and the plate at
+   this camera position (purple unknown, orange and red where the frame disagrees with
+   the plate outside the silhouettes); then every drawing of the layers on screen, the
+   one shown now outlined in cyan with its frame range.
+
+The first evaluation decodes the whole shot at full resolution several times: about
+three minutes for 117 frames at 1080p. Later frames reuse the cached stages. The
+Cadence README records what was measured and the current defects; the batch results
+for the original 16-bit frames are in Cadence `test/out/layers-market-pan/diagnostics/pixel-*`.
+
 ## Direct motion layers
 
 The **Direct motion layers** prefab is a separate comparison experiment. The

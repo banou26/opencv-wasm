@@ -10,6 +10,7 @@ import { imageKernel } from './image-kernels'
 import { flowKernel } from './flow-kernels'
 import { proceduralKernel } from './procedural-kernels'
 import { regionalKernel } from './regional-kernels'
+import { pixelKernel } from './pixel-kernels'
 export type { Frame, Payload } from './payload'
 
 /** Execute the starter algorithms through the package's named TypeScript API. */
@@ -18,6 +19,8 @@ export const runKernel = async (step: Step, inputs: Record<string, Payload>, sou
   if (primitive) return primitive
   const regional = await regionalKernel(step, inputs, sourceById, cancelled)
   if (regional) return regional
+  const pixel = await pixelKernel(step, inputs, sourceById, cancelled)
+  if (pixel) return pixel
   const operation = proceduralKernel(step, inputs) ?? flowKernel(step, inputs) ?? imageKernel(step, inputs)
   if (operation) return operation
   const out = new Mat(), outputs: Record<string, Payload> = {}

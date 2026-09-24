@@ -12,6 +12,7 @@ const prefabs = [
   { id: 'motionVectors', title: 'Regional motion vectors', description: 'Motion cookbook: explicit frame pair → coarse pan → forward and reverse dense flow → texture + round-trip checks → regional medians → arrows over video' },
   { id: 'regionalLayers', title: 'Whole-scene regional analysis', description: 'Explicit scene range -> dense motion -> multiscale cells -> temporal motion groups -> drawing events -> evidence inspectors' },
   { id: 'vectorLayers', title: 'Direct motion layers', description: 'Scene vectors -> frame-local groups -> enclosed-hole and edge support completion; raw groups and inferred support inspected separately' },
+  { id: 'pixelLayers', title: 'Pixel layers (redraw ink)', description: 'Full-resolution camera -> per-pixel redraw ink -> held drawing silhouettes -> background plate; changes, ink, layer and plate inspected per frame' },
   { id: 'difference', title: 'Compare neighboring frames', description: 'Video + explicit indices → two frames → grayscale → blur → difference → output' },
   { id: 'motion', title: 'Camera in-betweens', description: 'Two explicit frames → translation × fraction → move previous → fill revealed borders from next → output' },
   { id: 'mask', title: 'Changed-pixel mask', description: 'Frame comparison → threshold → output' },

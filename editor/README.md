@@ -339,10 +339,13 @@ these inward proposals, not the distance along a majority-owned frame edge. Zero
 disables all edge filling. Neither edge method uses additions as new votes.
 
 After edge proposals are resolved, **Fill enclosed holes** fills each remaining
-eight-connected unknown component only when it no longer touches the frame and
-its entire boundary has one group ID. That boundary can include the newly filled
-edge: the enclosed interior then records hole inference, while the edge retains
-edge inference. The hole pass repeats until no cells change. Because each pass
+eight-connected unknown component only when it no longer touches the frame.
+Among groups touching its boundary, the one with the largest original measured
+cell count across the frame receives the hole; equal sizes choose the lowest ID.
+This is not a count of boundary contacts or inferred area, and a larger unrelated
+group cannot claim a hole it does not touch. The boundary can include the newly
+filled edge: the enclosed interior then records hole inference, while the edge
+retains edge inference. The hole pass repeats until no cells change. Because each pass
 already handles complete connected components, it normally reaches that fixed
 point after the first filling pass. Both stages remain optional and never
 reassign measured cells.
@@ -1133,6 +1136,10 @@ provenance for every addition. Raw PNG border labels independently determine
 while corners with conflicting owners must remain unknown. Cases may add
 `minimumHoles` or `minimumBorder`
 controls. It restores both controls enabled and leaves `ncompletionview` selected.
+The helper independently floods the unknown cells after reconstructing edge
+additions from provenance. Each enclosed component must use its largest touching
+group by original measured frame-wide count, with lowest-ID ties; an open
+component must stay unknown. Filled hole area never enters those size votes.
 Native four-panel sheets use `${prefix}-support-020.png` and the report uses
 `${prefix}-support-browser.json` in the existing output directory.
 `captureSupportFlashes({ page, change, output, prefix, frames })` is a read-only

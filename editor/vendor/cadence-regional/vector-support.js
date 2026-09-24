@@ -63,6 +63,7 @@ function completeFrame(frame, columns, rows, options) {
     const raw = frame.labels, labels = raw.slice(), provenance = Uint8Array.from(raw, label => label >= 0 ? 1 : 0);
     const observations = frame.observations.map(group => ({ id: group.id, holeCells: [], borderCells: [] }));
     const byId = new Map(observations.map(group => [group.id, group]));
+    const measuredSizes = new Map(frame.observations.map(group => [group.id, group.cells.length]));
     const counts = { measured: raw.filter(label => label >= 0).length, holes: 0, border: 0, unknown: 0 };
     if (options.fillEdges && options.edgeReach > 0) {
         const edgeProposals = new Int32Array(raw.length).fill(-1);
@@ -174,9 +175,11 @@ function completeFrame(frame, columns, rows, options) {
         do {
             added = 0;
             for (const { cells, boundary, edges } of unknownComponents(labels, columns, rows)) {
-                if (edges || boundary.size !== 1)
+                if (edges || !boundary.size)
                     continue;
-                const owner = boundary.values().next().value;
+                // Only touching groups compete. Freeze their measured sizes so earlier
+                // inferred fills cannot enlarge a group and change later ownership.
+                const owner = [...boundary].sort((a, b) => measuredSizes.get(b) - measuredSizes.get(a) || a - b)[0];
                 for (const index of cells) {
                     labels[index] = owner;
                     provenance[index] = 2;

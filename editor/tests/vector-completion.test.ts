@@ -30,7 +30,7 @@ const fixture = (): RegionalData => {
 test('direct completion exposes four typed panels and supplies the final comparison', () => {
   const graph = parseDocument(vectorLayersGraph()), inspector = graph.nodes.find(node => node.id === 'ncompletionview')!
   expect(defaultParams('vectorComplete')).toEqual({ fillHoles: true, fillEdges: true, edgeReach: 8 })
-  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(4)
+  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(5)
   expect(specFor(inspector, graph).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance'])
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:completed', target: 'nbottom', targetHandle: 'in:frame:a' }))
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:provenance', target: 'nbottom', targetHandle: 'in:frame:b' }))
@@ -59,14 +59,14 @@ test('completed support preserves exact measured pixels and exposes inference se
     return result.panels[panel].slice(index, index + 4)
   }
   for (const cell of [1, 9, 41]) expect(pixel('completed', cell)).toEqual(pixel('measured', cell))
-  for (const cell of [0, 24]) {
+  for (const cell of [0, 24, 40]) {
     expect(pixel('measured', cell)).toEqual(pixel('source', cell))
     expect(pixel('completed', cell)).not.toEqual(pixel('source', cell))
   }
-  expect(pixel('completed', 40)).toEqual(pixel('source', 40))
-  expect(pixel('provenance', 40)).toEqual(pixel('source', 40))
-  expect(new Set([1, 24, 0, 40].map(cell => pixel('provenance', cell).join(','))).size).toBe(4)
-  expect(result.summary).toContain('inferred holes 1; inferred edge 7; unknown 1')
+  expect(pixel('completed', 40)).toEqual(pixel('completed', 24))
+  expect(pixel('provenance', 40)).toEqual(pixel('provenance', 24))
+  expect(new Set([1, 24, 0].map(cell => pixel('provenance', cell).join(','))).size).toBe(3)
+  expect(result.summary).toContain('inferred holes 2; inferred edge 7; unknown 0')
   expect(result.summary).toContain('Inferred cells have no measured motion')
   expect(data).toEqual(original)
 })
@@ -118,7 +118,7 @@ test('a unanimous full edge closes first, then its enclosed interior records hol
   for (const cell of [6, 7, 8, 11, 12, 13, 16, 17, 18]) expect(support.frames[0]!.provenance[cell]).toBe(2)
   const data: RegionalData = { stage: 'vector-completion', scene: { asset: 'clip', first: 7, last: 8, sourceWidth: 40, sourceHeight: 40, frames: Array.from({ length: 2 }, () => ({ width: 40, height: 40, data: new Uint8Array(40 * 40 * 3).fill(30) })) }, frameVectorGroups: groups, frameVectorSupport: support }
   const rendered = renderVectorCompletionPanels(data, 7)
-  expect(rendered.summary).toContain('Completion order: resolve 75% measured-edge support, then fill single-owner enclosed holes until stable.')
+  expect(rendered.summary).toContain('Completion order: resolve 75% measured-edge support, then fill enclosed holes until stable.')
   for (const options of [{ fillHoles: false, edgeReach: 1 }, { fillEdges: false, edgeReach: 1 }, { edgeReach: 0 }]) {
     data.frameVectorSupport = completeFrameVectorSupport(groups, options)
     const result = renderVectorCompletionPanels(data, 7)
@@ -152,6 +152,28 @@ test('edge majority uses only original measured votes and preserves minority gro
         expect(completed.provenance[cell]).toBe(3)
       } else expect(completed.labels[cell]).toBe(-1)
     }
+    expect(groups).toEqual(before)
+  }
+})
+
+test('mixed holes choose the largest measured touching group, not contact votes or an unrelated larger group', () => {
+  const original = fixture().frameVectorGroups!
+  for (const extras of [8, 6, 5]) {
+    const labels = new Int32Array(63).fill(9)
+    for (const cell of [22, 23, 30, 32, 39, 40, 41]) labels[cell] = 4
+    labels[21] = 1; labels[31] = -1
+    for (let cell = 1; cell <= extras; cell++) labels[cell] = 1
+    const observations = [9, 4, 1].map(id => {
+      const cells = [...labels.keys()].filter(cell => labels[cell] === id)
+      return { id, motionId: id, cells, dx: id, dy: 0, strongCells: cells.length }
+    })
+    const groups = { ...original, width: 72, height: 56, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations }] }
+    const before = structuredClone(groups), support = completeFrameVectorSupport(groups, { fillEdges: false }), completed = support.frames[0]!
+    expect(completed.labels[31]).toBe(extras >= 6 ? 1 : 4)
+    expect(completed.provenance[31]).toBe(2)
+    expect(completed.counts).toEqual({ measured: 62, holes: 1, border: 0, unknown: 0 })
+    expect(observations[0]!.cells.length).toBeGreaterThan(observations[1]!.cells.length)
+    for (const [cell, label] of labels.entries()) if (label >= 0) expect(completed.labels[cell]).toBe(label)
     expect(groups).toEqual(before)
   }
 })

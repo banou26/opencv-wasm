@@ -147,6 +147,30 @@ export async function checkDistantGroups({ page, change, output, prefix, cases }
   } finally { await setEnabled(original) }
 }
 
+function expectedHoleOwners(cells, columns, rows) {
+  const measuredSizes = new Map(), visited = new Set(), components = []
+  for (const item of cells) if (item.raw >= 0) measuredSizes.set(item.raw, (measuredSizes.get(item.raw) ?? 0) + 1)
+  const boundaryLabel = cell => cells[cell].raw >= 0 ? cells[cell].raw : cells[cell].provenance === 3 ? cells[cell].completed : -1
+  for (const item of cells) {
+    if (visited.has(item.cell) || boundaryLabel(item.cell) >= 0) continue
+    const selected = [item.cell], boundary = new Set()
+    let touchesEdge = false
+    visited.add(item.cell)
+    for (let cursor = 0; cursor < selected.length; cursor++) {
+      const cell = selected[cursor], x = cell % columns, y = Math.floor(cell / columns)
+      touchesEdge ||= x === 0 || y === 0 || x === columns - 1 || y === rows - 1
+      for (let iy = Math.max(0, y - 1); iy <= Math.min(rows - 1, y + 1); iy++) for (let ix = Math.max(0, x - 1); ix <= Math.min(columns - 1, x + 1); ix++) {
+        const next = iy * columns + ix, owner = boundaryLabel(next)
+        if (owner >= 0) boundary.add(owner)
+        else if (!visited.has(next)) { visited.add(next); selected.push(next) }
+      }
+    }
+    const owners = [...boundary].map(id => ({ id, measuredCells: measuredSizes.get(id) ?? 0 })).sort((a, b) => b.measuredCells - a.measuredCells || a.id - b.id)
+    components.push({ cells: selected, touchesEdge, owners, expected: touchesEdge ? -1 : owners[0]?.id ?? -1 })
+  }
+  return components
+}
+
 /** Compare measured versus inferred support using the completion inspector's native exports. */
 export async function checkSupportCompletion({ page, change, output, prefix, cases }) {
   const select = async () => {
@@ -156,7 +180,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
   const controls = ['Fill enclosed holes', 'Extend to edges'].map(label => page.getByLabel(`Complete Direct Support ${label}`, { exact: true }))
   const setEnabled = async enabled => { for (const control of controls) if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const records = [], provenanceColors = [[150, 150, 165], [240, 178, 72], [66, 220, 183]]
-  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. At least 75% of original measured actual-edge cells establishes an owner independently from the raw PNG; unknown edge cells must receive it, minority measurements stay fixed and conflicting corners stay unknown.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. At least 75% of original measured actual-edge cells establishes an owner independently from the raw PNG; unknown edge cells must receive it, minority measurements stay fixed and conflicting corners stay unknown. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
   try {
     for (const sample of cases) {
       await setEnabled(false)
@@ -217,11 +241,16 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
       })
       const edgeReach = Number(await page.getByLabel('Complete Direct Support Edge reach (cells)', { exact: true }).inputValue())
       const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: owners.size === 1 ? [...owners][0] : -1, ...cells[cell] })) : []
-      const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, beforeSummary: before.summary, afterSummary: after.summary, image: name }
+      const holeComponents = expectedHoleOwners(cells, after.columns, rows)
+      const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, holeComponents, beforeSummary: before.summary, afterSummary: after.summary, image: name }
       records.push(record); await save('incomplete')
       for (const item of exactEdgeCells) {
         assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: 75% measured-edge majority must fill unknown cells, except conflicting corners`)
         assert.equal(item.provenance, item.expected >= 0 ? 3 : 0, `Source ${sample.frame} cell ${item.cell}: exact edge provenance is wrong`)
+      }
+      for (const component of holeComponents) for (const cell of component.cells) {
+        assert.equal(cells[cell].completed, component.expected, `Source ${sample.frame} cell ${cell}: enclosed hole must use the largest original measured touching group; open voids must stay unknown`)
+        assert.equal(cells[cell].provenance, component.expected >= 0 ? 2 : 0, `Source ${sample.frame} cell ${cell}: hole provenance is wrong`)
       }
       assert.deepEqual(counts, after.counts, `Source ${sample.frame}: pixel-derived completion counts differ from summary`)
       assert.equal(changedMeasuredPixels, 0, `Source ${sample.frame}: measured pixels must remain identical`)

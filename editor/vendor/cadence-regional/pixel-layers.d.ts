@@ -107,10 +107,15 @@ export type SceneSilhouettes = {
 export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: SilhouetteOptions & {
     progress?: StageProgress;
 }): Promise<SceneSilhouettes>;
-/** Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near it. */
+/**
+ * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
+ * it. `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
+ * `undecided`), which show no camera scenery the plate can trust.
+ */
 export declare function buildLayerPlate(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, options?: {
     margin?: number;
     floor?: number;
     progress?: StageProgress;
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
+    covers?: (frame: number) => Uint8Array[];
 }): Promise<LayerPlate>;

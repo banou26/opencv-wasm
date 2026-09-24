@@ -53,15 +53,16 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
 import { BORDER_REPLICATE, CC_STAT_AREA, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, DIST_L2, INTER_CUBIC, MORPH_BLACKHAT, MORPH_ELLIPSE, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, distanceTransform, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
 import { frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
-import { packMask, unpackMask } from "./pixel-layers.js";
+import { buildLayerPlate, packMask, unpackMask } from "./pixel-layers.js";
 import { renderPlate } from "./pixel-plate.js";
+import { buildRigidPlate, measureRigidCover, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
 /**
  * Remove silhouette pixels the plate explains, from the outside in. A pixel within `band` of the edge
  * whose value matches a well-observed plate is background only when it connects to the exterior through
  * such pixels, so an interior fill that happens to match the scenery is never carved and the outline,
- * which does not match it, stops the carve.
+ * which does not match it, stops the carve. Pixels in `deep` can be carved at any depth.
  */
-export function carveSilhouette(mask, pixels, plate, options = {}, fallback) {
+export function carveSilhouette(mask, pixels, plate, options = {}, fallback, deep) {
     const env_1 = { stack: [], error: void 0, hasError: false };
     try {
         const band = options.band ?? 8, tolerance = options.tolerance ?? 6, slope = options.gradientSlope ?? .1, lineDelta = options.lineDelta ?? 6;
@@ -74,7 +75,8 @@ export function carveSilhouette(mask, pixels, plate, options = {}, fallback) {
         for (let y = 1; y < height - 1; y++)
             for (let x = 1; x < width - 1; x++) {
                 const p = y * width + x;
-                if (!mask[p] || depth[p] > band)
+                // A rigid layer's paint can fill a silhouette to any depth, as the drawings' ink never bounded it.
+                if (!mask[p] || (depth[p] > band && !deep?.[p]))
                     continue;
                 // The median fallback can hold a drawing that stood still; line art in the frame stops a carve there.
                 const own = plate.known[p] === 1, reference = own ? p3 : fallback && fallback.known[p] && line[p] <= lineDelta ? fallback.data : undefined;
@@ -196,11 +198,15 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
     }
     return { atlas, data, count: counts };
 }
-/** Carve every frame's silhouettes against a plate built from them; the plate should be rebuilt afterwards. */
+/**
+ * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
+ * are built) over it; the plates should be rebuilt afterwards.
+ */
 export async function refineSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { progress, minimumArea: area, medianFallback: _, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
+    const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
     const minimumArea = area ?? silhouettes.options.minimumArea ?? 800;
-    const trusted = { ...plate, count: plate.count.map(n => n >= minimumCount ? n : 0) };
+    const trust = (p) => ({ ...p, count: p.count.map(n => n >= minimumCount ? n : 0) });
+    const trusted = trust(plate), layers = rigid.map(layer => ({ ...layer, plate: layer.plate && trust(layer.plate) }));
     // Where the plate is not trusted, the band median may stand in, if enough frames observed it.
     const band = options.medianFallback === false ? undefined : await bandMedianPlate(source, camera, silhouettes, carve.band ?? 8);
     const median = band && { ...band, count: band.count.map((n, a) => n >= 10 && !trusted.count[a] ? n : 0) };
@@ -209,8 +215,20 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
         const env_4 = { stack: [], error: void 0, hasError: false };
         try {
             await progress?.(frame, silhouettes.frames.length);
-            const before = silhouettes.frames[frame], rendered = renderPlate(trusted, camera, frame);
-            const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve, median && renderPlate(median, camera, frame));
+            const before = silhouettes.frames[frame], rendered = renderScene(trusted, camera, layers, frame);
+            // The band median is taken in the camera's coordinates and says nothing where a rigid layer paints.
+            const covered = new Uint8Array(size);
+            for (const layer of layers) {
+                const cover = renderCover(layer, frame, true);
+                for (let p = 0; p < size; p++)
+                    covered[p] |= cover[p];
+            }
+            const fallback = median && renderPlate(median, camera, frame);
+            if (fallback)
+                for (let p = 0; p < size; p++)
+                    if (covered[p])
+                        fallback.known[p] = 0;
+            const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve, fallback, layers.length ? covered : undefined);
             // Carving can cut splinters off a silhouette; they go the way of any small component.
             const solid = __addDisposableResource(env_4, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_4, new Mat(), false), stats = __addDisposableResource(env_4, new Mat(), false), centroids = __addDisposableResource(env_4, new Mat(), false);
             const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count);
@@ -232,4 +250,32 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
         }
     }
     return { ...silhouettes, frames, carved };
+}
+/**
+ * The second pass over rigid layers, once the drawings are known: each cover is measured again without
+ * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt and the
+ * silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
+ * rebuild it from the returned silhouettes. With no rigid layers the input comes back unchanged.
+ */
+export async function refineRigidScene(source, camera, silhouettes, layers, options = {}) {
+    if (!layers.length)
+        return { layers, silhouettes, dropped: [] };
+    const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size);
+    let next = [];
+    for (const layer of layers)
+        next.push(await measureRigidCover(source, camera, layer, { exclude: drawn, progress: options.progress }));
+    const covers = (frame) => next.map(layer => renderCover(layer, frame, true)), evidence = options.evidence;
+    const scene = await buildLayerPlate(source, camera, silhouettes, { covers, progress: options.progress, ...(evidence ? { evidence } : {}) });
+    const dropped = [], refined = [];
+    for (const layer of next) {
+        const { dropped: count, ...kept } = await refineRigidCover(source, camera, scene, layer, { exclude: drawn, progress: options.progress });
+        refined.push(kept);
+        dropped.push(count);
+    }
+    next = refined;
+    const plate = await buildLayerPlate(source, camera, silhouettes, { covers, progress: options.progress, ...(evidence ? { evidence } : {}) });
+    for (const layer of next)
+        layer.plate = await buildRigidPlate(source, layer, drawn, { progress: options.progress });
+    const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: next, progress: options.progress });
+    return { layers: next, silhouettes: carved, plate, dropped };
 }

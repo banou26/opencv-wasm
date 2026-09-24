@@ -112,6 +112,125 @@ function boxMean(luma, width, height) {
         __disposeResources(env_2);
     }
 }
+/** Per channel minimum and maximum of `source` displaced by `motion`, sampled at it and `reach` pixels around it. */
+function intervalBounds(source, width, height, motion, reach, each) {
+    const size = width * height, lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
+    for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
+        const env_3 = { stack: [], error: void 0, hasError: false };
+        try {
+            if (reach === 0 && (sx || sy))
+                continue;
+            const transform = __addDisposableResource(env_3, matFromArray(2, 3, CV_64FC1, [1, 0, motion.dx + sx, 0, 1, motion.dy + sy]), false), warped = __addDisposableResource(env_3, new Mat(), false);
+            warpAffine(source, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+            const values = warped.data32F;
+            each?.(values);
+            for (let i = 0; i < values.length; i++) {
+                const v = values[i];
+                if (v < lo[i])
+                    lo[i] = v;
+                if (v > hi[i])
+                    hi[i] = v;
+            }
+        }
+        catch (e_3) {
+            env_3.error = e_3;
+            env_3.hasError = true;
+        }
+        finally {
+            __disposeResources(env_3);
+        }
+    }
+    return { lo, hi };
+}
+/** Robust noise of A against its exact counterpart, over flat pixels of the region. */
+function flatNoise(a, exact, gradient, x0, x1, y0, y1) {
+    const { width } = a, flat = new Float32Array(a.width * a.height);
+    let flatCount = 0;
+    for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+            const p = y * width + x;
+            if (gradient[p] >= 2)
+                continue;
+            const q = p * 3;
+            flat[flatCount++] = Math.max(Math.abs(exact[q] - a.data[q]), Math.abs(exact[q + 1] - a.data[q + 1]), Math.abs(exact[q + 2] - a.data[q + 2]));
+        }
+    return flatCount ? 1.4826 * median(flat, flatCount) : NaN;
+}
+/**
+ * Which motions explain each pixel of A: bit k is set where B displaced by `motions[k]` brackets A under
+ * the interval test of `measurePairChange`. The noise threshold comes from flat pixels under whichever
+ * motion matches each best, unless `noise` is given: over a long baseline slowly changing scenery would
+ * read as noise, so frames that far apart should take it from neighboring frames.
+ * `inside` has bit k where that motion's search stays inside B; outside it the motion explains nothing.
+ * At most eight motions.
+ */
+export function explainingMotions(a, b, motions, options = {}) {
+    checkPixelFrame(a);
+    checkPixelFrame(b);
+    if (a.width !== b.width || a.height !== b.height || !motions.length || motions.length > 8)
+        throw new RangeError('Invalid motion explanation input');
+    const reach = options.reach ?? .5, noiseFactor = options.noiseFactor ?? 4, minimumThreshold = options.minimumThreshold ?? 2.5, slope = options.gradientSlope ?? .1;
+    const { width, height } = a, size = width * height, errors = [], inside = new Uint8Array(size);
+    const exact = new Float32Array(size * 3), closest = new Float32Array(size).fill(Infinity);
+    {
+        const env_4 = { stack: [], error: void 0, hasError: false };
+        try {
+            const source = __addDisposableResource(env_4, matFromArray(height, width, CV_32FC3, b.data), false);
+            for (const [k, motion] of motions.entries()) {
+                let first = true;
+                const { lo, hi } = intervalBounds(source, width, height, motion, reach, values => {
+                    if (!first)
+                        return;
+                    first = false;
+                    for (let p = 0, q = 0; p < size; p++, q += 3) {
+                        const e = Math.max(Math.abs(values[q] - a.data[q]), Math.abs(values[q + 1] - a.data[q + 1]), Math.abs(values[q + 2] - a.data[q + 2]));
+                        if (e < closest[p]) {
+                            closest[p] = e;
+                            exact[q] = values[q];
+                            exact[q + 1] = values[q + 1];
+                            exact[q + 2] = values[q + 2];
+                        }
+                    }
+                });
+                const error = new Float32Array(size).fill(Infinity);
+                const mx0 = Math.max(0, Math.ceil(1 - motion.dx + reach)), mx1 = Math.min(width - 1, Math.floor(width - 3 - motion.dx - reach));
+                const my0 = Math.max(0, Math.ceil(1 - motion.dy + reach)), my1 = Math.min(height - 1, Math.floor(height - 3 - motion.dy - reach));
+                for (let y = my0; y <= my1; y++)
+                    for (let x = mx0; x <= mx1; x++) {
+                        const p = y * width + x, q = p * 3;
+                        let e = 0;
+                        for (let c = 0; c < 3; c++) {
+                            const v = a.data[q + c], d = v < lo[q + c] ? lo[q + c] - v : v > hi[q + c] ? v - hi[q + c] : 0;
+                            if (d > e)
+                                e = d;
+                        }
+                        error[p] = e;
+                        inside[p] |= 1 << k;
+                    }
+                errors.push(error);
+            }
+        }
+        catch (e_4) {
+            env_4.error = e_4;
+            env_4.hasError = true;
+        }
+        finally {
+            __disposeResources(env_4);
+        }
+    }
+    const gradient = gradientMagnitude(pixelLuma(a), width, height);
+    const m = motions[0], x0 = Math.max(0, Math.ceil(1 - m.dx + reach)), x1 = Math.min(width - 1, Math.floor(width - 3 - m.dx - reach));
+    const y0 = Math.max(0, Math.ceil(1 - m.dy + reach)), y1 = Math.min(height - 1, Math.floor(height - 3 - m.dy - reach));
+    const noise = options.noise ?? flatNoise(a, exact, gradient, x0, x1, y0, y1);
+    const base = Math.max(minimumThreshold, noiseFactor * (Number.isFinite(noise) ? noise : 1)), bits = new Uint8Array(size);
+    for (let p = 0; p < size; p++) {
+        const limit = base + slope * gradient[p];
+        for (let k = 0; k < errors.length; k++)
+            if (errors[k][p] <= limit)
+                bits[p] |= 1 << k;
+    }
+    return { bits, inside, noise };
+}
 /**
  * Test every pixel of A against B displaced by `d`. Await initOpenCV first. The interval test accepts any
  * value between the minimum and maximum of B sampled within `reach` pixels, so a different resampling
@@ -133,37 +252,12 @@ export function measurePairChange(a, b, d, options = {}) {
     const best = new Float32Array(size).fill(Infinity), camera = new Float32Array(size).fill(Infinity);
     let exact;
     {
-        const env_3 = { stack: [], error: void 0, hasError: false };
+        const env_5 = { stack: [], error: void 0, hasError: false };
         try {
-            const source = __addDisposableResource(env_3, matFromArray(height, width, CV_32FC3, b.data), false);
+            const source = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, b.data), false);
             for (const [k, motion] of [d, ...(options.otherMotions ?? [])].entries()) {
-                const lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
-                for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
-                    const env_4 = { stack: [], error: void 0, hasError: false };
-                    try {
-                        if (reach === 0 && (sx || sy))
-                            continue;
-                        const transform = __addDisposableResource(env_4, matFromArray(2, 3, CV_64FC1, [1, 0, motion.dx + sx, 0, 1, motion.dy + sy]), false), warped = __addDisposableResource(env_4, new Mat(), false);
-                        warpAffine(source, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
-                        const values = warped.data32F;
-                        if (k === 0 && !exact)
-                            exact = values.slice();
-                        for (let i = 0; i < values.length; i++) {
-                            const v = values[i];
-                            if (v < lo[i])
-                                lo[i] = v;
-                            if (v > hi[i])
-                                hi[i] = v;
-                        }
-                    }
-                    catch (e_3) {
-                        env_4.error = e_3;
-                        env_4.hasError = true;
-                    }
-                    finally {
-                        __disposeResources(env_4);
-                    }
-                }
+                const { lo, hi } = intervalBounds(source, width, height, motion, reach, values => { if (k === 0 && !exact)
+                    exact = values.slice(); });
                 const mx0 = Math.ceil(1 - motion.dx + reach), mx1 = Math.floor(width - 3 - motion.dx - reach);
                 const my0 = Math.ceil(1 - motion.dy + reach), my1 = Math.floor(height - 3 - motion.dy - reach);
                 for (let y = Math.max(y0, my0); y <= Math.min(y1, my1); y++)
@@ -182,28 +276,18 @@ export function measurePairChange(a, b, d, options = {}) {
                     }
             }
         }
-        catch (e_4) {
-            env_3.error = e_4;
-            env_3.hasError = true;
+        catch (e_5) {
+            env_5.error = e_5;
+            env_5.hasError = true;
         }
         finally {
-            __disposeResources(env_3);
+            __disposeResources(env_5);
         }
     }
     const lumaA = pixelLuma(a), gradient = gradientMagnitude(lumaA, width, height);
     const lumaB = pixelLuma({ width, height, data: exact });
     const meanA = boxMean(lumaA, width, height), meanB = boxMean(lumaB, width, height);
-    const flat = new Float32Array(size);
-    let flatCount = 0;
-    for (let y = y0; y <= y1; y++)
-        for (let x = x0; x <= x1; x++) {
-            const p = y * width + x;
-            if (gradient[p] >= 2)
-                continue;
-            const q = p * 3;
-            flat[flatCount++] = Math.max(Math.abs(exact[q] - a.data[q]), Math.abs(exact[q + 1] - a.data[q + 1]), Math.abs(exact[q + 2] - a.data[q + 2]));
-        }
-    const noise = flatCount ? 1.4826 * median(flat, flatCount) : NaN;
+    const noise = flatNoise(a, exact, gradient, x0, x1, y0, y1);
     const base = Math.max(minimumThreshold, noiseFactor * (Number.isFinite(noise) ? noise : 1));
     const raw = new Uint8Array(size), flags = new Uint8Array(size);
     let observed = 0;
@@ -219,36 +303,12 @@ export function measurePairChange(a, b, d, options = {}) {
     // which A holds at x minus the layer's step. Such a pixel has no counterpart but was not redrawn.
     let occluded;
     if (options.otherMotions?.length) {
-        const env_5 = { stack: [], error: void 0, hasError: false };
+        const env_6 = { stack: [], error: void 0, hasError: false };
         try {
             occluded = new Uint8Array(size);
-            const sourceA = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, a.data), false);
+            const sourceA = __addDisposableResource(env_6, matFromArray(height, width, CV_32FC3, a.data), false);
             for (const motion of options.otherMotions) {
-                const lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
-                for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
-                    const env_6 = { stack: [], error: void 0, hasError: false };
-                    try {
-                        if (reach === 0 && (sx || sy))
-                            continue;
-                        const transform = __addDisposableResource(env_6, matFromArray(2, 3, CV_64FC1, [1, 0, d.dx - motion.dx + sx, 0, 1, d.dy - motion.dy + sy]), false), warped = __addDisposableResource(env_6, new Mat(), false);
-                        warpAffine(sourceA, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
-                        const values = warped.data32F;
-                        for (let i = 0; i < values.length; i++) {
-                            const v = values[i];
-                            if (v < lo[i])
-                                lo[i] = v;
-                            if (v > hi[i])
-                                hi[i] = v;
-                        }
-                    }
-                    catch (e_5) {
-                        env_6.error = e_5;
-                        env_6.hasError = true;
-                    }
-                    finally {
-                        __disposeResources(env_6);
-                    }
-                }
+                const { lo, hi } = intervalBounds(sourceA, width, height, { dx: d.dx - motion.dx, dy: d.dy - motion.dy }, reach);
                 // Compare B at the camera-displaced position of x with A at that position minus the other step.
                 for (let y = y0; y <= y1; y++)
                     for (let x = x0; x <= x1; x++) {
@@ -271,16 +331,16 @@ export function measurePairChange(a, b, d, options = {}) {
             for (let p = 0; p < size; p++)
                 if (flags[p] & OTHER_LAYER)
                     occluded[p] = 255;
-            const source = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, occluded), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: 5, height: 5 }), false);
+            const source = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, occluded), false), grown = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 5, height: 5 }), false);
             dilate(source, grown, kernel);
             occluded = grown.data.slice();
         }
         catch (e_6) {
-            env_5.error = e_6;
-            env_5.hasError = true;
+            env_6.error = e_6;
+            env_6.hasError = true;
         }
         finally {
-            __disposeResources(env_5);
+            __disposeResources(env_6);
         }
     }
     // A line that boiled is the same structure within two pixels: a 5x5 luma patch of A found in B at a

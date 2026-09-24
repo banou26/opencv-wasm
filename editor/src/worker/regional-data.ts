@@ -1,4 +1,4 @@
-import type { LayerFrames, LayerPlate, MeasuredCamera, MeasuredEvidence, SceneSilhouettes } from 'cadence/regional'
+import type { LayerFrames, LayerPlate, MeasuredCamera, MeasuredEvidence, RigidLayer, SceneSilhouettes } from 'cadence/regional'
 import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport, FrameVectorIdentities, FrameVectorFragments, VectorBorderCorrection } from 'cadence/regional'
 
 export type SceneData = {
@@ -21,6 +21,10 @@ export type RegionalData = {
   frameVectorFragments?: FrameVectorFragments
   vectorBorderCorrections?: { frame: number; corrections: VectorBorderCorrection[] }[]
   pixelCamera?: MeasuredCamera
+  /** Sliding layers found besides the camera, back to front; their plates once Background Plate built them. */
+  pixelRigid?: RigidLayer[]
+  /** Cover pixels the camera plate explained, per sliding layer, in the second pass. */
+  pixelRigidDropped?: number[]
   pixelEvidence?: MeasuredEvidence
   pixelSilhouettes?: SceneSilhouettes
   pixelPlate?: LayerPlate
@@ -59,6 +63,13 @@ export const regionalSummary = (data: RegionalData): string => {
   if (data.pixelCamera) {
     const steps = data.pixelCamera.fits, last = data.pixelCamera.positions[data.pixelCamera.positions.length - 1]!
     lines.push(`Pixel camera: ${steps.length} pairs at ${data.pixelCamera.width} x ${data.pixelCamera.height}; total ${last.dx.toFixed(2)}, ${last.dy.toFixed(2)} px; median fit residual ${steps.map(s => s.residual).sort((a, b) => a - b)[steps.length >> 1]?.toFixed(3)} codes`)
+  }
+  if (data.pixelRigid) {
+    if (!data.pixelRigid.length) lines.push('Sliding layers: none; every other motion is too sparse to be a rigid layer')
+    for (const [k, layer] of data.pixelRigid.entries()) {
+      const last = layer.path.positions[layer.path.positions.length - 1]!, cover = layer.cover.reduce((s, v) => s + v, 0), undecided = layer.decided.reduce((s, v) => s + 1 - v, 0)
+      lines.push(`Sliding layer ${k}: total ${last.dx.toFixed(2)}, ${last.dy.toFixed(2)} px over ${layer.measured} measured pairs; baselines ${layer.baselines.join(', ')} frames; cover ${(100 * cover / layer.cover.length).toFixed(1)}% of a ${layer.atlas.width} x ${layer.atlas.height} atlas, undecided ${(100 * undecided / layer.cover.length).toFixed(1)}%${data.pixelRigidDropped ? `; ${data.pixelRigidDropped[k]} pixels dropped by the camera plate` : ''}${layer.plate ? '; plate built' : ''}`)
+    }
   }
   if (data.pixelEvidence) {
     const counts = data.pixelEvidence.summaries.map(s => s.forward), sorted = [...counts].sort((a, b) => a - b)

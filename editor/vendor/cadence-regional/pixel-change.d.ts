@@ -43,6 +43,21 @@ export type PairChange = {
     there: Uint8Array;
 };
 /**
+ * Which motions explain each pixel of A: bit k is set where B displaced by `motions[k]` brackets A under
+ * the interval test of `measurePairChange`. The noise threshold comes from flat pixels under whichever
+ * motion matches each best, unless `noise` is given: over a long baseline slowly changing scenery would
+ * read as noise, so frames that far apart should take it from neighboring frames.
+ * `inside` has bit k where that motion's search stays inside B; outside it the motion explains nothing.
+ * At most eight motions.
+ */
+export declare function explainingMotions(a: PixelFrame, b: PixelFrame, motions: Translation[], options?: Pick<PairChangeOptions, 'reach' | 'noiseFactor' | 'minimumThreshold' | 'gradientSlope'> & {
+    noise?: number;
+}): {
+    bits: Uint8Array;
+    inside: Uint8Array;
+    noise: number;
+};
+/**
  * Test every pixel of A against B displaced by `d`. Await initOpenCV first. The interval test accepts any
  * value between the minimum and maximum of B sampled within `reach` pixels, so a different resampling
  * phase of the same drawing is explained while a redrawn line, moved by a pixel or more, is not.

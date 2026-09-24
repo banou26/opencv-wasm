@@ -1,4 +1,4 @@
-import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, renderPlate, unpackMask, type PixelFrame } from 'cadence/regional'
+import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, renderCover, renderPlate, renderScene, unpackMask, type PixelFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
 type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; drawings: Uint8Array }
@@ -51,7 +51,15 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     const p = y * width + x
     edge[p] = Number(mask[p] === 1 && (!mask[p - 1] || !mask[p + 1] || !mask[p - width] || !mask[p + width]))
   }
-  const plate = data.pixelPlate ? renderPlate(data.pixelPlate, camera, index) : undefined
+  // With sliding layers the scene behind the drawings is the camera plate with each layer over it.
+  const rigid = data.pixelRigid ?? [], built = rigid.filter(layer => layer.plate)
+  const plate = data.pixelPlate ? built.length ? renderScene(data.pixelPlate, camera, built, index) : renderPlate(data.pixelPlate, camera, index) : undefined
+  const cover = new Uint8Array(size), coverEdge = new Uint8Array(size)
+  for (const layer of rigid) { const own = renderCover(layer, index); for (let p = 0; p < size; p++) cover[p] = cover[p]! | own[p]! }
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const p = y * width + x
+    coverEdge[p] = Number(cover[p] === 1 && (!cover[p - 1] || !cover[p + 1] || !cover[p - width] || !cover[p + width]))
+  }
   let unknown = 0, over12 = 0, over20 = 0, outside = 0
   const residual = new Float32Array(size)
   if (plate) for (let p = 0; p < size; p++) {
@@ -81,11 +89,12 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     layer: downsample(width, height, displayWidth, displayHeight, layerColor, none),
     plate: downsample(width, height, displayWidth, displayHeight, p => {
       if (!plate) return [checker(p), checker(p), checker(p)]
+      if (coverEdge[p]) return [60, 230, 120]
       if (!plate.known[p]) return [checker(p) + 50, 40, checker(p) + 70]
       const q = p * 3, color: [number, number, number] = [plate.data[q + 2]!, plate.data[q + 1]!, plate.data[q]!]
       if (mask[p]) return [color[0] * .55, color[1] * .55, color[2] * .55]
       return residual[p]! > 20 ? [255, 45, 45] : residual[p]! > 12 ? [255, 160, 40] : color
-    }, p => plate && plate.known[p] && !mask[p] && residual[p]! > 12 ? 1 + Number(residual[p]! > 20) : 0),
+    }, p => coverEdge[p] ? 3 : plate && plate.known[p] && !mask[p] && residual[p]! > 12 ? 1 + Number(residual[p]! > 20) : 0),
   }
   const sheet = drawingSheet(data, index, Math.max(320, displayWidth * 2))
   panels.drawings = sheet.pixels
@@ -96,7 +105,8 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     `Camera position ${position.dx.toFixed(3)}, ${position.dy.toFixed(3)} px${fit ? `; next step ${fit.dx.toFixed(3)}, ${fit.dy.toFixed(3)} (residual ${fit.residual.toFixed(3)}, ${fit.samples} samples)` : ''}`,
     evidence && index < pairs ? `Pair change: forward ${evidence.summaries[index]!.forward}, backward ${evidence.summaries[index]!.backward} pixels; noise ${evidence.summaries[index]!.noise.toFixed(3)} codes` : evidence ? 'Final frame: no outgoing pair' : 'Connect Redraw Ink Evidence for change and ink panels',
     data.pixelSilhouettes ? `Silhouettes: ${components.length} components, ${components.reduce((s, c) => s + c.area, 0)} px${components.length ? `; ${components.map(c => `${c.area} px at ${c.box.join(',')}`).join('; ')}` : ''}` : 'Connect Drawing Silhouettes for layer panels',
-    plate ? `Plate outside silhouettes: ${outside} px; unknown ${unknown}; over 12 codes ${over12}; over 20 codes ${over20}` : 'Connect Background Plate for the plate panel',
+    plate ? `${built.length ? 'Scene (camera plate and sliding layers)' : 'Plate'} outside silhouettes: ${outside} px; unknown ${unknown}; over 12 codes ${over12}; over 20 codes ${over20}` : 'Connect Background Plate for the plate panel',
+    ...(rigid.length ? [`Sliding layers: ${rigid.length}, painting ${cover.reduce((s, v) => s + v, 0)} px of this frame (green outline in the plate panel)`] : []),
     matte ? `Edge matte: ${matte.unmixed} pixels unmixed against the plate; layer panel shows straight alpha over a checkerboard` : 'Layer panel: binary silhouette (no plate for an edge matte)',
     ...(data.pixelFrames ? data.pixelFrames.frames[index]!.map(([layer, drawing]) => { const d = data.pixelFrames!.layers[layer]!.drawings[drawing]!; return `Layer ${layer}: drawing ${drawing} of ${data.pixelFrames!.layers[layer]!.drawings.length}, frames ${d.first + data.scene.first} to ${d.last + data.scene.first}` }) : ['Connect Layer Frames for the drawing sheet']),
     'Ink colors: green arrived at the last change, magenta leaves at the next, white both. Cyan: silhouette outline.',

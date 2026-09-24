@@ -325,11 +325,19 @@ export async function sceneSilhouettes(evidence, options = {}) {
     }
     return { width, height, options: silhouetteOptions, frames };
 }
-/** Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near it. */
+/**
+ * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
+ * it. `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
+ * `undecided`), which show no camera scenery the plate can trust.
+ */
 export async function buildLayerPlate(source, camera, silhouettes, options = {}) {
     const atlas = worldAtlas(camera), margin = options.margin ?? 3, size = source.width * source.height;
     const exclude = (frame) => {
         const mask = unpackMask(silhouettes.frames[frame].packed, size), ev = options.evidence;
+        // Pixels a rigid layer paints show that layer, not this plate.
+        for (const cover of options.covers?.(frame) ?? [])
+            for (let p = 0; p < size; p++)
+                mask[p] |= cover[p];
         // Another layer only claims a pixel when neither neighbor pair explains it under the camera.
         if (!ev?.others.length)
             return mask;

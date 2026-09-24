@@ -27,7 +27,7 @@ const capture = async (page, change, frame, completion = false) => {
   assert(geometry && counts && Number.isSafeInteger(size) && size > 0)
   if (!completion) assert.equal(counts[1], counts[2], `Source ${frame}: candidate support must be conserved`)
   const [, width, height, analysisWidth, analysisHeight] = geometry.map(Number)
-  const groups = [...summary.matchAll(/^Group (\d+):/gm)].map(match => Number(match[1])), rasters = {}
+  const groups = [...summary.matchAll(summary.includes('Stable identity colors: enabled') ? /^Track (\d+):/gm : /^Group (\d+):/gm)].map(match => Number(match[1])), rasters = {}
   for (const port of completion ? ['source', 'measured', 'completed', 'provenance'] : ['source', 'candidates', 'groups', 'confidence']) {
     await change(() => page.getByLabel('Output socket').selectOption(`out:frame:${port}`))
     const previous = await page.evaluate(async () => {
@@ -52,16 +52,16 @@ const capture = async (page, change, frame, completion = false) => {
     assert.equal(rasters[port].length, width * height * 3)
   }
   const columns = Math.ceil(analysisWidth / size), cells = Math.ceil(analysisHeight / size) * columns
-  const labelAt = cell => {
+  const readLabelAt = (cell, port) => {
     assert(Number.isSafeInteger(cell) && cell >= 0 && cell < cells)
     const x = Math.min(analysisWidth - .5, cell % columns * size + size / 2)
     const y = Math.min(analysisHeight - .5, Math.floor(cell / columns) * size + size / 2)
     const pixel = (Math.floor(y * height / analysisHeight) * width + Math.floor(x * width / analysisWidth)) * 3
-    const original = Array.from(rasters.source.subarray(pixel, pixel + 3)), grouped = Array.from(rasters[completion ? 'completed' : 'groups'].subarray(pixel, pixel + 3))
+    const original = Array.from(rasters.source.subarray(pixel, pixel + 3)), grouped = Array.from(rasters[port].subarray(pixel, pixel + 3))
     if (grouped.every((channel, index) => channel === original[index])) return { cell, label: -1, alpha: 0 }
     const matches = groups.filter(id => [.38, .6].some(alpha => color(id).every((channel, index) => Math.abs(grouped[index] - Math.round(original[index] * (1 - alpha) + channel * alpha)) <= 1)))
     assert.equal(matches.length, 1, `Source ${frame} cell ${cell}: diagnostic group color must be uniquely decodable`)
-    const tint = color(matches[0]), raster = rasters[completion ? 'completed' : 'groups']
+    const tint = color(matches[0]), raster = rasters[port]
     const opacityAt = p => [.38, .6].filter(alpha => tint.every((channel, index) => Math.abs(raster[p + index] - Math.round(rasters.source[p + index] * (1 - alpha) + channel * alpha)) <= 1))
     let alphas = opacityAt(pixel)
     if (alphas.length !== 1) {
@@ -72,8 +72,86 @@ const capture = async (page, change, frame, completion = false) => {
     assert.equal(alphas.length, 1, `Source ${frame} cell ${cell}: measured confidence opacity must be uniquely decodable`)
     return { cell, label: matches[0], alpha: alphas[0] }
   }
-  return { summary, width, height, analysisWidth, analysisHeight, size, columns, cells, rasters, labelAt,
+  return { summary, width, height, analysisWidth, analysisHeight, size, columns, cells, rasters,
+    labelAt: cell => readLabelAt(cell, completion ? 'completed' : 'groups'), measuredLabelAt: cell => readLabelAt(cell, completion ? 'measured' : 'groups'),
     counts: completion ? { measured: Number(counts[1]), holes: Number(counts[2]), border: Number(counts[3]), unknown: Number(counts[4]) } : undefined }
+}
+
+/** Stable IDs change only colors; all geometry and existing raw diagnostics remain exact. */
+export async function checkTrackedIdentities({ page, change, output, prefix, cases }) {
+  const control = page.getByLabel('Inspect Tracked Support Stable colors', { exact: true }), records = [], subjects = new Map()
+  const select = async tracked => {
+    const id = tracked ? 'nidentityview' : 'ncompletionview', title = tracked ? 'Inspect Tracked Support' : 'Inspect Direct Completion'
+    if (await page.locator('.inspect-panel').getAttribute('data-selected') !== id) await change(() => page.locator('.step-strip button').filter({ hasText: title }).click())
+  }
+  const setEnabled = async enabled => { if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
+  const save = status => writeFile(resolve(output, `${prefix}-identity-browser.json`), `${JSON.stringify({ status, description: 'Native PNGs compare raw completion with tracked colors disabled/enabled. Source and provenance remain exact; every measured/completed cell maps one-to-one from its local ID, with identical coverage and opacity. Background pixels are byte-identical. Subject controls test track continuity through absence without inventing held foreground.', subjects: Object.fromEntries(subjects), records }, null, 2)}\n`)
+  let current
+  try {
+    for (const sample of cases) {
+      current = { frame: sample.frame, status: 'capturing', images: [] }; records.push(current)
+      await select(false)
+      const raw = await capture(page, change, sample.frame, true)
+      await select(true); await setEnabled(false)
+      const off = await capture(page, change, sample.frame, true)
+      for (const port of ['source', 'measured', 'completed', 'provenance']) assert(off.rasters[port].equals(raw.rasters[port]), `Source ${sample.frame}: disabled stable colors changed raw ${port}`)
+      await setEnabled(true)
+      const tracked = await capture(page, change, sample.frame, true)
+      const names = ['raw', 'tracked'].map(mode => `${prefix}-identity-${String(sample.frame).padStart(3, '0')}-${mode}.png`)
+      saveSheet(raw, output, names[0]); saveSheet(tracked, output, names[1])
+      Object.assign(current, { images: names, rawSummary: raw.summary, trackedSummary: tracked.summary, status: 'checking' }); await save('incomplete')
+      assert.deepEqual([raw.width, raw.height, raw.analysisWidth, raw.analysisHeight, raw.size], [tracked.width, tracked.height, tracked.analysisWidth, tracked.analysisHeight, tracked.size])
+      for (const port of ['source', 'provenance']) assert(tracked.rasters[port].equals(raw.rasters[port]), `Source ${sample.frame}: stable identities changed ${port}`)
+      assert.deepEqual(tracked.counts, raw.counts, `Source ${sample.frame}: stable identities changed completion counts`)
+      const observations = [...tracked.summary.matchAll(/^Track (\d+): local group (\d+); previous source (none|\d+); score (new|[\d.]+)/gm)].map(match => ({ trackId: Number(match[1]), groupId: Number(match[2]), previousFrame: match[3] === 'none' ? null : Number(match[3]) }))
+      const mapping = new Map(observations.map(item => [item.groupId, item.trackId]))
+      assert.equal(mapping.size, observations.length)
+      assert.equal(new Set(mapping.values()).size, mapping.size)
+      if (mapping.has(0)) assert.equal(mapping.get(0), 0)
+      const dormantText = tracked.summary.match(/^Dormant tracks: (.+)$/m)?.[1]
+      const dormant = dormantText === 'none' ? [] : dormantText?.split(',').map(Number) ?? []
+      let backgroundPixels = 0, verifiedPixels = 0
+      for (const port of ['measured', 'completed']) for (let cell = 0; cell < raw.cells; cell++) {
+        const before = port === 'measured' ? raw.measuredLabelAt(cell) : raw.labelAt(cell), after = port === 'measured' ? tracked.measuredLabelAt(cell) : tracked.labelAt(cell)
+        assert.equal(after.label, before.label < 0 ? -1 : mapping.get(before.label), `Source ${sample.frame} cell ${cell}: tracked ${port} geometry changed`)
+        assert.equal(after.alpha, before.alpha, `Source ${sample.frame} cell ${cell}: tracked ${port} confidence opacity changed`)
+        const left = Math.ceil(cell % raw.columns * raw.size * raw.width / raw.analysisWidth), right = Math.min(raw.width, Math.ceil((cell % raw.columns + 1) * raw.size * raw.width / raw.analysisWidth))
+        const top = Math.ceil(Math.floor(cell / raw.columns) * raw.size * raw.height / raw.analysisHeight), bottom = Math.min(raw.height, Math.ceil((Math.floor(cell / raw.columns) + 1) * raw.size * raw.height / raw.analysisHeight))
+        const tint = after.label < 0 ? null : color(after.label)
+        for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+          const p = (y * raw.width + x) * 3
+          for (let channel = 0; channel < 3; channel++) {
+            if (before.label <= 0) assert.equal(tracked.rasters[port][p + channel], raw.rasters[port][p + channel], `Source ${sample.frame}: background or unknown ${port} pixel changed`)
+            else assert(Math.abs(tracked.rasters[port][p + channel] - Math.round(raw.rasters.source[p + channel] * (1 - before.alpha) + tint[channel] * before.alpha)) <= 1, `Source ${sample.frame}: stable color changed the ${port} mask or opacity`)
+          }
+          verifiedPixels++; if (before.label === 0) backgroundPixels++
+        }
+      }
+      const tested = []
+      for (const subject of sample.subjects ?? []) {
+        const points = subject.cells.map(cell => tracked.measuredLabelAt(cell)), visible = points.filter(item => item.label > 0), ids = [...new Set(visible.map(item => item.label))]
+        if (subject.expected === 'dormant') {
+          assert(points.length > 0 && points.every(item => item.label === 0), `Source ${sample.frame}: held ${subject.name} must remain measured background`)
+          assert(subjects.has(subject.name) && dormant.includes(subjects.get(subject.name)), `Source ${sample.frame}: absent ${subject.name} must retain its dormant identity`)
+        } else {
+          assert(visible.length >= (subject.minimumCells ?? 1), `Source ${sample.frame}: ${subject.name} needs measured foreground cells`)
+          assert.equal(ids.length, 1, `Source ${sample.frame}: ${subject.name} controls must share one track`)
+          if (subjects.has(subject.name)) assert.equal(ids[0], subjects.get(subject.name), `Source ${sample.frame}: ${subject.name} changed track ID`)
+          else subjects.set(subject.name, ids[0])
+        }
+        tested.push({ name: subject.name, expected: subject.expected, points, trackIds: ids })
+      }
+      assert.equal(new Set(subjects.values()).size, subjects.size, `Source ${sample.frame}: distant subject controls merged into one track`)
+      Object.assign(current, { status: 'passed', observations, dormant, counts: tracked.counts, verifiedPixels, backgroundPixels, subjects: tested })
+      await save('incomplete')
+      console.log(`Identities source ${sample.frame}: ${mapping.size} mapped groups, ${verifiedPixels} support pixels checked, ${backgroundPixels} background pixels unchanged`)
+    }
+    await save('passed')
+    return records
+  } catch (error) {
+    if (current) Object.assign(current, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
+    await save('failed'); throw error
+  } finally { await select(true); await setEnabled(true) }
 }
 
 const saveSheet = (result, output, name) => {

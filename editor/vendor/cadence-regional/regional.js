@@ -11,3 +11,4 @@ export * from "./vector-layers.js";
 export * from "./vector-modes.js";
 export * from "./vector-frame-groups.js";
 export * from "./vector-support.js";
+export * from "./vector-identities.js";

@@ -212,7 +212,8 @@ remain unchanged.
 
 ```text
 Scene Range -> Scene Vector Candidates -> Frame Velocity Groups
-            -> Complete Direct Support -> Inspect Direct Completion
+            -> Track Motion Identities -> Complete Direct Support
+            -> Inspect Tracked Support
             -> Frame Layouts -> Output
 ```
 
@@ -320,6 +321,24 @@ coherent assignments. There are no temporal ambiguity or rejected-candidate
 categories in this first pass. Unpainted group cells are not silently filled.
 The final source frame has no outgoing motion pair and consequently no motion overlay.
 
+**Track Motion Identities** adds a separate scene-level identity map after local
+grouping. It does not replace or relabel the measured groups. Background local
+group zero anchors track zero; foreground associations use camera-compensated
+predicted support and one-to-one spatial matching. **Max gap (pairs)** defaults
+to 24 absent pairs, and **Match radius (cells)** defaults to three analysis cells.
+A temporarily absent track can regain its color when measured again. This does
+not recover a foreground mask on a held frame whose motion analysis contains
+only background; those frames remain background, with the track marked dormant.
+Tracks are motion associations, not guaranteed semantic character identities.
+
+**Inspect Tracked Support** exposes the same source/measured/completed/provenance
+frames as the raw completion inspector, using track IDs only for group colors.
+Its **Stable colors** checkbox switches back to frame-local colors for comparison.
+Source pixels, measured confidence opacity, completed coverage and provenance
+are unchanged. The summary lists each track's local group, previous observation,
+matching score and dormant IDs. Raw **Inspect Direct Motion** and **Inspect Direct
+Completion** views remain available and do not apply identity colors.
+
 **Complete Direct Support** is a separate stage after grouping, with edge filling
 first and enclosed-hole filling second. **Extend to edges** preserves every
 assignment from the established 75%-edge and bounded-ray/winding-pocket rules.
@@ -372,10 +391,12 @@ is gray for measured cells, amber for enclosed holes, teal for edge inference,
 and unpainted for unknown. These are support proposals, not recovered artwork or
 pixel-accurate silhouettes.
 
-The final two-by-two output now shows source/candidate vectors above completed
+The final two-by-two output shows source/candidate vectors above tracked completed
 support/provenance. Existing saved graphs are valid and stay unchanged; open a
-fresh Direct motion layers prefab or add the completion nodes to adopt that
-layout. Completion toggles reuse cached grouping and motion analysis.
+fresh Direct motion layers prefab or add the identity nodes to adopt stable
+colors. Completion toggles reuse cached identity mapping, grouping and motion
+analysis. Identity option changes reuse measured groups; display color toggles
+rerender only the inspector.
 
 Only inspectors depend on Time; scene candidates, groups and completion cache across
 scrubbing. Scene Range keeps its existing single-shot bounds and memory budget:
@@ -1140,6 +1161,19 @@ Its proximity comparison toggles **Separate distant regions** off/on, requires
 the sampled actor and lone-character groups to separate, and compares every
 dominant-background pixel exactly. Source, candidate and confidence panels must
 also remain byte-identical across that toggle.
+`checkTrackedIdentities({ page, change, output, prefix, cases })` compares raw
+completion with **Stable colors** disabled and enabled. Each case accepts
+`{ frame, subjects: [{ name, cells, expected: 'visible' | 'dormant', minimumCells? }] }`.
+The disabled view must match all four raw panels exactly. The enabled view must
+preserve source/provenance bytes, background pixels, every measured/completed
+cell's local-to-track mapping and its confidence opacity. It verifies every
+rendered support pixel against that color mapping. Visible subjects keep distinct
+track IDs across cases; dormant controls remain measured background and retain
+their prior track in the dormant list. It saves
+`${prefix}-identity-{frame}-{raw,tracked}.png` and
+`${prefix}-identity-browser.json` in the existing diagnostics directory, then
+restores stable colors and selects `nidentityview`. These controls check identity
+association, not pixel silhouettes or invented held-frame masks.
 The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
 helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
 compares both fill controls disabled/enabled. It requires identical source and

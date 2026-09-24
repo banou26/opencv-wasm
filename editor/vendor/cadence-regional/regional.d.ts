@@ -10,5 +10,6 @@ export * from './vector-layers.ts';
 export * from './vector-modes.ts';
 export * from './vector-frame-groups.ts';
 export * from './vector-support.ts';
+export * from './vector-identities.ts';
 export type * from './regional-types.ts';
 export type { AnalysisFrame } from './types.ts';

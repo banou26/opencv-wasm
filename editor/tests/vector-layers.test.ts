@@ -53,7 +53,7 @@ test('direct prefab keeps raw inspectors independent and completes support only 
   expect(explicitGraph('vectorLayers')).toEqual(vectorLayersGraph())
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   expect(doc.nodes.some(node => node.type.startsWith('regional'))).toBe(false)
-  expect(doc.edges.filter(edge => edge.source === 'ntime').map(edge => edge.target)).toEqual(['ncandidateview', 'nview', 'ncompletionview'])
+  expect(doc.edges.filter(edge => edge.source === 'ntime').map(edge => edge.target)).toEqual(['ncandidateview', 'nview', 'ncompletionview', 'nidentityview'])
   expect(specFor(doc.nodes.find(node => node.id === 'nview')!, doc).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:candidates', 'out:frame:groups', 'out:frame:confidence'])
   expect(planGraph(doc, 'n5', null, 2, 'clip', 7).steps.filter(step => step.node.type === 'frameLayout').map(step => step.node.params.direction)).toEqual(['horizontal', 'horizontal', 'vertical'])
   expect(planGraph(doc, 'ncandidateview', 'out:frame:candidates', 2, 'clip', 7).steps.some(step => step.node.type === 'vectorGroups')).toBe(false)
@@ -387,7 +387,7 @@ test('direct analysis caches across scrub order and display edits; velocity edit
       const result = await evaluate('n5', frame)
       try { expect([image(result.value).mat.cols, image(result.value).mat.rows]).toEqual([192, 128]) } finally { result.release() }
     }
-    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorComplete']) expect(calls.get(type)).toBe(1)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorTrack', 'vectorComplete']) expect(calls.get(type)).toBe(1)
     expect([...calls.keys()].some(type => type.startsWith('regional'))).toBe(false)
     doc.nodes.find(node => node.id === 'ncomplete')!.params.fillHoles = false
     const completion = await evaluate('ncompletionview', 2, 'out:string:summary')
@@ -396,7 +396,7 @@ test('direct analysis caches across scrub order and display edits; velocity edit
       if (completion.value.kind === 'string') expect(completion.value.value).toContain('Enclosed holes: disabled')
     } finally { completion.release() }
     expect(calls.get('vectorComplete')).toBe(2)
-    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorTrack']) expect(calls.get(type)).toBe(1)
     const beforeEdges = await evaluate('nview', 2, 'out:frame:groups')
     let measuredPixels: Float32Array
     try { measuredPixels = image(beforeEdges.value).mat.data32F.slice() } finally { beforeEdges.release() }
@@ -410,6 +410,14 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     const afterEdges = await evaluate('nview', 2, 'out:frame:groups')
     try { expect(image(afterEdges.value).mat.data32F).toEqual(measuredPixels) } finally { afterEdges.release() }
     expect(calls.get('vectorComplete')).toBe(3)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorTrack']) expect(calls.get(type)).toBe(1)
+    doc.nodes.find(node => node.id === 'nidentityview')!.params.stableColors = false
+    const untracked = await evaluate('nidentityview', 2, 'out:frame:completed')
+    try { expect(image(untracked.value).mat.data32F).toEqual(measuredPixels) } finally { untracked.release() }
+    expect(calls.get('vectorTrack')).toBe(1); expect(calls.get('vectorComplete')).toBe(3)
+    doc.nodes.find(node => node.id === 'ntrack')!.params.maxGap = 8
+    const retracked = await evaluate('nidentityview', 2, 'out:string:summary'); retracked.release()
+    expect(calls.get('vectorTrack')).toBe(2); expect(calls.get('vectorComplete')).toBe(4)
     for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
     doc.nodes.find(node => node.id === 'nview')!.params.gain = 5
     const display = await evaluate('nview', 2, 'out:frame:candidates'); display.release()

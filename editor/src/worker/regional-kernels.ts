@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, refineVectorBorders, groupFrameVectors, completeFrameVectorSupport, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, refineVectorBorders, groupFrameVectors, completeFrameVectorSupport, trackFrameVectorIdentities, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -48,7 +48,7 @@ export const regionalDisplayGeometry = (scene: SceneData, maxSide: number) => {
 
 export const regionalKernel = async (step: Step, inputs: Record<string, Payload>, sourceById: (asset: string) => VideoSource | undefined, cancelled: () => boolean): Promise<Bundle<Payload> | undefined> => {
   const type = step.node.type
-  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect', 'regionalCompletionInspect', 'vectorCandidates', 'vectorGroups', 'vectorInspect', 'vectorComplete', 'vectorCompletionInspect'].includes(type)) return undefined
+  if (!['sceneRange', 'regionalMotion', 'regionalPool', 'regionalTracks', 'regionalHistory', 'regionalTiming', 'regionalComplete', 'regionalInspect', 'regionalCompletionInspect', 'vectorCandidates', 'vectorGroups', 'vectorInspect', 'vectorTrack', 'vectorComplete', 'vectorCompletionInspect', 'vectorIdentityInspect'].includes(type)) return undefined
   const checkpoint = async () => { await new Promise<void>(resolve => setTimeout(resolve, 0)); if (cancelled()) throw new Error('Evaluation cancelled') }
   const params = step.node.params
   if (type === 'sceneRange') {
@@ -67,7 +67,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
   const input = inputs['in:regions:data']
   if (input?.kind !== 'regions') throw new Error('Regional analysis data is required')
   const data = input.data
-  const requireStage = (stage: RegionalData['stage']) => { if (data.stage !== stage && !(stage === 'tracks' && data.stage === 'history')) throw new Error(`This stage requires ${stage} data, received ${data.stage}`) }
+  const requireStage = (stage: RegionalData['stage']) => { if (data.stage !== stage && !(stage === 'tracks' && data.stage === 'history') && !(stage === 'vector-groups' && data.stage === 'vector-identities')) throw new Error(`This stage requires ${stage} data, received ${data.stage}`) }
   let output: RegionalData
   if (type === 'vectorCandidates') {
     requireStage('scene')
@@ -86,6 +86,10 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
   } else if (type === 'vectorGroups') {
     requireStage('vector-candidates'); await checkpoint()
     output = { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!, { tolerance: Number(params.tolerance), splitSubtleMotion: Boolean(params.splitSubtleMotion), splitDistantRegions: Boolean(params.splitDistantRegions), proximityGap: Number(params.proximityGap) }) }
+  } else if (type === 'vectorTrack') {
+    requireStage('vector-groups'); await checkpoint()
+    if (!data.frameVectorGroups) throw new Error('Identity tracking requires measured frame groups')
+    output = { ...data, stage: 'vector-identities', frameVectorIdentities: trackFrameVectorIdentities(data.frameVectorGroups, { maxGap: Number(params.maxGap), matchRadius: Number(params.matchRadius) }) }
   } else if (type === 'vectorComplete') {
     requireStage('vector-groups'); await checkpoint()
     if (!data.frameVectorGroups) throw new Error('Direct support completion requires measured frame groups')
@@ -132,9 +136,11 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     }
     output = { ...data, stage: 'completion', completion }
   } else {
-    const sourceFrame = Number(params.frame), view = type === 'regionalCompletionInspect' || type === 'vectorCompletionInspect' ? 'completion' : type === 'vectorInspect' ? 'source' : String(params.view) as RegionalView
+    const sourceFrame = Number(params.frame), directCompletion = type === 'vectorCompletionInspect' || type === 'vectorIdentityInspect'
+    const view = type === 'regionalCompletionInspect' || directCompletion ? 'completion' : type === 'vectorInspect' ? 'source' : String(params.view) as RegionalView
     if (type === 'regionalCompletionInspect') requireStage('completion')
-    if (type === 'vectorCompletionInspect') requireStage('vector-completion')
+    if (directCompletion) requireStage('vector-completion')
+    if (type === 'vectorIdentityInspect' && !data.frameVectorIdentities) throw new Error('Tracked support inspection requires Track Motion Identities before completion')
     if (type === 'vectorInspect' && data.stage !== 'vector-candidates' && data.stage !== 'vector-groups') throw new Error('Direct motion inspection requires vector candidates or vector groups')
     const analysis = data.scene.frames[sourceFrame - data.scene.first]
     if (!Number.isSafeInteger(sourceFrame) || !analysis) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
@@ -148,8 +154,9 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
       }
     }
     checkCancelled(cancelled)
-    if (type === 'regionalCompletionInspect' || type === 'vectorInspect' || type === 'vectorCompletionInspect') {
-      const result = type === 'vectorInspect' ? renderVectorPanels(data, sourceFrame, display, Number(params.gain)) : type === 'vectorCompletionInspect' ? renderVectorCompletionPanels(data, sourceFrame, display) : renderCompletionPanels(data, sourceFrame, display)
+    if (type === 'regionalCompletionInspect' || type === 'vectorInspect' || directCompletion) {
+      const result = type === 'vectorInspect' ? renderVectorPanels(data, sourceFrame, display, Number(params.gain)) : directCompletion ? renderVectorCompletionPanels(data, sourceFrame, display, type === 'vectorIdentityInspect' && params.stableColors ? data.frameVectorIdentities : undefined) : renderCompletionPanels(data, sourceFrame, display)
+      if (type === 'vectorIdentityInspect' && !params.stableColors) result.summary += '\nStable identity colors: disabled; frame-local colors shown.'
       const outputs: Record<string, Payload> = { 'out:string:summary': { kind: 'string', value: result.summary } }, allocated: Mat[] = []
       try {
         for (const [key, pixels] of Object.entries(result.panels)) {

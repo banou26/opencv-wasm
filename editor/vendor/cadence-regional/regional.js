@@ -7,3 +7,4 @@ export * from "./motion-evidence.js";
 export * from "./motion-completion.js";
 export * from "./vector-candidates.js";
 export * from "./vector-layers.js";
+export * from "./vector-modes.js";

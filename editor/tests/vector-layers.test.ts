@@ -3,7 +3,7 @@ import { initOpenCV, Mat, matFromArray, cvtColor, CV_8UC3, CV_32F, COLOR_BGR2RGB
 import { estimateVectorCandidates, groupVectorCandidates, poolVectorCandidates, type AnalysisFrame, type MotionCell } from 'cadence/regional'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
-import { parseDocument, validateConnection } from '../src/engine/graph'
+import { groupNodes, parseDocument, validateConnection } from '../src/engine/graph'
 import { motionVectorsGraph } from '../src/engine/motion-prefab'
 import { DEFAULT_RENDER_WORKERS, usesSceneAnalysis } from '../src/engine/parallel-render'
 import { planGraph } from '../src/engine/plan'
@@ -31,7 +31,7 @@ const candidatesFixture = (): RegionalData => {
 }
 const groupedFixture = (): RegionalData => {
   const data = candidatesFixture()
-  return { ...data, stage: 'vector-groups', vectorGroups: { width: 40, height: 8, frameCount: 2, cellSize: 8, options: { tolerance: .75, minimumOverlap: 4 }, groups: [{ id: 0, trackCount: 2, observedPairs: 1 }], tracks: [],
+  return { ...data, stage: 'vector-groups', vectorGroups: { width: 40, height: 8, frameCount: 2, cellSize: 8, options: { tolerance: .75, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 }, groups: [{ id: 0, trackCount: 2, observedPairs: 1 }], tracks: [],
     frames: [{ frame: 0, labels: Int32Array.from([-1, 0, 0, -1, -1]), confidence: Uint8Array.from([0, 1, 2, 3, 4]), observations: [{ id: 0, cells: [1, 2], dx: 1, dy: 0, strongCells: 1 }] }] } }
 }
 const sceneFixture = (): RegionalData => {
@@ -61,7 +61,8 @@ test('direct prefab has a separate pipeline, four independent outputs and no com
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005 })
-  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, minimumOverlap: 4 })
+  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 })
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(2)
 })
 
 test('candidate rendering retains weak arrows, distinguishes unknown support and does not invent groups', () => {
@@ -78,6 +79,19 @@ test('candidate rendering retains weak arrows, distinguishes unknown support and
   expect(data).toEqual(original)
 })
 
+test('saved direct-motion graphs acquire missing mode controls without replacing explicit settings', () => {
+  const original = vectorLayersGraph()
+  delete original.nodes.find(node => node.id === 'ngroups')!.params.modeRadius
+  delete original.nodes.find(node => node.id === 'ngroups')!.params.minimumModeCells
+  const restored = parseDocument(original)
+  expect(restored.nodes.find(node => node.id === 'ngroups')!.params).toEqual(defaultParams('vectorGroups'))
+  const nested = groupNodes(vectorLayersGraph(), undefined, ['ngroups'], 'Direct groups', 'gdirect', 'ndirect')
+  const node = nested.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!
+  node.params.modeRadius = 0; delete node.params.minimumModeCells
+  const reopened = parseDocument(JSON.parse(JSON.stringify(nested)))
+  expect(reopened.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!.params).toEqual({ ...defaultParams('vectorGroups'), modeRadius: 0 })
+})
+
 test('group inspector separates weak, coherent, ambiguous, unassigned and unknown cells', () => {
   const data = groupedFixture(), original = structuredClone(data), rendered = renderVectorPanels(data, 7)
   const at = (pixels: Uint8Array, x: number) => pixels.slice((4 * 40 + x) * 4, (4 * 40 + x) * 4 + 4)
@@ -85,6 +99,7 @@ test('group inspector separates weak, coherent, ambiguous, unassigned and unknow
   for (const x of [4, 28, 36]) expect(at(rendered.panels.groups, x)).toEqual(at(rendered.panels.source, x))
   for (const x of [12, 20]) expect(at(rendered.panels.groups, x)).not.toEqual(at(rendered.panels.source, x))
   expect(rendered.summary).toContain('unknown 1; weak assigned 1; coherent assigned 1; ambiguous 1; unassigned candidate 1')
+  expect(rendered.summary).toContain('Velocity modes: radius 0.75 analysis pixels/pair; minimum cells 4')
   expect(data).toEqual(original)
 })
 
@@ -220,8 +235,16 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     doc.nodes.find(node => node.id === 'ngroups')!.params.tolerance = .5
     const groups = await evaluate('nview', 2, 'out:frame:groups'); groups.release()
     expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(2)
+    doc.nodes.find(node => node.id === 'ngroups')!.params.modeRadius = 0
+    doc.nodes.find(node => node.id === 'ngroups')!.params.minimumModeCells = 2
+    const modes = await evaluate('nview', 2, 'out:string:summary')
+    try {
+      expect(modes.value.kind).toBe('string')
+      if (modes.value.kind === 'string') expect(modes.value.value).toContain('Velocity modes: radius 0 analysis pixels/pair; minimum cells 2')
+    } finally { modes.release() }
+    expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(3)
     doc.nodes.find(node => node.id === 'ncandidates')!.params.cellSize = 12
     const candidates = await evaluate('ncandidateview', 2, 'out:frame:candidates'); candidates.release()
-    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(2)
+    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(3)
   } finally { cache.clear() }
 })

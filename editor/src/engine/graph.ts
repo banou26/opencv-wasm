@@ -103,6 +103,11 @@ export const parseDocument = (value: unknown): GraphDocument => {
       fillIsolated: n.params.fillIsolated === undefined ? true : n.params.fillIsolated,
       bridgeTemporal: n.params.bridgeTemporal === undefined ? true : n.params.bridgeTemporal,
     } } : n) }
+    // Early direct-motion graphs predate the independently adjustable mode consensus.
+    body = { ...body, nodes: body.nodes.map(n => n?.type === 'vectorGroups' && n.params ? { ...n, params: { ...n.params,
+      modeRadius: n.params.modeRadius === undefined ? .75 : n.params.modeRadius,
+      minimumModeCells: n.params.minimumModeCells === undefined ? 4 : n.params.minimumModeCells,
+    } } : n) }
     // Retire the rejected spatial prior, including saved wires to its former control.
     const histories = new Set(body.nodes.filter(n => n?.type === 'regionalHistory').map(n => n.id))
     body = { ...body, nodes: body.nodes.map(n => {

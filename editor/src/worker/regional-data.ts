@@ -21,7 +21,7 @@ export const regionalSummary = (data: RegionalData): string => {
   const lines = [`${data.stage}: frames ${data.scene.first} to ${data.scene.last} (inclusive)`, `${frame.width} x ${frame.height} analysis / ${data.scene.sourceWidth} x ${data.scene.sourceHeight} source`]
   if (data.sequence) lines.push(`${data.sequence.pairs.length} forward pairs; invalid pixels are unknown`)
   if (data.stage === 'vector-candidates' || data.stage === 'vector-groups') lines.push('Regional motion vectors candidates; mixed cell medians retained; no spatial or temporal hole filling')
-  if (data.vectorGroups) lines.push(`${data.vectorGroups.groups.length} direct motion groups / ${data.vectorGroups.tracks.length} cell histories; not artwork identities`, `Velocity tolerance: ${data.vectorGroups.options.tolerance} analysis pixels/pair; minimum shared pairs: ${data.vectorGroups.options.minimumOverlap}`)
+  if (data.vectorGroups) lines.push(`${data.vectorGroups.groups.length} direct motion groups / ${data.vectorGroups.tracks.length} cell histories; not artwork identities`, `Velocity tolerance: ${data.vectorGroups.options.tolerance} analysis pixels/pair; minimum shared pairs: ${data.vectorGroups.options.minimumOverlap}`, `Velocity modes: radius ${data.vectorGroups.options.modeRadius} analysis pixels/pair; minimum cells ${data.vectorGroups.options.minimumModeCells}; radius 0 disables consensus`)
   if (data.stage === 'pooled' || data.tracks) lines.push('Cells: 96, 48, 24, 12, 8; one shared dense field')
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)
   if (data.families) {

@@ -1,3 +1,4 @@
+import { poolVectorModes } from "./vector-modes.js";
 const median = (values) => {
     values.sort((a, b) => a - b);
     const middle = values.length >> 1;
@@ -34,7 +35,7 @@ function gridsFor(sequence) {
     });
 }
 /** All measured candidates survive here, including internally mixed cells. No spatial filling. */
-function trajectories(grids, width, height) {
+function trajectories(grids, raw, width, height) {
     const tracks = [];
     let previous = new Map();
     for (const [frame, grid] of grids.entries()) {
@@ -43,11 +44,13 @@ function trajectories(grids, width, height) {
             if (cell.dx === null || cell.dy === null)
                 continue;
             const arrival = previous.get(cellIndex);
-            const inherited = arrival?.track.samples.at(-1)?.coherent === cell.coherent ? arrival : undefined;
+            const inherited = arrival?.track.samples.at(-1)?.consensus === cell.coherent ? arrival : undefined;
             const track = inherited?.track ?? { id: tracks.length, group: null, samples: [] };
             if (!inherited)
                 tracks.push(track);
-            track.samples.push({ frame, cell: cellIndex, dx: cell.dx, dy: cell.dy, coherent: cell.coherent });
+            const original = raw[frame].cells[cellIndex];
+            track.samples.push({ frame, cell: cellIndex, dx: original.dx, dy: original.dy, coherent: original.coherent,
+                consensus: cell.coherent, modelDx: cell.dx, modelDy: cell.dy });
             const x = (inherited?.x ?? cell.x + cell.width / 2) + cell.dx;
             const y = (inherited?.y ?? cell.y + cell.height / 2) + cell.dy;
             if (x < 0 || y < 0 || x >= width || y >= height)
@@ -68,12 +71,16 @@ function trajectories(grids, width, height) {
  */
 export function groupVectorCandidates(sequence, options = {}) {
     const tolerance = options.tolerance ?? .75, minimumOverlap = options.minimumOverlap ?? 4;
-    if (!Number.isFinite(tolerance) || tolerance <= 0 || !Number.isSafeInteger(minimumOverlap) || minimumOverlap < 2) {
+    const modeRadius = options.modeRadius ?? .75, minimumModeCells = options.minimumModeCells ?? 4;
+    if (!Number.isFinite(tolerance) || tolerance <= 0 || !Number.isSafeInteger(minimumOverlap) || minimumOverlap < 2
+        || !Number.isFinite(modeRadius) || modeRadius < 0 || !Number.isSafeInteger(minimumModeCells) || minimumModeCells < 1) {
         throw new RangeError('Invalid vector grouping tolerance or minimum overlap');
     }
-    const grids = gridsFor(sequence), { width, height, frameCount } = sequence, cellSize = grids[0].cellSize;
-    const tracks = trajectories(grids, width, height), profiles = [];
-    const strong = tracks.map(track => track.samples.filter(sample => sample.coherent));
+    const raw = gridsFor(sequence), { width, height, frameCount } = sequence, cellSize = raw[0].cellSize;
+    const grids = modeRadius ? raw.map(grid => poolVectorModes(grid, { tolerance: modeRadius, minimumCells: minimumModeCells })) : raw;
+    const tracks = trajectories(grids, raw, width, height), profiles = [];
+    const modelSample = (sample) => ({ ...sample, dx: sample.modelDx, dy: sample.modelDy });
+    const strong = tracks.map(track => track.samples.filter(sample => sample.consensus).map(modelSample));
     // A fixed representative at each profile/time gives a cheap candidate index.
     // Exact comparisons below still inspect every shared reliable observation.
     const bins = new Map();
@@ -167,12 +174,12 @@ export function groupVectorCandidates(sequence, options = {}) {
             }
             // Mixed samples never extend a model across a time at which it has no
             // reliable evidence, even when another part of this trajectory matched.
-            if (!bounds || !fits([sample], profiles[id], 1)) {
+            if (!bounds || !fits([sample.consensus ? modelSample(sample) : sample], profiles[id], 1)) {
                 out.confidence[sample.cell] = 4;
                 continue;
             }
             out.labels[sample.cell] = id;
-            out.confidence[sample.cell] = sample.coherent && reliable.length >= minimumOverlap ? 2 : 1;
+            out.confidence[sample.cell] = sample.consensus && reliable.length >= minimumOverlap ? 2 : 1;
         }
     }
     for (const frame of frames) {
@@ -188,6 +195,6 @@ export function groupVectorCandidates(sequence, options = {}) {
             dy: median(cells.map(cell => grids[frame.frame].cells[cell].dy)),
             strongCells: cells.filter(cell => frame.confidence[cell] === 2).length, }));
     }
-    return { width, height, frameCount, cellSize, options: { tolerance, minimumOverlap },
+    return { width, height, frameCount, cellSize, options: { tolerance, minimumOverlap, modeRadius, minimumModeCells },
         groups: profiles.map((profile, id) => ({ id, trackCount: members[id], observedPairs: profile.size })), frames, tracks };
 }

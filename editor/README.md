@@ -225,9 +225,20 @@ Reflected-border estimates and mixed medians are still uncertain, not observed
 layer ownership. Default cells are 8 analysis pixels; their size, texture cutoff,
 flow settings and grouping tolerance remain editable.
 
-Direct Velocity Groups advects individual candidate-cell histories and compares
-their time-varying velocities directly, without first building spatial regional
-groups. Coherent histories establish motion models. Weak or short candidates may
+Direct Velocity Groups first identifies supported modes in velocity space:
+nearby vectors vote for a shared median velocity before individual cell histories
+are tracked. **Mode radius** defaults to 0.75 analysis pixels per pair and
+**Minimum mode cells** defaults to four. Set radius to zero to compare the
+unsnapped candidate-history experiment. This is consensus among measured vectors,
+not support completion: empty cells receive no motion, and the original candidate
+medians and their confidence remain unchanged in the candidate inspector.
+Saved experimental graphs acquire missing mode controls automatically; explicit
+values, including radius zero, are preserved. Mode edits invalidate grouping but
+reuse the cached scene vectors.
+
+It then advects individual candidate-cell histories and compares their
+time-varying velocities directly, without first building spatial regional groups.
+Coherent histories establish motion models. Weak or short candidates may
 join a uniquely compatible model but cannot grow it. Conflicting or ambiguous
 candidates remain explicitly unresolved. No spatial or temporal support-completion
 pass runs. Same motion is a candidate motion group, not proof of shared artwork;

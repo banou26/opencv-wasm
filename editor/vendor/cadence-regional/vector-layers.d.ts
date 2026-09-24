@@ -2,6 +2,8 @@ import type { RegionalSupportSequence } from './regions.ts';
 export type VectorGroupingOptions = {
     tolerance?: number;
     minimumOverlap?: number;
+    modeRadius?: number;
+    minimumModeCells?: number;
 };
 export type VectorCandidateSample = {
     frame: number;
@@ -9,6 +11,10 @@ export type VectorCandidateSample = {
     dx: number;
     dy: number;
     coherent: boolean;
+    /** Consensus is a velocity-mode proposal; raw measurements above are unchanged. */
+    consensus: boolean;
+    modelDx: number;
+    modelDy: number;
 };
 export type VectorCandidateTrack = {
     id: number;
@@ -36,6 +42,8 @@ export type VectorLayerGroups = {
     options: {
         tolerance: number;
         minimumOverlap: number;
+        modeRadius: number;
+        minimumModeCells: number;
     };
     groups: {
         id: number;

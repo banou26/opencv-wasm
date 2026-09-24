@@ -7,6 +7,8 @@ export declare const INK_THERE = 4;
 export declare const OBSERVED = 8;
 /** Unchanged only under one of the other motions: the pixel belongs to another rigid layer. */
 export declare const OTHER_LAYER = 16;
+/** Changed next to another rigid layer, within its relative motion: covered or revealed by it, not redrawn. */
+export declare const OCCLUDED = 32;
 export type PairChangeOptions = {
     /** Half-pixel search that absorbs the source's own resampling of every edge. */
     reach?: number;

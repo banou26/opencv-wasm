@@ -131,13 +131,23 @@ export async function measureCameraPath(source, options = {}) {
     }
     const tracks = motionTracks(found, continuity), camera = (await referenceTrack(source, found, tracks)).members;
     const fits = [], motions = [];
+    const present = camera.flatMap((m, i) => m ? [i] : []);
     for (let pair = 0; pair < found.length; pair++) {
-        const start = options.start?.(pair), last = fits[fits.length - 1] ?? coarse[pair];
-        const nearest = found[pair].reduce((best, c) => !best || Math.hypot(c.dx - last.dx, c.dy - last.dy) < Math.hypot(best.dx - last.dx, best.dy - last.dy) ? c : best, undefined);
-        let chosen = start ? undefined : camera[pair] ?? nearest;
+        const start = options.start?.(pair);
+        let chosen = start ? undefined : camera[pair];
         if (!chosen) {
+            // The reference layer went unmeasured on this pair; refine from its nearest measured step, never
+            // from another layer's candidate.
+            const before = present.filter(i => i < pair).pop(), after = present.find(i => i > pair);
+            const expected = before !== undefined && after !== undefined
+                ? { dx: camera[before].dx + (camera[after].dx - camera[before].dx) * (pair - before) / (after - before), dy: camera[before].dy + (camera[after].dy - camera[before].dy) * (pair - before) / (after - before) }
+                : camera[before ?? after ?? -1] ?? coarse[pair];
             const a = pixelLuma(await source.frame(pair)), b = pixelLuma(await source.frame(pair + 1));
-            chosen = refineTranslation(a, b, source.width, source.height, start ?? coarse[pair]);
+            chosen = refineTranslation(a, b, source.width, source.height, start ?? expected);
+            // A textured layer can pull the refinement onto itself; then trust the reference's own neighbors.
+            const other = found[pair].some(c => Math.hypot(c.dx - chosen.dx, c.dy - chosen.dy) < .5);
+            if (!start && other && Math.hypot(chosen.dx - expected.dx, chosen.dy - expected.dy) > 1)
+                chosen = { ...expected, residual: NaN, samples: 0, iterations: 0 };
         }
         fits.push(chosen);
         motions.push([{ ...chosen, blocks: 'blocks' in chosen ? chosen.blocks : 0 }, ...found[pair].filter(c => Math.hypot(c.dx - chosen.dx, c.dy - chosen.dy) >= .15)]);

@@ -24,12 +24,15 @@ export type PairEvidence = {
     indices: Uint32Array;
     flags: Uint8Array;
 };
+/** `others`/`othersBackward`, when present, pack per pair the pixels only another rigid layer explains (frame p, then p + 1). */
 export type DrawingEvidence = {
     camera: CameraPath;
     atlas: WorldAtlas;
     dilation: number;
     inkDilation: number;
     pairs: PairEvidence[];
+    others?: Uint8Array[];
+    othersBackward?: Uint8Array[];
 };
 export declare function cameraPath(width: number, height: number, steps: Translation[]): CameraPath;
 export declare function worldAtlas(camera: CameraPath, margin?: number): WorldAtlas;

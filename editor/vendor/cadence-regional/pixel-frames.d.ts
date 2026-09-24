@@ -23,14 +23,23 @@ export type LayerFrames = {
     frames: [number, number][][];
     /** Per frame, the layer of each silhouette component, in connectedComponents label order (label 1 first). */
     componentLayers: Int32Array[];
+    /** Per pair, the fraction of each layer's area that changed: the redraw strength. */
+    strength: Float32Array[];
     options: {
         minimumChanges: number;
         minimumFraction: number;
+        minimumContrast: number;
     };
 };
 /** Layer id plus one for every pixel of a frame, 0 outside all silhouettes. */
 export declare function frameLayerLabels(silhouettes: SceneSilhouettes, frames: LayerFrames, frame: number): Uint16Array;
+/**
+ * A pair redraws a layer when its changes inside the layer reach `minimumChanges` and `minimumFraction` of
+ * its area, and their density there is `minimumContrast` times the density outside every layer: on a fast
+ * pan, resampling residue spreads over the whole frame and must not split a hold.
+ */
 export declare function layerFrames(evidence: DrawingEvidence, silhouettes: SceneSilhouettes, options?: {
     minimumChanges?: number;
     minimumFraction?: number;
+    minimumContrast?: number;
 }): LayerFrames;

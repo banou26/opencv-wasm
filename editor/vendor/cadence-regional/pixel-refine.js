@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { CV_32F, CV_8UC1, DIST_L2, Mat, distanceTransform, matFromArray } from '@banou/opencv-wasm';
+import { CC_STAT_AREA, CV_32F, CV_8UC1, DIST_L2, Mat, connectedComponentsWithStats, distanceTransform, matFromArray } from '@banou/opencv-wasm';
 import { packMask, unpackMask } from "./pixel-layers.js";
 import { renderPlate } from "./pixel-plate.js";
 /**
@@ -111,16 +111,35 @@ export function carveSilhouette(mask, pixels, plate, options = {}) {
 }
 /** Carve every frame's silhouettes against a plate built from them; the plate should be rebuilt afterwards. */
 export async function refineSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { progress, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
+    const { progress, minimumArea: area, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
+    const minimumArea = area ?? silhouettes.options.minimumArea ?? 800;
     const trusted = { ...plate, count: plate.count.map(n => n >= minimumCount ? n : 0) };
     const frames = [], carved = [];
     for (let frame = 0; frame < silhouettes.frames.length; frame++) {
-        await progress?.(frame, silhouettes.frames.length);
-        const before = silhouettes.frames[frame], rendered = renderPlate(trusted, camera, frame);
-        const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve);
-        const area = result.mask.reduce((sum, m) => sum + m, 0);
-        frames.push({ packed: packMask(result.mask), area, components: before.components });
-        carved.push(result.carved);
+        const env_2 = { stack: [], error: void 0, hasError: false };
+        try {
+            await progress?.(frame, silhouettes.frames.length);
+            const before = silhouettes.frames[frame], rendered = renderPlate(trusted, camera, frame);
+            const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve);
+            // Carving can cut splinters off a silhouette; they go the way of any small component.
+            const solid = __addDisposableResource(env_2, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_2, new Mat(), false), stats = __addDisposableResource(env_2, new Mat(), false), centroids = __addDisposableResource(env_2, new Mat(), false);
+            const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count);
+            for (let label = 1; label < count; label++)
+                keep[label] = Number(stats.data32S[label * stats.cols + CC_STAT_AREA] >= minimumArea);
+            for (let p = 0; p < size; p++)
+                if (result.mask[p] && !keep[l[p]])
+                    result.mask[p] = 0;
+            const area = result.mask.reduce((sum, m) => sum + m, 0);
+            frames.push({ packed: packMask(result.mask), area, components: before.components });
+            carved.push(result.carved);
+        }
+        catch (e_2) {
+            env_2.error = e_2;
+            env_2.hasError = true;
+        }
+        finally {
+            __disposeResources(env_2);
+        }
     }
     return { ...silhouettes, frames, carved };
 }

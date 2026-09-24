@@ -74,8 +74,13 @@ export function frameLayerLabels(silhouettes, frames, frame) {
     const { labels } = silhouetteComponents(silhouettes, frame), layers = frames.componentLayers[frame];
     return Uint16Array.from(labels, l => l ? layers[l - 1] + 1 : 0);
 }
+/**
+ * A pair redraws a layer when its changes inside the layer reach `minimumChanges` and `minimumFraction` of
+ * its area, and their density there is `minimumContrast` times the density outside every layer: on a fast
+ * pan, resampling residue spreads over the whole frame and must not split a hold.
+ */
 export function layerFrames(evidence, silhouettes, options = {}) {
-    const minimumChanges = options.minimumChanges ?? 60, minimumFraction = options.minimumFraction ?? .004;
+    const minimumChanges = options.minimumChanges ?? 60, minimumFraction = options.minimumFraction ?? .05, minimumContrast = options.minimumContrast ?? 5;
     const { camera, atlas } = evidence, { width, height } = camera, size = width * height, count = silhouettes.frames.length;
     // Pass one links components of consecutive frames; only two frames of labels are ever held.
     const firstLabel = [], links = [];
@@ -124,6 +129,7 @@ export function layerFrames(evidence, silhouettes, options = {}) {
     const layers = Array.from({ length: layerCount }, (_, id) => ({ id, drawings: [] }));
     const frames = [], open = new Map();
     let redraw;
+    const strength = [];
     for (let frame = 0; frame < count; frame++) {
         const { labels } = silhouetteComponents(silhouettes, frame), table = componentLayers[frame];
         const map = Uint16Array.from(labels, l => l ? table[l - 1] + 1 : 0);
@@ -168,8 +174,11 @@ export function layerFrames(evidence, silhouettes, options = {}) {
                 if (x >= 0 && y >= 0 && x < width && y < height)
                     hits[map[y * width + x]]++;
             }
-            redraw = Uint8Array.from({ length: layerCount }, (_, layer) => Number(area[layer + 1] > 0 && hits[layer + 1] >= Math.max(minimumChanges, minimumFraction * area[layer + 1])));
+            const outside = hits[0] / Math.max(1, area[0]);
+            strength.push(Float32Array.from({ length: layerCount }, (_, layer) => area[layer + 1] ? hits[layer + 1] / area[layer + 1] : 0));
+            redraw = Uint8Array.from({ length: layerCount }, (_, layer) => Number(area[layer + 1] > 0 && hits[layer + 1] >= Math.max(minimumChanges, minimumFraction * area[layer + 1])
+                && hits[layer + 1] / area[layer + 1] >= minimumContrast * outside));
         }
     }
-    return { layers, frames, componentLayers, options: { minimumChanges, minimumFraction } };
+    return { layers, frames, componentLayers, strength, options: { minimumChanges, minimumFraction, minimumContrast } };
 }

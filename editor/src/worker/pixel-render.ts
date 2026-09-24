@@ -1,4 +1,4 @@
-import { ARRIVE, LEAVE, drawingInk, frameOffset, renderPlate, unpackMask, type PixelFrame } from 'cadence/regional'
+import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, renderPlate, unpackMask, type PixelFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
 type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; drawings: Uint8Array }
@@ -62,6 +62,13 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     if (!plate.known[p]) unknown++
     else { over12 += Number(residual[p]! > 12); over20 += Number(residual[p]! > 20) }
   }
+  const matte = plate && data.pixelSilhouettes ? matteLayer(pixels, mask, plate) : undefined
+  const layerColor = (p: number): [number, number, number] => {
+    const c = checker(p)
+    if (!matte) return mask[p] ? rgb(p) : [c, c, c]
+    const a = matte.alpha[p]!, q = p * 3
+    return [matte.color[q + 2]! * a + c * (1 - a), matte.color[q + 1]! * a + c * (1 - a), matte.color[q]! * a + c * (1 - a)]
+  }
   const none = () => 0
   const panels: Omit<Panels, 'drawings'> & { drawings?: Uint8Array } = {
     source: downsample(width, height, displayWidth, displayHeight, p => rgb(p), none),
@@ -71,7 +78,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     }, p => changes[p]! ? 1 + Number((changes[p]! & 3) !== 0) : 0),
     ink: downsample(width, height, displayWidth, displayHeight, p => edge[p] ? [40, 225, 255] : ink[p]! & ARRIVE && ink[p]! & LEAVE ? [255, 255, 255] : ink[p]! & ARRIVE ? [70, 245, 90] : ink[p]! & LEAVE ? [245, 80, 235] : rgb(p, mask[p] ? .7 : .3),
       p => edge[p] ? 3 : ink[p] ? 2 : 0),
-    layer: downsample(width, height, displayWidth, displayHeight, p => mask[p] ? rgb(p) : [checker(p), checker(p), checker(p)], none),
+    layer: downsample(width, height, displayWidth, displayHeight, layerColor, none),
     plate: downsample(width, height, displayWidth, displayHeight, p => {
       if (!plate) return [checker(p), checker(p), checker(p)]
       if (!plate.known[p]) return [checker(p) + 50, 40, checker(p) + 70]
@@ -90,6 +97,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     evidence && index < pairs ? `Pair change: forward ${evidence.summaries[index]!.forward}, backward ${evidence.summaries[index]!.backward} pixels; noise ${evidence.summaries[index]!.noise.toFixed(3)} codes` : evidence ? 'Final frame: no outgoing pair' : 'Connect Redraw Ink Evidence for change and ink panels',
     data.pixelSilhouettes ? `Silhouettes: ${components.length} components, ${components.reduce((s, c) => s + c.area, 0)} px${components.length ? `; ${components.map(c => `${c.area} px at ${c.box.join(',')}`).join('; ')}` : ''}` : 'Connect Drawing Silhouettes for layer panels',
     plate ? `Plate outside silhouettes: ${outside} px; unknown ${unknown}; over 12 codes ${over12}; over 20 codes ${over20}` : 'Connect Background Plate for the plate panel',
+    matte ? `Edge matte: ${matte.unmixed} pixels unmixed against the plate; layer panel shows straight alpha over a checkerboard` : 'Layer panel: binary silhouette (no plate for an edge matte)',
     ...(data.pixelFrames ? data.pixelFrames.frames[index]!.map(([layer, drawing]) => { const d = data.pixelFrames!.layers[layer]!.drawings[drawing]!; return `Layer ${layer}: drawing ${drawing} of ${data.pixelFrames!.layers[layer]!.drawings.length}, frames ${d.first + data.scene.first} to ${d.last + data.scene.first}` }) : ['Connect Layer Frames for the drawing sheet']),
     'Ink colors: green arrived at the last change, magenta leaves at the next, white both. Cyan: silhouette outline.',
   ].join('\n')

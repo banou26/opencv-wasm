@@ -22,10 +22,10 @@ export const PIXEL_CATALOG: NodeSpec[] = [
     number('band', 'Band · px', 8, 0, 64, 1), number('tolerance', 'Tolerance · codes', 6, 0, 64, .5), number('minimumCount', 'Minimum count', 3, 1, 1000, 1),
   ]),
   stage('pixelFrames', 'Layer Frames', 'Link silhouette components through time by their overlap in world coordinates; everything that ever touches becomes one layer. Split each layer into held drawings at every pair whose changes inside it reach Minimum changes and Minimum fraction of its area. Each drawing keeps a thumbnail cut from its first frame.', 'pixel-plate', 'pixel-frames', [
-    number('minimumChanges', 'Minimum changes · px', 60, 1, 1000000, 1), number('minimumFraction', 'Minimum fraction of layer', .004, 0, 1, .001),
+    number('minimumChanges', 'Minimum changes · px', 60, 1, 1000000, 1), number('minimumFraction', 'Minimum fraction of layer', .05, 0, 1, .005),
   ]),
   { type: 'pixelInspect', title: 'Inspect Pixel Layers', category: 'Pixel layers', algorithm: 'Read-only full-resolution panels', version: 1,
-    description: 'Show one source frame with the pixel stages computed so far. Changes: this frame to the next, green where ink arrives, magenta where it leaves, yellow for other changes. Ink: the held drawing’s ink with its silhouette outline in cyan. Layer: silhouette pixels over a checkerboard. Plate: the background at this camera position, unknown in purple, disagreement outside the silhouettes in orange (over 12 codes) and red (over 20). Layer frames: every held drawing of the layers on screen, the one shown now outlined.',
+    description: 'Show one source frame with the pixel stages computed so far. Changes: this frame to the next, green where ink arrives, magenta where it leaves, yellow for other changes. Ink: the held drawing’s ink with its silhouette outline in cyan. Layer: silhouette pixels over a checkerboard, with the edge unmixed against the plate where it is known (straight alpha). Plate: the background at this camera position, unknown in purple, disagreement outside the silhouettes in orange (over 12 codes) and red (over 20). Layer frames: every held drawing of the layers on screen, the one shown now outlined.',
     inputs: [regions('in')], outputs: [
       { id: 'out:frame:source', label: 'Source', type: 'frame' }, { id: 'out:frame:changes', label: 'Changes to next', type: 'frame' },
       { id: 'out:frame:ink', label: 'Held ink', type: 'frame' }, { id: 'out:frame:layer', label: 'Layer', type: 'frame' },

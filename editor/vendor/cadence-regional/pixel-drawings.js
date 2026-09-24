@@ -247,6 +247,14 @@ export function drawingSilhouette(evidence, frame, options = {}) {
         const mask = new Uint8Array(width * height), l = labels.data32S;
         for (let p = 0; p < mask.length; p++)
             mask[p] = Number(keep[l[p]] >= 0);
+        // A pixel another rigid layer explains on both sides of the frame belongs to that layer, not a drawing.
+        const forward = evidence.others?.[frame], backward = frame > 0 ? evidence.othersBackward?.[frame - 1] : undefined;
+        if (forward || backward)
+            for (let p = 0; p < mask.length; p++) {
+                const bit = 128 >> (p & 7), f = forward ? forward[p >> 3] & bit : 1, b = backward ? backward[p >> 3] & bit : 1;
+                if (f && b)
+                    mask[p] = 0;
+            }
         return { width, height, frame, mask, ink, components };
     }
     catch (e_4) {

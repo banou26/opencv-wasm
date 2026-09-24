@@ -27,6 +27,7 @@ export declare function carveSilhouette(mask: Uint8Array, pixels: PixelFrame, pl
 };
 /** Carve every frame's silhouettes against a plate built from them; the plate should be rebuilt afterwards. */
 export declare function refineSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: CarveOptions & {
+    minimumArea?: number;
     progress?: StageProgress;
 }): Promise<SceneSilhouettes & {
     carved: number[];

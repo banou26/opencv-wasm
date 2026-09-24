@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { BORDER_REPLICATE, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, INTER_CUBIC, MORPH_RECT, WARP_INVERSE_MAP, Mat, Sobel, blur, dilate, getStructuringElement, matFromArray, warpAffine, } from '@banou/opencv-wasm';
+import { BORDER_REPLICATE, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, INTER_CUBIC, MORPH_RECT, WARP_INVERSE_MAP, Mat, Sobel, blur, dilate, getStructuringElement, matFromArray, warpAffine, } from '@banou/opencv-wasm';
 import { checkPixelFrame, pixelLuma } from "./pixel-frame.js";
 export const CHANGED = 1;
 /** This frame is darker than its counterpart: ink is present here. */
@@ -60,6 +60,8 @@ export const INK_THERE = 4;
 export const OBSERVED = 8;
 /** Unchanged only under one of the other motions: the pixel belongs to another rigid layer. */
 export const OTHER_LAYER = 16;
+/** Changed next to another rigid layer, within its relative motion: covered or revealed by it, not redrawn. */
+export const OCCLUDED = 32;
 function median(values, count) {
     const histogram = new Uint32Array(4097);
     for (let i = 0; i < count; i++)
@@ -211,12 +213,38 @@ export function measurePairChange(a, b, d, options = {}) {
             observed++;
             raw[p] = Number(best[p] > limit);
         }
+    // Another rigid layer sweeping over this one covers and reveals a band as wide as their relative
+    // motion; those pixels have no counterpart under any motion but were not redrawn.
+    const reachOther = Math.ceil(Math.max(0, ...(options.otherMotions ?? []).map(m => Math.hypot(m.dx - d.dx, m.dy - d.dy)))) + 2;
+    let occluded;
+    if (options.otherMotions?.length) {
+        const env_5 = { stack: [], error: void 0, hasError: false };
+        try {
+            const other = new Uint8Array(size);
+            for (let p = 0; p < size; p++)
+                other[p] = flags[p] & OTHER_LAYER ? 255 : 0;
+            const source = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, other), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: reachOther * 2 + 1, height: reachOther * 2 + 1 }), false);
+            dilate(source, grown, kernel);
+            occluded = grown.data.slice();
+        }
+        catch (e_5) {
+            env_5.error = e_5;
+            env_5.hasError = true;
+        }
+        finally {
+            __disposeResources(env_5);
+        }
+    }
     let changed = 0;
     for (let y = y0; y <= y1; y++)
         for (let x = x0; x <= x1; x++) {
             const p = y * width + x;
             if (!raw[p])
                 continue;
+            if (occluded?.[p]) {
+                flags[p] |= OCCLUDED;
+                continue;
+            }
             let neighbors = 0;
             for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++)
                 for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++)

@@ -295,9 +295,9 @@ cached motion grouping without spatial separation. No missing cells are filled.
 
 Groups are recomputed at each neighboring pair, so easing, acceleration and
 direction changes are not forced into one fixed velocity for the whole clip.
-IDs and colors are **frame-local**, not persistent identities; a repeated color
-across frames does not prove a tracked layer. Temporal identity remains a later
-problem and must not erase this first-pass support. Same motion is a candidate
+Raw IDs and colors are **frame-local**, not persistent identities; a repeated color
+across frames does not prove a tracked layer. The separate identity stage below
+associates these groups without erasing first-pass support. Same motion is a candidate
 motion group, not proof of shared artwork; co-moving characters/backgrounds and
 true rotation or scale remain limitations.
 
@@ -322,8 +322,9 @@ categories in this first pass. Unpainted group cells are not silently filled.
 The final source frame has no outgoing motion pair and consequently no motion overlay.
 
 **Track Motion Identities** adds a separate scene-level identity map after local
-grouping. It does not replace or relabel the measured groups. Background local
-group zero anchors track zero; foreground associations use camera-compensated
+grouping. It does not replace or relabel the measured groups. Dominant local
+group zero anchors track zero as a camera hypothesis, not a semantic guarantee;
+foreground associations use camera-compensated
 predicted support and one-to-one spatial matching. **Max gap (pairs)** defaults
 to 24 absent pairs, and **Match radius (cells)** defaults to three analysis cells.
 A temporarily absent track can regain its color when measured again. This does
@@ -338,6 +339,24 @@ Source pixels, measured confidence opacity, completed coverage and provenance
 are unchanged. The summary lists each track's local group, previous observation,
 matching score and dormant IDs. Raw **Inspect Direct Motion** and **Inspect Direct
 Completion** views remain available and do not apply identity colors.
+
+Reopen the **Direct motion layers** prefab to get the new tracking nodes; existing
+saved graphs are not silently rewired. Validation on 2026-09-25 passes 215 unit
+tests, typecheck, lint, build and the dedicated desktop/mobile browser smoke.
+Seven source pairs (94/100/101/103/106/107/109) retain the lone actor's track 5 and
+the left group's track 2 through local-ID changes and held gaps. Every measured
+and completed display pixel is checked against the original mask/opacity;
+source, provenance and background stay byte-identical. The same run retains all
+existing grouping, border-refinement and support-completion browser controls.
+
+The stable `diagnostics/vector-market-review.mp4` in the adjacent Cadence repo
+now displays tracked completed colors in its lower-left panel (293 frames,
+1920x1080/60fps). It is a diagnostic movie, not an interpolated source result.
+Decoded SHA-256: `084e7a0e8ad3869136981f8d8d44aa5d6cf9f2b59e2b99fe5e99f23d81844eb5`.
+Details are in `vector-market-browser.json`, `vector-market-identity-browser.json`
+and the paired `vector-market-identity-*-{raw,tracked}.png` sheets. Separate raw
+motion fragments can still receive separate tracks; this does not recover held
+foreground masks or solve ambiguous crossings.
 
 **Complete Direct Support** is a separate stage after grouping, with edge filling
 first and enclosed-hole filling second. **Extend to edges** preserves every

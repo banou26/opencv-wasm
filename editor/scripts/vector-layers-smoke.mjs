@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { movieFile } from './generation-smoke.mjs'
 import { assertViewport } from './layout-smoke.mjs'
-import { checkCharacterGroups, checkDistantGroups, checkSupportCompletion, checkBorderRefinement } from './vector-character-check.mjs'
+import { checkCharacterGroups, checkDistantGroups, checkSupportCompletion, checkBorderRefinement, checkTrackedIdentities } from './vector-character-check.mjs'
 
 const defaultClip = '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const clip = process.env.REGIONAL_CLIP ?? defaultClip
@@ -66,8 +66,10 @@ try {
   const completion = graph.nodes.find(node => node.type === 'vectorComplete')
   assert(completion)
   assert.deepEqual(completion.params, { fillHoles: true, fillEdges: true, edgeReach: 8 })
+  assert.deepEqual(graph.nodes.find(node => node.type === 'vectorTrack')?.params, { maxGap: 24, matchRadius: 3 })
+  assert(graph.nodes.some(node => node.type === 'vectorIdentityInspect' && node.params.stableColors === true))
   assert(graph.nodes.some(node => node.type === 'vectorCompletionInspect'))
-  assert(graph.edges.some(edge => edge.source === 'ncompletionview' && edge.sourceHandle === 'out:frame:completed' && edge.target === 'nbottom'))
+  assert(graph.edges.some(edge => edge.source === 'nidentityview' && edge.sourceHandle === 'out:frame:completed' && edge.target === 'nbottom'))
   assert(!graph.nodes.some(node => ['regionalMotion', 'regionalTracks', 'regionalHistory', 'regionalComplete'].includes(node.type)))
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click())
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'nview')
@@ -146,6 +148,13 @@ try {
     assert(cornerControl.edges.find(edge => edge.edge === 'right').owners.length >= 3, 'Source 25 must exercise competing measured right-edge groups')
     assert.equal(cornerControl.counts.unknown, 0, 'Source 25 must close the reported bottom-right gap')
   }
+  const identityChecks = clip === defaultClip ? await checkTrackedIdentities({ page, change, output, prefix,
+    cases: [94, 100, 101, 103, 106, 107, 109].map(frame => ({ frame, subjects: [
+      { name: 'lone', cells: [427, 428, 429, 430, 467, 468, 469, 470, 507, 508, 509, 510, 547, 548, 549, 550, 587, 588, 589, 590],
+        expected: [101, 107].includes(frame) ? 'dormant' : 'visible', minimumCells: 10 },
+      ...([94, 103, 109].includes(frame) ? [{ name: 'actors', cells: [566, 567, 568, 569, 606, 607, 608, 609], expected: 'visible', minimumCells: 3 }] : []),
+    ] })),
+  }) : []
   if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'ncompletionview') {
     await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Completion' }).click())
   }
@@ -193,7 +202,7 @@ try {
   assert.deepEqual([video.width, video.height, video.r_frame_rate, Number(video.nb_read_frames)], [1920, 1080, '60/1', count])
   const hash = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(output, `${prefix}-review.mp4`), '-f', 'hash', '-hash', 'sha256', '-'], { encoding: 'utf8' }).trim()
   assert.deepEqual(errors, [])
-  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, borderChecks, supportChecks, errors }, null, 2) + '\n')
+  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, borderChecks, supportChecks, identityChecks, errors }, null, 2) + '\n')
   console.log(`PASS direct prefab: desktop/mobile, 4 full-size ports, ${count} video frames; ${hash}`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])

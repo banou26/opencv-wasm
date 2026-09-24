@@ -80,6 +80,8 @@ const capture = async (page, change, frame, completion = false) => {
 /** Stable IDs change only colors; all geometry and existing raw diagnostics remain exact. */
 export async function checkTrackedIdentities({ page, change, output, prefix, cases }) {
   const control = page.getByLabel('Inspect Tracked Support Stable colors', { exact: true }), records = [], subjects = new Map()
+  const fragmentControl = page.getByLabel('Merge Transient Fragments Enabled', { exact: true })
+  const fragmentsEnabled = await fragmentControl.isChecked()
   const select = async tracked => {
     const id = tracked ? 'nidentityview' : 'ncompletionview', title = tracked ? 'Inspect Tracked Support' : 'Inspect Direct Completion'
     if (await page.locator('.inspect-panel').getAttribute('data-selected') !== id) await change(() => page.locator('.step-strip button').filter({ hasText: title }).click())
@@ -88,6 +90,7 @@ export async function checkTrackedIdentities({ page, change, output, prefix, cas
   const save = status => writeFile(resolve(output, `${prefix}-identity-browser.json`), `${JSON.stringify({ status, description: 'Native PNGs compare raw completion with tracked colors disabled/enabled. Source and provenance remain exact; every measured/completed cell maps one-to-one from its local ID, with identical coverage and opacity. Background pixels are byte-identical. Subject controls test track continuity through absence without inventing held foreground.', subjects: Object.fromEntries(subjects), records }, null, 2)}\n`)
   let current
   try {
+    if (fragmentsEnabled) await change(() => fragmentControl.setChecked(false))
     for (const sample of cases) {
       current = { frame: sample.frame, status: 'capturing', images: [] }; records.push(current)
       await select(false)
@@ -151,7 +154,94 @@ export async function checkTrackedIdentities({ page, change, output, prefix, cas
   } catch (error) {
     if (current) Object.assign(current, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
     await save('failed'); throw error
-  } finally { await select(true); await setEnabled(true) }
+  } finally {
+    await select(true); await setEnabled(true)
+    if (await fragmentControl.isChecked() !== fragmentsEnabled) await change(() => fragmentControl.setChecked(fragmentsEnabled))
+  }
+}
+
+/** Derived merges cannot change raw evidence or any unlisted completed pixel. */
+export async function checkFragmentMerges({ page, change, output, prefix, cases }) {
+  const control = page.getByLabel('Merge Transient Fragments Enabled', { exact: true }), records = []
+  const setEnabled = async enabled => { if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
+  const select = async () => {
+    if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'nidentityview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Tracked Support' }).click())
+    const stable = page.getByLabel('Inspect Tracked Support Stable colors', { exact: true })
+    if (!await stable.isChecked()) await change(() => stable.setChecked(true))
+  }
+  const save = status => writeFile(resolve(output, `${prefix}-fragment-browser.json`), `${JSON.stringify({ status, description: 'Native PNGs compare inferred transient-fragment membership disabled/enabled. Measured panels remain exact. Only explicitly listed completed cells and their pink provenance may change; unknown and dominant cells remain untouched. Fixed cells are test-only controls, not segmentation inputs.', records }, null, 2)}\n`)
+  let current
+  try {
+    await select()
+    for (const sample of cases) {
+      current = { frame: sample.frame, status: 'capturing', images: [] }; records.push(current)
+      await setEnabled(false)
+      const before = await capture(page, change, sample.frame, true)
+      await setEnabled(true)
+      const after = await capture(page, change, sample.frame, true)
+      const names = ['original', 'merged'].map(mode => `${prefix}-fragment-${String(sample.frame).padStart(3, '0')}-${mode}.png`)
+      saveSheet(before, output, names[0]); saveSheet(after, output, names[1])
+      Object.assign(current, { images: names, originalSummary: before.summary, mergedSummary: after.summary, status: 'checking' }); await save('incomplete')
+      assert.deepEqual([before.width, before.height, before.analysisWidth, before.analysisHeight, before.size], [after.width, after.height, after.analysisWidth, after.analysisHeight, after.size])
+      for (const port of ['source', 'measured']) assert(before.rasters[port].equals(after.rasters[port]), `Source ${sample.frame}: fragment inference changed ${port}`)
+      assert.deepEqual(after.counts, before.counts, `Source ${sample.frame}: fragment inference changed support counts`)
+      assert.match(before.summary, /Transient fragment merging: disabled; merged cells 0; components 0/)
+      const totals = after.summary.match(/Transient fragment merging: enabled; merged cells (\d+); components (\d+)/)
+      assert(totals, 'Fragment totals must be explicit')
+      const merges = [...after.summary.matchAll(/^Merge: group (\d+) -> (\d+); track (\d+) -> (\d+); reason (enclosed|partial); run (\d+); cells ([\d,]+); measured ([\d,]*)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), fromTrackId: Number(match[3]), toTrackId: Number(match[4]), reason: match[5], runLength: Number(match[6]), cells: match[7].split(',').map(Number), measuredCells: match[8] ? match[8].split(',').map(Number) : [] }))
+      assert.equal(merges.length, Number(totals[2]))
+      const mapping = new Map([...before.summary.matchAll(/^Track (\d+): local group (\d+);/gm)].map(match => [Number(match[2]), Number(match[1])]))
+      const changed = new Map()
+      for (const merge of merges) {
+        assert(merge.fromTrackId > 0 && merge.toTrackId > 0 && merge.fromTrackId !== merge.toTrackId)
+        assert.equal(mapping.get(merge.fromGroupId), merge.fromTrackId); assert.equal(mapping.get(merge.toGroupId), merge.toTrackId)
+        const measured = []
+        for (const cell of merge.cells) {
+          assert(!changed.has(cell), `Source ${sample.frame}: component records overlap`)
+          assert.equal(before.labelAt(cell).label, merge.fromTrackId)
+          if (before.measuredLabelAt(cell).label >= 0) { assert.equal(before.measuredLabelAt(cell).label, merge.fromTrackId); measured.push(cell) }
+          changed.set(cell, merge.toTrackId)
+        }
+        assert.deepEqual(measured.sort((a, b) => a - b), [...merge.measuredCells].sort((a, b) => a - b))
+      }
+      assert.equal(changed.size, Number(totals[1]))
+      assert(changed.size >= (sample.minimumMerged ?? 0))
+      if (sample.maximumMerged !== undefined) assert(changed.size <= sample.maximumMerged)
+      let verifiedPixels = 0
+      for (let cell = 0; cell < before.cells; cell++) {
+        const original = before.labelAt(cell), merged = after.labelAt(cell), target = changed.get(cell)
+        assert.equal(merged.label, target ?? original.label, `Source ${sample.frame} cell ${cell}: unlisted fragment relabel`)
+        assert.equal(merged.alpha, original.alpha, `Source ${sample.frame} cell ${cell}: fragment confidence changed`)
+        if (original.label <= 0) assert.equal(target, undefined, `Source ${sample.frame}: unknown/dominant cells must not merge`)
+        const left = Math.ceil(cell % before.columns * before.size * before.width / before.analysisWidth), right = Math.min(before.width, Math.ceil((cell % before.columns + 1) * before.size * before.width / before.analysisWidth))
+        const top = Math.ceil(Math.floor(cell / before.columns) * before.size * before.height / before.analysisHeight), bottom = Math.min(before.height, Math.ceil((Math.floor(cell / before.columns) + 1) * before.size * before.height / before.analysisHeight))
+        for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+          const p = (y * before.width + x) * 3
+          for (const port of ['completed', 'provenance']) for (let channel = 0; channel < 3; channel++) {
+            if (target === undefined) assert.equal(after.rasters[port][p + channel], before.rasters[port][p + channel], `Source ${sample.frame}: unlisted ${port} pixel changed`)
+            else {
+              const tint = port === 'completed' ? color(target) : [235, 95, 160], alpha = port === 'completed' ? original.alpha : .6
+              assert(Math.abs(after.rasters[port][p + channel] - Math.round(before.rasters.source[p + channel] * (1 - alpha) + tint[channel] * alpha)) <= 1, `Source ${sample.frame}: fragment ${port} pixel differs from recorded inference`)
+            }
+          }
+          verifiedPixels++
+        }
+      }
+      for (const cell of sample.protectedCells ?? []) assert(!changed.has(cell), `Source ${sample.frame}: protected cell ${cell} merged`)
+      for (const expected of sample.expected ?? []) {
+        const parent = before.labelAt(expected.parentCell).label
+        assert(parent > 0 && !changed.has(expected.parentCell))
+        for (const cell of expected.cells) { assert.equal(changed.get(cell), parent); assert.equal(after.labelAt(cell).label, parent) }
+      }
+      Object.assign(current, { status: 'passed', merges, mergedCells: changed.size, verifiedPixels })
+      await save('incomplete')
+      console.log(`Fragments source ${sample.frame}: ${changed.size} inferred cells, ${verifiedPixels} support pixels checked`)
+    }
+    await save('passed'); return records
+  } catch (error) {
+    if (current) Object.assign(current, { status: 'failed', error: error instanceof Error ? error.message : String(error) })
+    await save('failed'); throw error
+  } finally { await select(); await setEnabled(true) }
 }
 
 const saveSheet = (result, output, name) => {

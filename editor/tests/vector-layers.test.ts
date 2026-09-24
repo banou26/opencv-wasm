@@ -387,7 +387,7 @@ test('direct analysis caches across scrub order and display edits; velocity edit
       const result = await evaluate('n5', frame)
       try { expect([image(result.value).mat.cols, image(result.value).mat.rows]).toEqual([192, 128]) } finally { result.release() }
     }
-    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorTrack', 'vectorComplete']) expect(calls.get(type)).toBe(1)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorTrack', 'vectorComplete', 'vectorFragments']) expect(calls.get(type)).toBe(1)
     expect([...calls.keys()].some(type => type.startsWith('regional'))).toBe(false)
     doc.nodes.find(node => node.id === 'ncomplete')!.params.fillHoles = false
     const completion = await evaluate('ncompletionview', 2, 'out:string:summary')
@@ -415,6 +415,11 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     const untracked = await evaluate('nidentityview', 2, 'out:frame:completed')
     try { expect(image(untracked.value).mat.data32F).toEqual(measuredPixels) } finally { untracked.release() }
     expect(calls.get('vectorTrack')).toBe(1); expect(calls.get('vectorComplete')).toBe(3)
+    doc.nodes.find(node => node.id === 'nfragments')!.params.enabled = false
+    const unmerged = await evaluate('nidentityview', 2, 'out:frame:completed')
+    try { expect(image(unmerged.value).mat.data32F).toEqual(measuredPixels) } finally { unmerged.release() }
+    expect(calls.get('vectorTrack')).toBe(1); expect(calls.get('vectorComplete')).toBe(3)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
     doc.nodes.find(node => node.id === 'ntrack')!.params.maxGap = 8
     const retracked = await evaluate('nidentityview', 2, 'out:string:summary'); retracked.release()
     expect(calls.get('vectorTrack')).toBe(2); expect(calls.get('vectorComplete')).toBe(4)

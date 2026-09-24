@@ -1,4 +1,4 @@
-import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport, FrameVectorIdentities, VectorBorderCorrection } from 'cadence/regional'
+import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport, FrameVectorIdentities, FrameVectorFragments, VectorBorderCorrection } from 'cadence/regional'
 
 export type SceneData = {
   asset: string; first: number; last: number; sourceWidth: number; sourceHeight: number
@@ -6,7 +6,7 @@ export type SceneData = {
 }
 /** Immutable JS-owned data. No borrowed WASM views or decoded VideoFrame handles. */
 export type RegionalData = {
-  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion' | 'vector-candidates' | 'vector-groups' | 'vector-identities' | 'vector-completion'
+  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion' | 'vector-candidates' | 'vector-groups' | 'vector-identities' | 'vector-completion' | 'vector-fragments'
   scene: SceneData
   sequence?: RegionalMotionSequence
   tracks?: RegionalTracks
@@ -16,6 +16,7 @@ export type RegionalData = {
   frameVectorGroups?: FrameVectorGroups
   frameVectorSupport?: FrameVectorSupport
   frameVectorIdentities?: FrameVectorIdentities
+  frameVectorFragments?: FrameVectorFragments
   vectorBorderCorrections?: { frame: number; corrections: VectorBorderCorrection[] }[]
 }
 
@@ -42,6 +43,8 @@ export const regionalSummary = (data: RegionalData): string => {
   }
   if (data.frameVectorIdentities) lines.push(`${data.frameVectorIdentities.tracks.length} persistent motion tracks; max gap ${data.frameVectorIdentities.options.maxGap} pairs; match radius ${data.frameVectorIdentities.options.matchRadius} cells`,
     'Identity mapping does not change local groups or support. Dormant tracks do not recover foreground masks on background-only held frames.')
+  if (data.frameVectorFragments) lines.push(`Transient fragment merging: ${data.frameVectorFragments.options.enabled ? 'enabled' : 'disabled'}; ${data.frameVectorFragments.frames.reduce((sum, frame) => sum + frame.merges.length, 0)} inferred component merges`,
+    'Fragment labels are derived display membership. Raw measured groups, completed support and identity associations remain unchanged.')
   if (data.stage === 'pooled' || data.tracks) lines.push('Cells: 96, 48, 24, 12, 8; one shared dense field')
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)
   if (data.families) {

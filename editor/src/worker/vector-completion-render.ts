@@ -1,13 +1,14 @@
-import type { AnalysisFrame, FrameVectorIdentities } from 'cadence/regional'
+import type { AnalysisFrame, FrameVectorIdentities, FrameVectorFragments } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 import { regionalCanvas } from './regional-render'
 import { groupColor } from './vector-render'
+import { fragmentDisplayFrame } from './vector-fragment-render'
 
 const PROVENANCE = [[0, 0, 0], [150, 150, 165], [240, 178, 72], [66, 220, 183]] as const
 
 /** Inferred support is displayed separately and never becomes measured motion evidence. */
-export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: number, displaySource?: AnalysisFrame, identities?: FrameVectorIdentities) => {
-  if (data.stage !== 'vector-completion' || !data.frameVectorGroups || !data.frameVectorSupport) throw new Error('Direct completion inspection requires completed frame-vector support')
+export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: number, displaySource?: AnalysisFrame, identities?: FrameVectorIdentities, fragments?: FrameVectorFragments) => {
+  if (!['vector-completion', 'vector-fragments'].includes(data.stage) || !data.frameVectorGroups || !data.frameVectorSupport) throw new Error('Direct completion inspection requires completed frame-vector support')
   const { index, width, height, analysisWidth, analysisHeight, sourcePixels, paintRect } = regionalCanvas(data, sourceFrame, displaySource)
   const completion = data.frameVectorSupport, frame = completion.frames.find(frame => frame.frame === index)
   const measured = data.frameVectorGroups.frames.find(frame => frame.frame === index)
@@ -16,6 +17,7 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
   if (completion.width !== analysisWidth || completion.height !== analysisHeight || completion.cellSize !== data.frameVectorGroups.cellSize) throw new Error('Direct completion geometry does not match measured groups')
   if (index < data.scene.frames.length - 1 && (!frame || !measured)) throw new Error('Direct completion is missing an analyzed pair')
   if (identities && (identities.width !== analysisWidth || identities.height !== analysisHeight || identities.frameCount !== completion.frameCount || identities.cellSize !== completion.cellSize)) throw new Error('Identity geometry does not match completed support')
+  if (fragments && !identities) throw new Error('Fragment display requires stable identity colors')
   if (identities && frame && measured) {
     if (!identityFrame) throw new Error('Identity mapping is missing an analyzed pair')
     const known = new Set(measured.observations.map(group => group.id)), assigned = new Set<number>()
@@ -27,6 +29,7 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
     if (mapping.size !== known.size) throw new Error('Identity mapping must cover every measured group')
   }
   const colorId = (label: number) => identities ? mapping.get(label)! : label
+  const fragmentFrame = fragments && frame && measured ? fragmentDisplayFrame(fragments, completion, frame, measured, mapping) : undefined
   if (frame && measured) {
     const cells = completion.columns * completion.rows, known = new Set(measured.observations.map(group => group.id))
     if (frame.labels.length !== cells || frame.provenance.length !== cells || measured.labels.length !== cells) throw new Error('Direct completion grid is incomplete')
@@ -36,8 +39,8 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
       const x = cell % completion.columns * completion.cellSize, y = Math.floor(cell / completion.columns) * completion.cellSize
       const right = Math.min(analysisWidth, x + completion.cellSize), bottom = Math.min(analysisHeight, y + completion.cellSize)
       if (raw >= 0) paintRect(panels.measured, x, y, right, bottom, groupColor(colorId(raw)), measured.confidence[cell] === 1 ? .38 : .6)
-      if (label >= 0) paintRect(panels.completed, x, y, right, bottom, groupColor(colorId(label)), raw >= 0 && measured.confidence[cell] === 1 ? .38 : .6)
-      if (provenance > 0) paintRect(panels.provenance, x, y, right, bottom, PROVENANCE[provenance]!, .6)
+      if (label >= 0) paintRect(panels.completed, x, y, right, bottom, groupColor(fragmentFrame?.trackLabels[cell] ?? colorId(label)), raw >= 0 && measured.confidence[cell] === 1 ? .38 : .6)
+      if (provenance > 0) paintRect(panels.provenance, x, y, right, bottom, fragmentFrame?.merged[cell] ? [235, 95, 160] : PROVENANCE[provenance]!, .6)
     }
   }
   const summary = [
@@ -58,6 +61,12 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
       `Dormant tracks: ${identityFrame?.dormantTrackIds.join(', ') || 'none'}`,
       'Held background-only frames remain background. Dormant identities do not create foreground masks.',
       ...(identityFrame?.observations ?? []).map(observation => `Track ${observation.trackId}: local group ${observation.groupId}; previous source ${observation.previousFrame === null ? 'none' : observation.previousFrame + data.scene.first}; score ${observation.score === null ? 'new' : observation.score.toFixed(4)}`),
+    ] : []),
+    ...(fragments ? [
+      `Transient fragment merging: ${fragments.options.enabled ? 'enabled' : 'disabled'}; merged cells ${fragmentFrame?.merged.reduce((sum, value) => sum + value, 0) ?? 0}; components ${fragmentFrame?.merges.length ?? 0}`,
+      `Fragment limits: partial ${fragments.options.maxCells} measured cells; enclosed ${fragments.options.maxCells * 4}; ${fragments.options.maxRun} consecutive pairs`,
+      'Pink provenance: inferred fragment membership. Source, measured groups, original completion and track associations remain unchanged.',
+      ...(fragmentFrame?.merges ?? []).map(merge => `Merge: group ${merge.fromGroupId} -> ${merge.toGroupId}; track ${merge.fromTrackId} -> ${merge.toTrackId}; reason ${merge.reason}; run ${merge.runLength}; cells ${merge.cells.join(',')}; measured ${merge.measuredCells.join(',')}`),
     ] : []),
   ].join('\n')
   return { width, height, panels, summary }

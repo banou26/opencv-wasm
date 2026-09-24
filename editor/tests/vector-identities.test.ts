@@ -49,7 +49,7 @@ test('identity stage is explicit, raw inspectors stay raw, and only the final su
 
 test('existing untracked completion graphs are not silently migrated', () => {
   let doc = vectorLayersGraph()
-  const removed = new Set(['ntrack', 'nidentityview'])
+  const removed = new Set(['ntrack', 'nidentityview', 'nfragments'])
   doc = { ...doc, nodes: doc.nodes.filter(node => !removed.has(node.id)), edges: doc.edges.filter(edge => !removed.has(edge.source) && !removed.has(edge.target)) }
   doc = connect(doc, { source: 'ngroups', sourceHandle: 'out:regions:data', target: 'ncomplete', targetHandle: 'in:regions:data' })
   for (const [port, input] of [['completed', 'a'], ['provenance', 'b']]) doc = connect(doc, { source: 'ncompletionview', sourceHandle: `out:frame:${port}`, target: 'nbottom', targetHandle: `in:frame:${input}` })

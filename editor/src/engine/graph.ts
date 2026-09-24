@@ -14,6 +14,7 @@ export const validateConnection = (doc: GraphDocument, c: Connection): string | 
   if (output.type === 'regions' && input.schema && output.schema !== input.schema
     && !(output.schema === 'history' && input.schema === 'tracks')
     && !(output.schema === 'vector-identities' && input.schema === 'vector-groups')
+    && !(output.schema === 'vector-fragments' && input.schema === 'vector-completion')
     && !(output.schema === 'timing' && input.schema === 'history')) return 'Regional analysis stages must match'
   if (output.type !== input.type) return `A ${output.type} output cannot connect to a ${input.type} input`
   const adjacency = new Map<string, string[]>()

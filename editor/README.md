@@ -1181,7 +1181,8 @@ the sampled actor and lone-character groups to separate, and compares every
 dominant-background pixel exactly. Source, candidate and confidence panels must
 also remain byte-identical across that toggle.
 `checkTrackedIdentities({ page, change, output, prefix, cases })` compares raw
-completion with **Stable colors** disabled and enabled. Each case accepts
+completion with **Stable colors** disabled and enabled, temporarily disabling
+fragment merging to isolate the identity mapping. Each case accepts
 `{ frame, subjects: [{ name, cells, expected: 'visible' | 'dormant', minimumCells? }] }`.
 The disabled view must match all four raw panels exactly. The enabled view must
 preserve source/provenance bytes, background pixels, every measured/completed
@@ -1191,8 +1192,41 @@ track IDs across cases; dormant controls remain measured background and retain
 their prior track in the dormant list. It saves
 `${prefix}-identity-{frame}-{raw,tracked}.png` and
 `${prefix}-identity-browser.json` in the existing diagnostics directory, then
-restores stable colors and selects `nidentityview`. These controls check identity
+restores stable colors and the prior fragment toggle, and selects `nidentityview`. These controls check identity
 association, not pixel silhouettes or invented held-frame masks.
+
+**Merge Transient Fragments** is a separate stage after completion in the Direct
+motion layers prefab. Its **Enabled** checkbox defaults on. Original measured
+groups, candidate vectors, confidence, completed support and one-to-one track
+associations remain immutable and inspectable through the existing raw branches.
+Only the final tracked completed panel uses the derived per-cell membership;
+the measured panel remains unchanged and merged cells receive pink provenance.
+Disabling **Enabled** shows the approved tracked completion. Disabling **Stable
+colors** also bypasses merges and reproduces the raw frame-local view exactly.
+Existing saved graphs are not silently rewired.
+
+The default proposal considers foreground components observed for one consecutive
+pair: up to five measured cells for partial enclosure, or twenty for strict
+enclosure. The enclosing nonzero host must have at least four times the original
+measured area and appear in at least two scene pairs. Partial enclosure needs at
+least half the unique boundary and two cardinal directions; strict enclosure
+needs all four directions, 75% of the unique boundary, 90% of cardinal contacts,
+and no other measured boundary owner. Unknown and dominant-group cells are never
+merged. Inferred attachments follow only unanimous original measured anchors,
+with a four-times-area cap and no merge chains. These are conservative membership
+hypotheses, not proof that a small independently animated object is noise and not
+pixel-accurate silhouettes.
+
+`checkFragmentMerges({ page, change, output, prefix, cases })` toggles this stage
+off/on in the same browser session. Cases take `{ frame, minimumMerged?,
+maximumMerged?, protectedCells?, expected?: [{ cells, parentCell }] }`. Native PNGs
+must retain source/measured bytes, support coverage, confidence opacity and all
+unlisted completed/provenance pixels. Every change must match an explicit merge
+record and pink provenance; fixed fragment controls must adopt the independently
+sampled parent. The helper writes `${prefix}-fragment-{frame}-{original,merged}.png`
+and `${prefix}-fragment-browser.json` in the existing diagnostics directory,
+preserves failing captures, and restores the enabled tracked view.
+
 The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
 helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
 compares both fill controls disabled/enabled. It requires identical source and

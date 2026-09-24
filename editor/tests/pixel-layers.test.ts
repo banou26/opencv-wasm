@@ -134,6 +134,7 @@ test('a forest sliding over a still sky becomes a sliding layer whose plate the 
   const silhouettes = await kernel('pixelSilhouettes', await kernel('pixelScenery', await kernel('pixelEvidence', layered)), { minimumArea: 200 })
   const plated = await kernel('pixelPlate', silhouettes)
   expect(plated.pixelRigid![0]!.plate).toBeDefined()
+  expect(plated.pixelRigid![0]!.matte!.solved).toBeGreaterThan(100)
   const view = await pixelKernel(step('pixelInspect', { frame: 8, displayMaxSide: 0 }), { 'in:regions:data': { kind: 'regions', data: plated } }, () => forest, () => false)
   const summary = view!.outputs['out:string:summary']
   expect(summary?.kind === 'string' && summary.value).toMatch(/Sliding layers: 1, painting \d+ px/)

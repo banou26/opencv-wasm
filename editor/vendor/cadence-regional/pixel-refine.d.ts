@@ -52,8 +52,8 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
 }>;
 /**
  * The second pass over rigid layers, once the drawings are known: each cover is measured again without
- * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt and the
- * silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
+ * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt, each rim is
+ * matted and the silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
  * rebuild it from the returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export declare function refineRigidScene(source: PixelFrameSource, camera: MeasuredCamera, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {

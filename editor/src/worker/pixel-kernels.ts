@@ -1,7 +1,7 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
   annotateScenery, buildLayerPlate, buildRigidPlate, frameLayerLabels, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
-  measureRigidCover, pixelFrameFromRgba, renderCover, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
+  matteRigidLayer, measureRigidCover, pixelFrameFromRgba, renderCover, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
@@ -75,9 +75,12 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     const silhouettes = data.pixelSilhouettes, size = source.width * source.height, drawn = (frame: number) => unpackMask(silhouettes.frames[frame]!.packed, size)
     const layers = data.pixelRigid ?? [], covers = (frame: number) => layers.map(layer => renderCover(layer, frame, true))
     const pixelPlate = await buildLayerPlate(source, data.pixelCamera, silhouettes, { margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), progress, covers, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) })
-    // Each sliding layer's own plate, outside the drawings in front of it.
+    // Each sliding layer's own plate, outside the drawings in front of it, and its rim matted over the camera plate.
     const pixelRigid: RigidLayer[] = []
-    for (const layer of layers) pixelRigid.push({ ...layer, plate: await buildRigidPlate(source, layer, drawn, { progress }) })
+    for (const layer of layers) {
+      const plate = await buildRigidPlate(source, layer, drawn, { progress })
+      pixelRigid.push({ ...layer, plate, matte: await matteRigidLayer(source, data.pixelCamera, pixelPlate, { ...layer, plate }, { exclude: drawn, progress }) })
+    }
     output = { ...data, stage: 'pixel-plate', pixelPlate, ...(data.pixelRigid ? { pixelRigid } : {}) }
   } else if (type === 'pixelRefine') {
     if (!data.pixelCamera || !data.pixelSilhouettes || !data.pixelPlate) throw new Error('Refine Silhouettes needs Background Plate')

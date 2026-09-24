@@ -55,7 +55,7 @@ import { frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
 import { buildLayerPlate, packMask, unpackMask } from "./pixel-layers.js";
 import { renderPlate } from "./pixel-plate.js";
-import { buildRigidPlate, measureRigidCover, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
+import { buildRigidPlate, matteRigidLayer, measureRigidCover, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
 /**
  * Remove silhouette pixels the plate explains, from the outside in. A pixel within `band` of the edge
  * whose value matches a well-observed plate is background only when it connects to the exterior through
@@ -253,8 +253,8 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
 }
 /**
  * The second pass over rigid layers, once the drawings are known: each cover is measured again without
- * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt and the
- * silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
+ * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt, each rim is
+ * matted and the silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
  * rebuild it from the returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export async function refineRigidScene(source, camera, silhouettes, layers, options = {}) {
@@ -274,8 +274,10 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
     }
     next = refined;
     const plate = await buildLayerPlate(source, camera, silhouettes, { covers, progress: options.progress, ...(evidence ? { evidence } : {}) });
-    for (const layer of next)
+    for (const layer of next) {
         layer.plate = await buildRigidPlate(source, layer, drawn, { progress: options.progress });
+        layer.matte = await matteRigidLayer(source, camera, plate, layer, { exclude: drawn, progress: options.progress });
+    }
     const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: next, progress: options.progress });
     return { layers: next, silhouettes: carved, plate, dropped };
 }

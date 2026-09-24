@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_8UC1, MORPH_CLOSE, MORPH_ELLIPSE, Mat, connectedComponentsWithStats, getStructuringElement, matFromArray, morphologyEx, } from '@banou/opencv-wasm';
+import { BORDER_CONSTANT, BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32FC3, CV_32FC4, CV_64FC1, CV_8UC1, INTER_CUBIC, INTER_NEAREST, MORPH_CLOSE, MORPH_ELLIPSE, MORPH_RECT, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, dilate, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
 import { explainingMotions } from "./pixel-change.js";
 import { cameraPath, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { motionTracks } from "./pixel-layers.js";
@@ -285,26 +285,192 @@ export async function buildRigidPlate(source, layer, exclude, options = {}) {
     return finishPlate(trimmed);
 }
 /**
- * The scene without its drawings: the camera plate with the rigid layers over it in order, back to front,
- * where each covers the pixel. A covered pixel is known only where its layer's plate is, and a pixel whose
- * layer nobody decided is unknown.
+ * Unmix the rim of a rigid layer from what shows behind it. A layer pixel slides over changing scenery,
+ * so its observations follow `frame = G + (1 - alpha) * behind` with one premultiplied color G and one
+ * alpha for every frame: least squares over the frames gives alpha = 1 - cov(frame, behind) / var(behind)
+ * summed over channels. Frames are resampled onto the layer's atlas grid, and the camera plate with them,
+ * so every observation of an atlas pixel is the same point of the layer. Pixels within `band` of the
+ * cover's edge are solved where the scenery behind them varied by at least `minimumSpread` codes; frames
+ * where `exclude` (drawings in front) or an unknown plate touches the pixel are skipped.
  */
-export function renderScene(plate, camera, layers, frame) {
-    const out = renderPlate(plate, camera, frame);
-    for (const layer of layers) {
-        if (!layer.plate)
-            continue;
-        const painted = renderPlate(layer.plate, layer.path, frame), covered = renderCover(layer, frame), open = renderCover(layer, frame, true);
-        for (let p = 0; p < covered.length; p++) {
-            if (open[p] && !covered[p]) {
-                out.known[p] = 0;
+export async function matteRigidLayer(source, camera, plate, layer, options = {}) {
+    const env_4 = { stack: [], error: void 0, hasError: false };
+    try {
+        const band = options.band ?? 2, minimumSpread = options.minimumSpread ?? 6, minimumFrames = options.minimumFrames ?? 4;
+        const { atlas, path, cover } = layer, { width, height } = source, size = atlas.width * atlas.height;
+        const edge = new Uint8Array(size);
+        for (let y = 1; y < atlas.height - 1; y++)
+            for (let x = 1; x < atlas.width - 1; x++) {
+                const a = y * atlas.width + x;
+                if (cover[a] !== cover[a - 1] || cover[a] !== cover[a + 1] || cover[a] !== cover[a - atlas.width] || cover[a] !== cover[a + atlas.width])
+                    edge[a] = 255;
+            }
+        const edges = __addDisposableResource(env_4, matFromArray(atlas.height, atlas.width, CV_8UC1, edge), false), grown = __addDisposableResource(env_4, new Mat(), false), kernel = __addDisposableResource(env_4, getStructuringElement(MORPH_RECT, { width: 2 * band - 1, height: 2 * band - 1 }), false);
+        dilate(edges, grown, kernel);
+        const slot = new Int32Array(size).fill(-1), rim = grown.data;
+        let slots = 0;
+        for (let a = 0; a < size; a++)
+            if (rim[a])
+                slot[a] = slots++;
+        // Per slot: frames, and sums of behind, behind squared (over channels), frame minus behind, and their product.
+        const n = new Uint16Array(slots), sb = new Float32Array(slots * 3), sbb = new Float32Array(slots), sy = new Float32Array(slots * 3), syb = new Float32Array(slots);
+        for (let frame = 0; frame < source.count; frame++) {
+            const env_5 = { stack: [], error: void 0, hasError: false };
+            try {
+                await options.progress?.(frame, source.count);
+                const position = path.positions[frame], offset = frameOffset(path, atlas, frame);
+                const behind = renderPlate(plate, camera, frame), skip = options.exclude?.(frame);
+                const transform = __addDisposableResource(env_5, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
+                const frameMat = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, (await source.frame(frame)).data), false), behindMat = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, behind.data), false);
+                const warpedFrame = __addDisposableResource(env_5, new Mat(), false), warpedBehind = __addDisposableResource(env_5, new Mat(), false);
+                warpAffine(frameMat, warpedFrame, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+                warpAffine(behindMat, warpedBehind, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+                const o = warpedFrame.data32F, b = warpedBehind.data32F;
+                for (let y = 3; y < height - 3; y++)
+                    for (let x = 3; x < width - 3; x++) {
+                        const p = y * width + x, k = slot[(y + offset.y) * atlas.width + x + offset.x];
+                        if (k < 0 || skip?.[p] || !behind.known[p] || !behind.known[p - 1] || !behind.known[p + 1] || !behind.known[p - width] || !behind.known[p + width])
+                            continue;
+                        n[k]++;
+                        for (let c = 0; c < 3; c++) {
+                            const bc = b[p * 3 + c], yc = o[p * 3 + c] - bc;
+                            sb[k * 3 + c] += bc;
+                            sy[k * 3 + c] += yc;
+                            sbb[k] += bc * bc;
+                            syb[k] += yc * bc;
+                        }
+                    }
+            }
+            catch (e_4) {
+                env_5.error = e_4;
+                env_5.hasError = true;
+            }
+            finally {
+                __disposeResources(env_5);
+            }
+        }
+        const alpha = new Float32Array(slots).fill(NaN), color = new Float32Array(slots * 3), identified = new Uint8Array(slots);
+        let solved = 0;
+        for (let k = 0; k < slots; k++) {
+            if (n[k] < minimumFrames)
+                continue;
+            let variance = sbb[k], covariance = syb[k];
+            for (let c = 0; c < 3; c++) {
+                variance -= sb[k * 3 + c] ** 2 / n[k];
+                covariance -= sb[k * 3 + c] * sy[k * 3 + c] / n[k];
+            }
+            // Spread of the scenery behind, per channel and frame; below it alpha is not identifiable.
+            if (variance / (3 * n[k]) < minimumSpread ** 2)
+                continue;
+            alpha[k] = Math.min(1, Math.max(0, -covariance / variance));
+            identified[k] = 1;
+            solved++;
+        }
+        // Over scenery that barely changes any alpha recomposes the same frames once its color is solved against
+        // the mean behind, so it borrows the mean of identified alphas within two pixels, or the cover's.
+        for (let a = 0; a < size; a++) {
+            const k = slot[a];
+            if (k < 0 || n[k] < minimumFrames || identified[k])
+                continue;
+            const x = a % atlas.width, y = (a - x) / atlas.width;
+            let sum = 0, count = 0;
+            for (let yy = Math.max(0, y - 2); yy <= Math.min(atlas.height - 1, y + 2); yy++)
+                for (let xx = Math.max(0, x - 2); xx <= Math.min(atlas.width - 1, x + 2); xx++) {
+                    const j = slot[yy * atlas.width + xx];
+                    if (j >= 0 && identified[j]) {
+                        sum += alpha[j];
+                        count++;
+                    }
+                }
+            alpha[k] = count ? sum / count : cover[a];
+        }
+        for (let k = 0; k < slots; k++)
+            if (alpha[k] >= 0)
+                for (let c = 0; c < 3; c++)
+                    color[k * 3 + c] = (sy[k * 3 + c] + alpha[k] * sb[k * 3 + c]) / n[k];
+        return { slot, alpha, color, identified, solved };
+    }
+    catch (e_5) {
+        env_4.error = e_5;
+        env_4.hasError = true;
+    }
+    finally {
+        __disposeResources(env_4);
+    }
+}
+/** Premultiplied RGBA of a layer on its atlas, and 255 where what it contributes is unknown; rebuilt when its plate or matte is replaced. */
+const layerImages = new WeakMap();
+function layerImage(layer) {
+    const cached = layerImages.get(layer.cover);
+    if (cached && cached.plate === layer.plate && cached.matte === layer.matte)
+        return cached;
+    const { cover, decided, matte, plate } = layer, size = cover.length, rgba = new Float32Array(size * 4), unknown = new Uint8Array(size);
+    for (let a = 0; a < size; a++) {
+        const k = matte ? matte.slot[a] : -1;
+        if (k >= 0 && matte.alpha[k] >= 0) {
+            for (let c = 0; c < 3; c++)
+                rgba[a * 4 + c] = matte.color[k * 3 + c];
+            rgba[a * 4 + 3] = matte.alpha[k];
+        }
+        else if (cover[a]) {
+            if (!plate?.count[a]) {
+                unknown[a] = 255;
                 continue;
             }
-            if (!covered[p])
-                continue;
-            out.known[p] = painted.known[p];
             for (let c = 0; c < 3; c++)
-                out.data[p * 3 + c] = painted.data[p * 3 + c];
+                rgba[a * 4 + c] = plate.data[a * 3 + c];
+            rgba[a * 4 + 3] = 1;
+        }
+        else if (!decided[a])
+            unknown[a] = 255;
+    }
+    const image = { plate, matte, rgba, unknown };
+    layerImages.set(cover, image);
+    return image;
+}
+/**
+ * The scene without its drawings: the camera plate with the rigid layers composited over it in order,
+ * back to front, each resampled at its sub-pixel position as premultiplied color and alpha: its plate
+ * where it covers, and its matte, when solved, on its rim. A pixel is unknown where a layer's contribution
+ * is (paint never observed, or a pixel nobody decided), or where it is not opaque and what is behind is.
+ */
+export function renderScene(plate, camera, layers, frame) {
+    const out = renderPlate(plate, camera, frame), { width, height } = camera;
+    for (const layer of layers) {
+        const env_6 = { stack: [], error: void 0, hasError: false };
+        try {
+            if (!layer.plate)
+                continue;
+            const { rgba, unknown } = layerImage(layer), { atlas } = layer, position = layer.path.positions[frame];
+            const transform = __addDisposableResource(env_6, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
+            const image = __addDisposableResource(env_6, matFromArray(atlas.height, atlas.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_6, new Mat(), false);
+            warpAffine(image, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_CONSTANT, [0, 0, 0, 0]);
+            // Cubic taps reach two atlas pixels, as in `renderPlate`.
+            const holes = __addDisposableResource(env_6, matFromArray(atlas.height, atlas.width, CV_8UC1, unknown), false), grown = __addDisposableResource(env_6, new Mat(), false), sampled = __addDisposableResource(env_6, new Mat(), false);
+            const kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
+            dilate(holes, grown, kernel);
+            warpAffine(grown, sampled, transform, { width, height }, INTER_NEAREST | WARP_INVERSE_MAP, BORDER_CONSTANT, [255, 255, 255, 255]);
+            const w = warped.data32F, gap = sampled.data;
+            for (let p = 0; p < width * height; p++) {
+                const a = Math.min(1, Math.max(0, w[p * 4 + 3]));
+                if (gap[p]) {
+                    out.known[p] = 0;
+                    continue;
+                }
+                if (a < 1e-3)
+                    continue;
+                for (let c = 0; c < 3; c++)
+                    out.data[p * 3 + c] = w[p * 4 + c] + (1 - a) * out.data[p * 3 + c];
+                if (a > .999)
+                    out.known[p] = 1;
+            }
+        }
+        catch (e_6) {
+            env_6.error = e_6;
+            env_6.hasError = true;
+        }
+        finally {
+            __disposeResources(env_6);
         }
     }
     return out;

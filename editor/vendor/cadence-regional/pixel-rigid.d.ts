@@ -20,6 +20,8 @@ export type RigidLayer = {
     tested: Uint16Array;
     /** 1 where the layer paints. */
     cover: Uint8Array;
+    /** Straight alpha and premultiplied color on the cover's rim, where the layer mixes with what is behind it. */
+    matte?: RigidMatte;
     /** 1 where enough tests measured the pixel to decide; elsewhere nobody knows which layer shows. */
     decided: Uint8Array;
     plate?: LayerPlate;
@@ -103,9 +105,39 @@ export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLa
     progress?: StageProgress;
 }): Promise<LayerPlate>;
 /**
- * The scene without its drawings: the camera plate with the rigid layers over it in order, back to front,
- * where each covers the pixel. A covered pixel is known only where its layer's plate is, and a pixel whose
- * layer nobody decided is unknown.
+ * A rigid layer's edge: `slot` maps atlas pixels within the rim band to entries of `alpha` and of
+ * `color` (premultiplied, three per entry); -1 elsewhere. `identified` entries (`solved` of them) had
+ * alpha measured from the scenery behind them changing; the others borrow it, so only their composite is
+ * exact. Alpha NaN: too few frames.
+ */
+export type RigidMatte = {
+    slot: Int32Array;
+    alpha: Float32Array;
+    color: Float32Array;
+    identified: Uint8Array;
+    solved: number;
+};
+/**
+ * Unmix the rim of a rigid layer from what shows behind it. A layer pixel slides over changing scenery,
+ * so its observations follow `frame = G + (1 - alpha) * behind` with one premultiplied color G and one
+ * alpha for every frame: least squares over the frames gives alpha = 1 - cov(frame, behind) / var(behind)
+ * summed over channels. Frames are resampled onto the layer's atlas grid, and the camera plate with them,
+ * so every observation of an atlas pixel is the same point of the layer. Pixels within `band` of the
+ * cover's edge are solved where the scenery behind them varied by at least `minimumSpread` codes; frames
+ * where `exclude` (drawings in front) or an unknown plate touches the pixel are skipped.
+ */
+export declare function matteRigidLayer(source: PixelFrameSource, camera: CameraPath, plate: LayerPlate, layer: RigidLayer, options?: {
+    band?: number;
+    minimumSpread?: number;
+    minimumFrames?: number;
+    exclude?: (frame: number) => Uint8Array | undefined;
+    progress?: StageProgress;
+}): Promise<RigidMatte>;
+/**
+ * The scene without its drawings: the camera plate with the rigid layers composited over it in order,
+ * back to front, each resampled at its sub-pixel position as premultiplied color and alpha: its plate
+ * where it covers, and its matte, when solved, on its rim. A pixel is unknown where a layer's contribution
+ * is (paint never observed, or a pixel nobody decided), or where it is not opaque and what is behind is.
  */
 export declare function renderScene(plate: LayerPlate, camera: CameraPath, layers: RigidLayer[], frame: number): {
     data: Float32Array;

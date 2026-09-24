@@ -1201,25 +1201,26 @@ group assignments corrected those reported edge cells. The current browser check
 covers source 40/46/52 alongside 16/17/19/72/100/106 and requires every uncorrected
 cell to retain its exact group ID, preserving real actor controls.
 
-The 2026-09-24 final edges-first completion run passes both source-frame 94/103 proximity controls:
+The 2026-09-24 final 75%-majority completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
 dominant-background display pixels respectively are unchanged; the other three
 ports are byte-identical. Moving 100/106 still separate 20/20 sampled character
 cells, while held 101/107 separate 0/20. The regenerated stable movie contains
 293 frames at 1920x1080/60fps; decoded SHA-256 is
-`be94acbe9307105fc294873b56fb02e95977072f4b6a688002b55f89cee8b759`.
-Single-run analysis/render times were 5.15/10.39 seconds. All 205 editor unit tests,
+`9af8c6ad5fb0b5b2add0921e6f03f6f5376e70dd9fe6027ed7843d7e3e2057af`.
+Single-run analysis/render times were 6.12/10.43 seconds. All 206 editor unit tests,
 typechecks, lint/build and the dedicated prefab browser check pass. The broader
 `scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
 remains unresolved; that full suite was not rerun for this change.
 
 The current full-edge, edges-first completion check decodes native PNGs at
 source 0/20/94/103 and independently reconstructs all four original edge-owner
-sets to verify unanimous boundary fills and conflicting-corner abstention.
+vote counts to verify 75%-majority boundary fills, minority measured-cell
+preservation and conflicting-corner abstention. Unknown cells do not vote.
 All measured pixels and IDs are preserved exactly. Source 0/20 have no remaining
-unknown cells, including winding edge pockets. Source 94/103 add 19/8 enclosed cells
-and 83/63 edge cells respectively, while keeping 111/135 ambiguous cells unknown.
-The preceding rule left 144/138 unknown on those same inputs. With both
+unknown cells, including winding edge pockets. Source 94/103 add 19/28 enclosed cells
+and 83/84 edge cells respectively, while keeping 111/94 ambiguous cells unknown.
+The preceding unanimous-edge rule left 111/135 unknown on those same inputs. With both
 fill switches disabled, completed support equals measured support byte-for-byte.
 The separate source/measured/completed/provenance ports pass fullscreen checks,
 and the final movie now shows completed support and provenance below the source

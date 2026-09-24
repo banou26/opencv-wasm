@@ -209,3 +209,59 @@ test('temporal display rejects witness records that omit part of the measured fr
   const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
   expect(() => renderVectorCompletionPanels(completed, 1, undefined, identities, fragments)).toThrow(/cover every measured fragment cell/)
 })
+
+const enlargedFixture = (current: number): RegionalData => {
+  const width = 136, height = 136, frameCount = 5, columns = 17
+  const groups: FrameVectorGroups = { width, height, frameCount, cellSize: 8,
+    options: { tolerance: .75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 }, frames: [] }
+  for (let frame = 0; frame < frameCount - 1; frame++) {
+    const labels = new Int32Array(columns * columns)
+    for (let y = 1; y < 16; y++) for (let x = 1; x < 16; x++) labels[y * columns + x] = 1
+    if (frame === current) for (let y = 6; y < 11; y++) for (let x = 6; x < 11; x++) labels[y * columns + x] = 2
+    const confidence = new Uint8Array(labels.length).fill(2)
+    const observations = [...new Set(labels)].map(id => {
+      const cells = [...labels.keys()].filter(cell => labels[cell] === id)
+      return { id, motionId: id, cells, dx: 0, dy: 0, strongCells: cells.length }
+    })
+    groups.frames.push({ frame, labels, confidence, observations })
+  }
+  return { stage: 'vector-completion', scene: { asset: 'clip', first: 0, last: frameCount - 1, sourceWidth: width, sourceHeight: height,
+    frames: Array.from({ length: frameCount }, () => ({ width, height, data: new Uint8Array(width * height * 3).fill(30) })) },
+  frameVectorGroups: groups, frameVectorSupport: completeFrameVectorSupport(groups), frameVectorIdentities: trackFrameVectorIdentities(groups) }
+}
+
+test('enlarged enclosure presentation accepts two past or two future original witnesses', () => {
+  for (const current of [0, 3]) {
+    const data = enlargedFixture(current), identities = data.frameVectorIdentities!
+    const before = structuredClone(data), fragments = mergeFrameVectorFragments(data.frameVectorGroups!, data.frameVectorSupport!, identities)
+    const merges = fragments.frames[current]!.merges
+    expect(merges).toHaveLength(1)
+    expect(merges[0]!.measuredCells).toHaveLength(25)
+    expect(merges[0]!.temporal?.[0]?.mode).toBe('enclosure')
+    expect(merges[0]!.temporal?.[0]?.witnesses.map(witness => witness.frame)).toEqual([1, 2])
+    const original = renderVectorCompletionPanels(data, current, undefined, identities)
+    const result = renderVectorCompletionPanels(data, current, undefined, identities, fragments)
+    expect(result.summary).toContain('enclosure-corroborated 40')
+    expect(result.summary).toContain('mode enclosure; witness source 1')
+    for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
+    expect(result.panels.completed).not.toEqual(original.panels.completed)
+    expect(data).toEqual(before)
+  }
+})
+
+test('enclosure mode rejects smaller components, oversized components and straddling donors', () => {
+  const small = fixture(), smallIdentities = small.frameVectorIdentities!
+  const smallFragments = mergeFrameVectorFragments(small.frameVectorGroups!, small.frameVectorSupport!, smallIdentities)
+  const smallMerge = smallFragments.frames[1]!.merges[0]!
+  smallMerge.reason = 'temporal'
+  smallMerge.temporal = [{ cells: [24], mode: 'enclosure', witnesses: [{ frame: 0, cells: [24] }, { frame: 2, cells: [24] }], commonCells: [24] }]
+  expect(() => renderVectorCompletionPanels(small, 1, undefined, smallIdentities, smallFragments)).toThrow(/only to enlarged/)
+
+  const data = enlargedFixture(2), identities = data.frameVectorIdentities!
+  const fragments = mergeFrameVectorFragments(data.frameVectorGroups!, data.frameVectorSupport!, identities)
+  expect(fragments.frames[2]!.merges[0]!.temporal?.[0]?.mode).toBe('bracketed')
+  const straddling = structuredClone(fragments); straddling.frames[2]!.merges[0]!.temporal![0]!.mode = 'enclosure'
+  expect(() => renderVectorCompletionPanels(data, 2, undefined, identities, straddling)).toThrow(/witness frames/)
+  const oversized = structuredClone(straddling); oversized.options.maxCells = 3
+  expect(() => renderVectorCompletionPanels(data, 2, undefined, identities, oversized)).toThrow(/only to enlarged/)
+})

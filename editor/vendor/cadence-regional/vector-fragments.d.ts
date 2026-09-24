@@ -12,7 +12,7 @@ export type FrameVectorFragmentWitness = {
 };
 export type FrameVectorFragmentTemporal = {
     cells: number[];
-    mode: 'bracketed' | 'birth';
+    mode: 'bracketed' | 'birth' | 'enclosure';
     witnesses: [FrameVectorFragmentWitness, FrameVectorFragmentWitness];
     commonCells: number[];
 };

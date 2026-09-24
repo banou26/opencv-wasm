@@ -1239,6 +1239,20 @@ frame and lists its covered cells and common support in current-frame grid
 coordinates. Pink provenance continues to mark inferred membership, not measured
 motion or corrected source pixels.
 
+The five-cell partial and twenty-cell enclosed/temporal branches remain
+unchanged. A separate enlarged branch considers 21-40 measured cells at the
+default settings. Every child cell must have coherent original motion; its host
+must be at least twice as large, touch all four sides, cover at least 80% of the
+unique boundary and 90% of cardinal contacts, and have no cardinal contact with
+the dominant group. Child and host velocities must differ by no more than the
+grouping tolerance. These stronger local checks still need two original raw
+witnesses covering the same 75% of candidate cells. Bracketing is preferred;
+only this enlarged branch can use two past or two future witnesses under the
+explicit `enclosure` mode. The inspector validates that this mode is confined
+to the enlarged size range, keeps the original measured panel unchanged, and
+lists both witness frames and their common cells. Cached fragment results use
+stage version 6.
+
 The initial partial-enclosure rule was rejected after visual review of the
 long-pan test scene: nine raw foreground-labeled cells beside a tree actually
 fit background motion better. Its 9:7 and 9:5 host-to-dominant boundary ratios

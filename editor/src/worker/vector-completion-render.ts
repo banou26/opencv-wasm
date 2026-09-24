@@ -64,7 +64,7 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
     ] : []),
     ...(fragments ? [
       `Transient fragment merging: ${fragments.options.enabled ? 'enabled' : 'disabled'}; merged cells ${fragmentFrame?.merged.reduce((sum, value) => sum + value, 0) ?? 0}; components ${fragmentFrame?.merges.length ?? 0}`,
-      `Fragment limits: partial ${fragments.options.maxCells} measured cells; enclosed or temporal ${fragments.options.maxCells * 4}; ${fragments.options.maxRun} consecutive pairs`,
+      `Fragment limits: partial ${fragments.options.maxCells} measured cells; enclosed or temporal ${fragments.options.maxCells * 4}; enclosure-corroborated ${fragments.options.maxCells * 8}; ${fragments.options.maxRun} consecutive pairs`,
       'Pink provenance: inferred fragment membership. Source, measured groups, original completion and track associations remain unchanged.',
       ...(fragmentFrame?.merges ?? []).map(merge => `Merge: group ${merge.fromGroupId} -> ${merge.toGroupId}; track ${merge.fromTrackId} -> ${merge.toTrackId}; reason ${merge.reason}; run ${merge.runLength}; cells ${merge.cells.join(',')}; measured ${merge.measuredCells.join(',')}`),
       ...(fragmentFrame?.merges ?? []).flatMap(merge => (merge.temporal ?? []).map(evidence => `Temporal: group ${merge.fromGroupId} -> ${merge.toGroupId}; component ${evidence.cells.join(',')}; mode ${evidence.mode}; witness source ${evidence.witnesses[0].frame + data.scene.first} cells ${evidence.witnesses[0].cells.join(',')}; witness source ${evidence.witnesses[1].frame + data.scene.first} cells ${evidence.witnesses[1].cells.join(',')}; common ${evidence.commonCells.join(',')}`)),

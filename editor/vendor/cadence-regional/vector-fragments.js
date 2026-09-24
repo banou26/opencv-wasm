@@ -108,7 +108,7 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
         camera.push({ x: previous.x + (dominant?.dx ?? 0), y: previous.y + (dominant?.dy ?? 0),
             missing: previous.missing + Number(!dominant) });
     }
-    const temporalEvidence = (index, cells, child, host) => {
+    const temporalEvidence = (index, cells, child, host, enclosure = false) => {
         const observations = history.get(host);
         const before = observations.filter(frame => frame < index && index - frame <= 12).slice(-3).reverse();
         const after = observations.filter(frame => frame > index && frame - index <= 12).slice(0, 3);
@@ -138,14 +138,22 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
         for (const a of past)
             for (const b of future)
                 pairs.push({ mode: 'bracketed', witnesses: [a, b] });
-        if (observations[0] === index && history.get(child)[0] === index) {
+        if (!enclosure && observations[0] === index && history.get(child)[0] === index) {
             for (let a = 0; a < future.length; a++)
                 for (let b = a + 1; b < future.length; b++) {
                     pairs.push({ mode: 'birth', witnesses: [future[a], future[b]] });
                 }
         }
-        pairs.sort((a, b) => a.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
-            - b.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
+        if (enclosure)
+            for (const side of [past.slice().reverse(), future]) {
+                for (let a = 0; a < side.length; a++)
+                    for (let b = a + 1; b < side.length; b++) {
+                        pairs.push({ mode: 'enclosure', witnesses: [side[a], side[b]] });
+                    }
+            }
+        pairs.sort((a, b) => Number(a.mode !== 'bracketed') - Number(b.mode !== 'bracketed')
+            || a.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
+                - b.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
             || a.witnesses[0].frame - b.witnesses[0].frame || a.witnesses[1].frame - b.witnesses[1].frame);
         for (const pair of pairs) {
             const covered = new Set(pair.witnesses[1].cells), commonCells = pair.witnesses[0].cells.filter(cell => covered.has(cell));
@@ -159,11 +167,12 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             trackLabels: Int32Array.from(completed.labels, id => id < 0 ? -1 : mapping.get(id)), merged: new Uint8Array(raw.length), merges: [] };
         if (!resolved.enabled)
             return output;
-        const proposals = new Map(), temporalProposals = new Map();
+        const proposals = new Map(), temporalProposals = new Map(), enclosedProposals = new Map();
         const sourceGroups = new Set();
         for (const component of components(raw, columns, rows)) {
             const runLength = runs[index].get(mapping.get(component.id));
-            if (component.cells.length > resolved.maxCells * 4 || runLength > resolved.maxRun
+            const expanded = component.cells.length > resolved.maxCells * 4;
+            if (component.cells.length > resolved.maxCells * 8 || runLength > resolved.maxRun
                 || component.cells.some(cell => cell % columns === 0 || cell % columns === columns - 1
                     || cell < columns || cell >= (rows - 1) * columns))
                 continue;
@@ -188,7 +197,7 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             if (owners.size !== 1)
                 continue;
             const owner = owners.values().next().value, host = mapping.get(owner);
-            if ((known.get(owner) ?? 0) < component.cells.length * 4 || (history.get(host)?.length ?? 0) < 2)
+            if ((known.get(owner) ?? 0) < component.cells.length * (expanded ? 2 : 4) || (history.get(host)?.length ?? 0) < 2)
                 continue;
             const count = [...boundary].filter(cell => raw[cell] === owner).length, sides = directions.get(owner) ?? 0;
             const fully = [...boundary].every(cell => raw[cell] === -1 || raw[cell] === owner)
@@ -208,7 +217,23 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             const contradictsMotion = dominant && Math.hypot(parent.dx - dominant.dx, parent.dy - dominant.dy) > groups.options.tolerance
                 && Math.hypot(child.dx - dominant.dx, child.dy - dominant.dy) * 2
                     < Math.hypot(child.dx - parent.dx, child.dy - parent.dy);
-            if (fully || partial) {
+            if (expanded) {
+                // Body-sized fragments need strong measured enclosure, compatible
+                // motion and two raw witnesses. Diagonal background contact may remain.
+                const nearEnclosed = count >= boundary.size * .8 && sides === 15
+                    && (contacts.get(owner) ?? 0) >= cardinal * .9 && !contacts.get(0)
+                    && component.cells.every(cell => frame.confidence[cell] === 2)
+                    && Math.hypot(child.dx - parent.dx, child.dy - parent.dy) <= groups.options.tolerance;
+                if (!nearEnclosed || contradictsMotion)
+                    continue;
+                const temporal = temporalEvidence(index, component.cells, mapping.get(component.id), host, true);
+                if (!temporal)
+                    continue;
+                const proposal = { id: component.id, owner, cells: component.cells, reason: 'temporal', runLength, temporal };
+                for (const cell of component.cells)
+                    enclosedProposals.set(cell, proposal);
+            }
+            else if (fully || partial) {
                 if (count < boundary.size * .5 && contradictsMotion)
                     continue;
                 const proposal = { id: component.id, owner, cells: component.cells, reason: fully ? 'enclosed' : 'partial', runLength };
@@ -247,22 +272,28 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
         // Preserve the spatial pass before considering temporal additions. New
         // proposals cannot veto or retarget an already accepted local decision.
         const baseTargets = new Set([...proposals.values()].map(item => item.owner));
-        const temporalSources = new Set([...temporalProposals.values()].map(item => item.id));
-        for (const component of components(completed.labels, columns, rows)) {
-            if (component.cells.some(cell => output.merged[cell]) || baseTargets.has(component.id))
-                continue;
-            const measuredCells = component.cells.filter(cell => raw[cell] === component.id), first = temporalProposals.get(measuredCells[0]);
-            if (!first || component.cells.length > measuredCells.length * 4 || sourceGroups.has(first.owner) || temporalSources.has(first.owner)
-                || measuredCells.some(cell => temporalProposals.get(cell)?.owner !== first.owner))
-                continue;
-            const fromTrackId = mapping.get(component.id), toTrackId = mapping.get(first.owner);
-            const evidence = [...new Set(measuredCells.map(cell => temporalProposals.get(cell).temporal))];
-            for (const cell of component.cells) {
-                output.trackLabels[cell] = toTrackId;
-                output.merged[cell] = 1;
+        for (const candidates of [temporalProposals, enclosedProposals]) {
+            const temporalSources = new Set([...candidates.values()].map(item => item.id));
+            for (const component of components(completed.labels, columns, rows)) {
+                if (component.cells.some(cell => output.merged[cell]) || baseTargets.has(component.id))
+                    continue;
+                const measuredCells = component.cells.filter(cell => raw[cell] === component.id), first = candidates.get(measuredCells[0]);
+                if (!first || component.cells.length > measuredCells.length * 4 || sourceGroups.has(first.owner) || temporalSources.has(first.owner)
+                    || measuredCells.some(cell => candidates.get(cell)?.owner !== first.owner))
+                    continue;
+                const fromTrackId = mapping.get(component.id), toTrackId = mapping.get(first.owner);
+                const evidence = [...new Set(measuredCells.map(cell => candidates.get(cell).temporal))];
+                for (const cell of component.cells) {
+                    output.trackLabels[cell] = toTrackId;
+                    output.merged[cell] = 1;
+                }
+                output.merges.push({ fromGroupId: component.id, toGroupId: first.owner, fromTrackId, toTrackId,
+                    cells: component.cells, measuredCells, reason: 'temporal', runLength: first.runLength, temporal: evidence });
             }
-            output.merges.push({ fromGroupId: component.id, toGroupId: first.owner, fromTrackId, toTrackId,
-                cells: component.cells, measuredCells, reason: 'temporal', runLength: first.runLength, temporal: evidence });
+            for (const proposal of candidates.values()) {
+                sourceGroups.add(proposal.id);
+                baseTargets.add(proposal.owner);
+            }
         }
         return output;
     });

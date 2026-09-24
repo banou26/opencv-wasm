@@ -27,56 +27,45 @@ function distances(raw, columns, rows, isSeed) {
     }
     return result;
 }
+function unknownComponents(labels, columns, rows) {
+    const visited = new Uint8Array(labels.length);
+    const result = [];
+    for (let seed = 0; seed < labels.length; seed++) {
+        if (labels[seed] >= 0 || visited[seed])
+            continue;
+        const cells = [seed], boundary = new Set();
+        let edges = 0;
+        visited[seed] = 1;
+        for (let cursor = 0; cursor < cells.length; cursor++) {
+            const index = cells[cursor], x = index % columns, y = Math.floor(index / columns);
+            if (x === 0)
+                edges |= 1;
+            if (x === columns - 1)
+                edges |= 2;
+            if (y === 0)
+                edges |= 4;
+            if (y === rows - 1)
+                edges |= 8;
+            neighbors(index, columns, rows, next => {
+                if (labels[next] >= 0)
+                    boundary.add(labels[next]);
+                else if (!visited[next]) {
+                    visited[next] = 1;
+                    cells.push(next);
+                }
+            });
+        }
+        result.push({ cells, boundary, edges });
+    }
+    return result;
+}
 function completeFrame(frame, columns, rows, options) {
     const raw = frame.labels, labels = raw.slice(), provenance = Uint8Array.from(raw, label => label >= 0 ? 1 : 0);
     const observations = frame.observations.map(group => ({ id: group.id, holeCells: [], borderCells: [] }));
     const byId = new Map(observations.map(group => [group.id, group]));
     const counts = { measured: raw.filter(label => label >= 0).length, holes: 0, border: 0, unknown: 0 };
-    const visited = new Uint8Array(raw.length);
-    const edgePockets = [];
-    if (options.fillHoles || options.fillEdges)
-        for (let seed = 0; seed < raw.length; seed++) {
-            if (raw[seed] >= 0 || visited[seed])
-                continue;
-            const component = [seed], boundary = new Set();
-            let edges = 0;
-            visited[seed] = 1;
-            for (let cursor = 0; cursor < component.length; cursor++) {
-                const index = component[cursor], x = index % columns, y = Math.floor(index / columns);
-                if (x === 0)
-                    edges |= 1;
-                if (x === columns - 1)
-                    edges |= 2;
-                if (y === 0)
-                    edges |= 4;
-                if (y === rows - 1)
-                    edges |= 8;
-                neighbors(index, columns, rows, next => {
-                    if (raw[next] >= 0)
-                        boundary.add(raw[next]);
-                    else if (!visited[next]) {
-                        visited[next] = 1;
-                        component.push(next);
-                    }
-                });
-            }
-            if (boundary.size !== 1)
-                continue;
-            const owner = boundary.values().next().value;
-            if (edges) {
-                edgePockets.push({ cells: component, owner, edges });
-                continue;
-            }
-            if (!options.fillHoles)
-                continue;
-            for (const index of component) {
-                labels[index] = owner;
-                provenance[index] = 2;
-                byId.get(owner).holeCells.push(index);
-            }
-            counts.holes += component.length;
-        }
     if (options.fillEdges && options.edgeReach > 0) {
+        const edgeProposals = new Int32Array(raw.length).fill(-1);
         const proposals = new Int32Array(raw.length).fill(-1), margins = new Map();
         const qualified = new Map();
         for (let edge = 0; edge < 4; edge++) {
@@ -84,6 +73,24 @@ function completeFrame(frame, columns, rows, options) {
             const at = (line, step) => edge === 0 ? line * columns + step
                 : edge === 1 ? line * columns + columns - step - 1 : edge === 2 ? step * columns + line
                     : (rows - step - 1) * columns + line;
+            // Only original cells touching this edge can identify its sole owner.
+            // New corner fills must not establish ownership of an adjacent empty edge.
+            const touching = new Set();
+            for (let line = 0; line < lineCount; line++)
+                if (raw[at(line, 0)] >= 0)
+                    touching.add(raw[at(line, 0)]);
+            if (touching.size === 1) {
+                const owner = touching.values().next().value;
+                for (let line = 0; line < lineCount; line++) {
+                    const index = at(line, 0);
+                    if (raw[index] >= 0)
+                        continue;
+                    if (edgeProposals[index] === -1)
+                        edgeProposals[index] = owner;
+                    else if (edgeProposals[index] !== owner)
+                        edgeProposals[index] = -2;
+                }
+            }
             const rays = [], votes = new Map(), coherent = new Map();
             for (let line = 0; line < lineCount; line++)
                 for (let step = 0; step <= Math.min(options.edgeReach, depth - 1); step++) {
@@ -126,7 +133,10 @@ function completeFrame(frame, columns, rows, options) {
         // Winding edge pockets can lack a straight ray. Their entire ORIGINAL
         // boundary must agree, every cell must fit the reach, and an edge must have
         // qualified independently. This is not closing over previously inferred cells.
-        for (const pocket of edgePockets) {
+        for (const { cells, boundary, edges } of unknownComponents(raw, columns, rows)) {
+            if (!edges || boundary.size !== 1)
+                continue;
+            const pocket = { cells, edges, owner: boundary.values().next().value };
             if (!((qualified.get(pocket.owner) ?? 0) & pocket.edges))
                 continue;
             const { own, other } = margins.get(pocket.owner);
@@ -139,15 +149,30 @@ function completeFrame(frame, columns, rows, options) {
                     proposals[index] = -2;
             }
         }
-        // Resolve all edge proposals together. Fills never vote or seed another pass.
-        for (const [index, owner] of proposals.entries())
+        // Explicit edge ownership outranks bounded inward fallback. Conflicting
+        // corners remain unknown; neither kind of fill supplies new edge votes.
+        for (let index = 0; index < raw.length; index++) {
+            const owner = edgeProposals[index] !== -1 ? edgeProposals[index] : proposals[index];
             if (owner >= 0 && raw[index] < 0) {
                 labels[index] = owner;
                 provenance[index] = 3;
                 byId.get(owner).borderCells.push(index);
                 counts.border++;
             }
+        }
     }
+    if (options.fillHoles)
+        for (const { cells, boundary, edges } of unknownComponents(labels, columns, rows)) {
+            if (edges || boundary.size !== 1)
+                continue;
+            const owner = boundary.values().next().value;
+            for (const index of cells) {
+                labels[index] = owner;
+                provenance[index] = 2;
+                byId.get(owner).holeCells.push(index);
+            }
+            counts.holes += cells.length;
+        }
     for (const group of observations)
         group.holeCells.sort((a, b) => a - b);
     counts.unknown = raw.length - counts.measured - counts.holes - counts.border;

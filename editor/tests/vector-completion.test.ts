@@ -30,7 +30,7 @@ const fixture = (): RegionalData => {
 test('direct completion exposes four typed panels and supplies the final comparison', () => {
   const graph = parseDocument(vectorLayersGraph()), inspector = graph.nodes.find(node => node.id === 'ncompletionview')!
   expect(defaultParams('vectorComplete')).toEqual({ fillHoles: true, fillEdges: true, edgeReach: 8 })
-  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(2)
+  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(3)
   expect(specFor(inspector, graph).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance'])
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:completed', target: 'nbottom', targetHandle: 'in:frame:a' }))
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:provenance', target: 'nbottom', targetHandle: 'in:frame:b' }))
@@ -104,6 +104,31 @@ test('winding diagonal edge pocket retains edge provenance without using inferre
   expect(data.frameVectorSupport.frames[0]!.counts).toEqual({ measured: 22, holes: 0, border: 0, unknown: 3 })
   const disabled = renderVectorCompletionPanels(data, 7)
   expect(disabled.panels.completed).toEqual(disabled.panels.measured)
+})
+
+test('a unanimous full edge closes first, then its enclosed interior records hole inference', () => {
+  const original = fixture().frameVectorGroups!
+  const labels = Int32Array.from({ length: 25 }, (_, cell) => cell < 20 && cell % 5 > 0 && cell % 5 < 4 ? -1 : 0)
+  const measured = [...labels.keys()].filter(cell => labels[cell]! >= 0)
+  const groups = { ...original, width: 40, height: 40, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations: [{ id: 0, motionId: 0, cells: measured, dx: 0, dy: 0, strongCells: measured.length }] }] }
+  const before = structuredClone(groups)
+  const support = completeFrameVectorSupport(groups, { edgeReach: 1 })
+  expect(support.frames[0]!.counts).toEqual({ measured: 13, holes: 9, border: 3, unknown: 0 })
+  for (const cell of [1, 2, 3]) expect(support.frames[0]!.provenance[cell]).toBe(3)
+  for (const cell of [6, 7, 8, 11, 12, 13, 16, 17, 18]) expect(support.frames[0]!.provenance[cell]).toBe(2)
+  const data: RegionalData = { stage: 'vector-completion', scene: { asset: 'clip', first: 7, last: 8, sourceWidth: 40, sourceHeight: 40, frames: Array.from({ length: 2 }, () => ({ width: 40, height: 40, data: new Uint8Array(40 * 40 * 3).fill(30) })) }, frameVectorGroups: groups, frameVectorSupport: support }
+  const rendered = renderVectorCompletionPanels(data, 7)
+  expect(rendered.summary).toContain('Completion order: resolve edge support, then fill single-owner enclosed holes.')
+  for (const options of [{ fillHoles: false, edgeReach: 1 }, { fillEdges: false, edgeReach: 1 }, { edgeReach: 0 }]) {
+    data.frameVectorSupport = completeFrameVectorSupport(groups, options)
+    const result = renderVectorCompletionPanels(data, 7)
+    expect(result.panels.source).toEqual(rendered.panels.source)
+    expect(result.panels.measured).toEqual(rendered.panels.measured)
+    expect(data.frameVectorSupport.frames[0]!.counts).toEqual(options.fillHoles === false
+      ? { measured: 13, holes: 0, border: 3, unknown: 9 }
+      : { measured: 13, holes: 0, border: 0, unknown: 12 })
+  }
+  expect(groups).toEqual(before)
 })
 
 test('direct completion kernel uses shared core while preserving the original grouped data', async () => {

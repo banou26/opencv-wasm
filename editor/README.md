@@ -320,21 +320,28 @@ coherent assignments. There are no temporal ambiguity or rejected-candidate
 categories in this first pass. Unpainted group cells are not silently filled.
 The final source frame has no outgoing motion pair and consequently no motion overlay.
 
-**Complete Direct Support** is a separate stage after grouping. **Fill enclosed
-holes** fills an eight-connected missing-vector component only when it does not
-touch the frame and every measured boundary cell has the same group ID. **Extend
-to edges** considers missing prefixes along inward edge-normal rays. At least
-half an edge's scan lines need a measured anchor within **Edge reach (cells)**
-(default eight), at least 90% of those anchors must agree on one group, and at
-least three winning anchors must be coherent. Competing measured groups block
-nearby extensions, and conflicting proposals from different edges stay unknown.
-More than 10% competing anchor votes disables that entire edge's extension.
-Reach zero disables edge filling. Filled cells never become votes or donors.
-Winding edge-connected pockets that lack a straight ray may fill as a whole only
-when their entire original boundary belongs to one group, they touch an edge
-independently qualified for that group, and every cell meets the original-support
-reach and competing-group clearance checks. They remain edge inference, not
-enclosed-hole evidence, even if earlier edge additions make them look enclosed.
+**Complete Direct Support** is a separate stage after grouping, with edge filling
+first and enclosed-hole filling second. **Extend to edges** checks measured cells
+on each actual frame edge. If at least one touches that edge and every measured
+cell there has the same group ID, the group fills all unknown cells along that
+edge. Two different measured owners prevent this full-edge rule. Conflicting
+corner proposals stay unknown, and filled corners cannot establish ownership of
+another edge. This exact-edge proposal takes priority over inward fallback.
+
+The bounded inward fallback still uses only original measurements: missing
+prefixes along edge-normal rays need anchors on at least half the scan lines,
+90% agreement and three coherent winning anchors. Winding edge-connected pockets
+need one original boundary owner, an independently qualified edge, and original
+support within reach and competitor clearance at every cell. Competing groups
+block nearby fallback extensions. **Edge reach (cells)**, default eight, bounds
+these inward proposals, not the distance along a unanimous frame edge. Zero
+disables all edge filling. Neither edge method uses additions as new votes.
+
+After edge proposals are resolved, **Fill enclosed holes** fills each remaining
+eight-connected unknown component only when it no longer touches the frame and
+its entire boundary has one group ID. That boundary can include the newly filled
+edge: the enclosed interior then records hole inference, while the edge retains
+edge inference. Both stages remain optional and never reassign measured cells.
 
 Completion returns a separate label raster and explicit provenance: measured,
 enclosed-hole inference, edge inference, or unknown. It never modifies the raw
@@ -1117,7 +1124,10 @@ The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
 helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
 compares both fill controls disabled/enabled. It requires identical source and
 measured panels, unchanged measured pixels and IDs, and explicit hole/edge
-provenance for every addition. Cases may add `minimumHoles` or `minimumBorder`
+provenance for every addition. Raw PNG border labels independently determine
+unanimous exact-edge owners: every proposed edge cell must receive that owner,
+while corners with conflicting owners must remain unknown. Cases may add
+`minimumHoles` or `minimumBorder`
 controls. It restores both controls enabled and leaves `ncompletionview` selected.
 Native four-panel sheets use `${prefix}-support-020.png` and the report uses
 `${prefix}-support-browser.json` in the existing output directory.
@@ -1196,7 +1206,8 @@ typechecks, lint/build and the dedicated prefab browser check pass. The broader
 `scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
 remains unresolved; that full suite was not rerun for this change.
 
-Completion off/on checks additionally decode the native PNGs at source 0/20/94/103.
+The earlier bounded-edge completion check decoded native PNGs at source 0/20/94/103
+(before the full-edge, edges-first rule above).
 All measured pixels and IDs are preserved exactly. Source 0/20 have no remaining
 unknown cells, including winding edge pockets. Source 94/103 add 7/6 enclosed cells
 and 62 edge cells each, while keeping 144/138 ambiguous cells unknown. With both

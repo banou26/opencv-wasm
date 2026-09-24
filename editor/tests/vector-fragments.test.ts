@@ -98,6 +98,28 @@ test('partial foreground enclosure cannot absorb a fragment with substantial dom
   expect(renderVectorCompletionPanels(completed, 1, undefined, identities, fragments).panels).toEqual(original.panels)
 })
 
+test('unknown partial boundaries abstain but cannot replace the minimum measured coverage', () => {
+  for (const measuredBackground of [true, false]) {
+    const data = fixture(), groups = data.frameVectorGroups!, frame = groups.frames[1]!
+    for (const cell of [17, 18, 23, 30]) { frame.labels[cell] = -1; frame.confidence[cell] = 0 }
+    frame.labels[16] = measuredBackground ? 0 : -1
+    frame.confidence[16] = measuredBackground ? 2 : 0
+    frame.observations = frame.observations.map(group => {
+      const cells = [...frame.labels.keys()].filter(cell => frame.labels[cell] === group.id)
+      return { ...group, cells, strongCells: cells.filter(cell => frame.confidence[cell] === 2).length }
+    })
+    const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+    const before = structuredClone({ groups, support, identities })
+    const fragments = mergeFrameVectorFragments(groups, support, identities)
+    expect(fragments.frames[1]!.merges.map(merge => ({ cells: merge.cells, reason: merge.reason }))).toEqual(measuredBackground ? [{ cells: [24], reason: 'partial' }] : [])
+    expect({ groups, support, identities }).toEqual(before)
+    const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+    const original = renderVectorCompletionPanels(completed, 1, undefined, identities)
+    const rendered = renderVectorCompletionPanels(completed, 1, undefined, identities, fragments)
+    for (const port of ['source', 'measured'] as const) expect(rendered.panels[port]).toEqual(original.panels[port])
+  }
+})
+
 test('fragment kernel retains original evidence by reference and stable-colors off bypasses inferred labels', async () => {
   const data = fixture(), before = structuredClone(data)
   const bundle = await regionalKernel(step('vectorFragments'), input(data), () => undefined, () => false)

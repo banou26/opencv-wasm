@@ -1211,9 +1211,11 @@ Existing saved graphs are not silently rewired.
 The default proposal considers foreground components observed for one consecutive
 pair: up to five measured cells for partial enclosure, or twenty for strict
 enclosure. The enclosing nonzero host must have at least four times the original
-measured area and appear in at least two scene pairs. Partial enclosure needs at
-least half the unique boundary, twice as many host boundary cells as dominant
-background boundary cells, and two cardinal directions; strict enclosure
+measured area and appear in at least two scene pairs. Partial enclosure needs
+measured host-or-dominant support on at least half the unique boundary, twice as
+many host boundary cells as dominant-background boundary cells, and two cardinal
+directions. Unknown boundary cells abstain instead of voting against the host;
+they cannot satisfy the minimum measured coverage. Strict enclosure
 needs all four directions, 75% of the unique boundary, 90% of cardinal contacts,
 and no other measured boundary owner. Unknown and dominant-group cells are never
 merged. Inferred attachments follow only unanimous original measured anchors,

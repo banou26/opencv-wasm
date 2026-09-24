@@ -142,7 +142,9 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             const background = [...boundary].filter(cell => raw[cell] === 0).length;
             // At a parallax boundary, a near trunk can partially wrap flow bleeding
             // from the far background. A bare foreground majority is not sufficient.
-            const partial = component.cells.length <= resolved.maxCells && count >= boundary.size * .5
+            // Missing motion abstains from the ownership vote, but at least half
+            // the boundary still needs measured support before a partial merge.
+            const partial = component.cells.length <= resolved.maxCells && count + background >= boundary.size * .5
                 && count >= background * 2 && [1, 2, 4, 8].filter(side => sides & side).length >= 2;
             if (!fully && !partial)
                 continue;

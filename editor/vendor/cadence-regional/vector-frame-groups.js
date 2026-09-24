@@ -1,4 +1,5 @@
 import { poolVectorModes } from "./vector-modes.js";
+import { spatialIslands } from "./vector-proximity.js";
 const median = (values) => {
     values.sort((a, b) => a - b);
     const middle = values.length >> 1;
@@ -132,7 +133,8 @@ function splitTightCore(group, grid, tolerance, width, height) {
         return [group];
     return [core, ...coarseClusters(grid, tolerance, remaining)];
 }
-function groupGrid(grid, tolerance, splitSubtleMotion, width, height) {
+function groupGrid(grid, options, width, height) {
+    const { tolerance, splitSubtleMotion, splitDistantRegions, proximityGap } = options;
     const coarse = coarseClusters(grid, tolerance);
     const clusters = (splitSubtleMotion ? coarse.flatMap(group => splitTightCore(group, grid, tolerance, width, height)) : coarse).sort(order);
     const labels = new Int32Array(grid.cells.length).fill(-1), confidence = new Uint8Array(grid.cells.length);
@@ -142,8 +144,24 @@ function groupGrid(grid, tolerance, splitSubtleMotion, width, height) {
             labels[index] = id;
             confidence[index] = grid.cells[index].coherent ? 2 : 1;
         }
-        return { id, ...group, strongCells: group.cells.filter(index => grid.cells[index].coherent).length };
+        return { id, motionId: id, ...group, strongCells: group.cells.filter(index => grid.cells[index].coherent).length };
     });
+    // Freeze motion IDs first. The dominant group is untouched, and new spatial
+    // children are appended so unrelated groups keep their existing colors.
+    if (splitDistantRegions)
+        for (const group of observations.slice(1)) {
+            const islands = spatialIslands(group.cells, grid, proximityGap);
+            if (islands.length < 2)
+                continue;
+            group.cells = islands[0];
+            group.strongCells = group.cells.filter(index => grid.cells[index].coherent).length;
+            for (const cells of islands.slice(1)) {
+                const id = observations.length;
+                observations.push({ ...group, id, cells, strongCells: cells.filter(index => grid.cells[index].coherent).length });
+                for (const index of cells)
+                    labels[index] = id;
+            }
+        }
     return { frame: 0, labels, confidence, observations };
 }
 /**
@@ -153,11 +171,17 @@ function groupGrid(grid, tolerance, splitSubtleMotion, width, height) {
  */
 export function groupFrameVectors(sequence, options = {}) {
     const tolerance = options.tolerance ?? .75, splitSubtleMotion = options.splitSubtleMotion ?? true;
+    const splitDistantRegions = options.splitDistantRegions ?? true, proximityGap = options.proximityGap ?? 4;
     const { width, height, frameCount, pairs } = sequence;
     if (!Number.isFinite(tolerance) || tolerance <= 0)
         throw new RangeError('Velocity radius must be positive and finite');
     if (typeof splitSubtleMotion !== 'boolean')
         throw new TypeError('Subtle motion splitting must be a boolean');
+    if (typeof splitDistantRegions !== 'boolean')
+        throw new TypeError('Distant region splitting must be a boolean');
+    if (!Number.isFinite(proximityGap) || proximityGap < 0 || proximityGap > 16)
+        throw new RangeError('Proximity gap must be between 0 and 16 cells');
+    const resolved = { tolerance, splitSubtleMotion, splitDistantRegions, proximityGap };
     if (![width, height, frameCount].every(Number.isSafeInteger) || width < 1 || height < 1 || frameCount < 2
         || pairs.length !== frameCount - 1)
         throw new RangeError('Expected one contiguous candidate scene');
@@ -182,7 +206,7 @@ export function groupFrameVectors(sequence, options = {}) {
                 || (cell.coherent && cell.dx === null))
                 throw new RangeError('Invalid candidate measurement');
         }
-        return { ...groupGrid(grid, tolerance, splitSubtleMotion, width, height), frame };
+        return { ...groupGrid(grid, resolved, width, height), frame };
     });
-    return { width, height, frameCount, cellSize, options: { tolerance, splitSubtleMotion }, frames };
+    return { width, height, frameCount, cellSize, options: resolved, frames };
 }

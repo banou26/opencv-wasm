@@ -11,7 +11,7 @@ const build = spawnSync('npm', ['run', 'build:regional'], { cwd: source, stdio: 
 if (build.error) throw build.error
 if (build.status !== 0) process.exit(build.status ?? 1)
 await mkdir(destination, { recursive: true })
-const modules = ['regional', 'regions', 'motion-groups', 'motion-evidence', 'motion-completion', 'vector-candidates', 'vector-layers', 'vector-modes', 'vector-frame-groups', 'flow', 'timing', 'regional-types', 'types']
+const modules = ['regional', 'regions', 'motion-groups', 'motion-evidence', 'motion-completion', 'vector-candidates', 'vector-layers', 'vector-modes', 'vector-frame-groups', 'vector-proximity', 'flow', 'timing', 'regional-types', 'types']
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const files = {}
 for (const name of modules) {

@@ -60,8 +60,8 @@ test('direct prefab has a separate pipeline, four independent outputs and no com
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005 })
-  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true })
-  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(5)
+  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(6)
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')
 })
 
@@ -84,13 +84,13 @@ test('saved direct-motion graphs retire history controls and wires while preserv
   original.nodes.find(node => node.id === 'ngroups')!.params = { tolerance: .5, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 }
   for (const control of ['minimumOverlap', 'modeRadius', 'minimumModeCells']) original.edges.push({ id: `eold${control}`, source: 'ntime', sourceHandle: 'out:scalar:index', target: 'ngroups', targetHandle: `param:${control}` })
   const restored = parseDocument(original)
-  expect(restored.nodes.find(node => node.id === 'ngroups')!.params).toEqual({ tolerance: .5, splitSubtleMotion: true })
+  expect(restored.nodes.find(node => node.id === 'ngroups')!.params).toEqual({ tolerance: .5, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
   expect(restored.edges.some(edge => edge.id.startsWith('eold'))).toBe(false)
   const nested = groupNodes(vectorLayersGraph(), undefined, ['ngroups'], 'Direct groups', 'gdirect', 'ndirect')
   const node = nested.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!
-  node.params.modeRadius = 0; node.params.minimumOverlap = 8; node.params.minimumModeCells = 2; node.params.splitSubtleMotion = false
+  node.params.modeRadius = 0; node.params.minimumOverlap = 8; node.params.minimumModeCells = 2; node.params.splitSubtleMotion = false; node.params.splitDistantRegions = false; node.params.proximityGap = 0
   const reopened = parseDocument(JSON.parse(JSON.stringify(nested)))
-  expect(reopened.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!.params).toEqual({ ...defaultParams('vectorGroups'), splitSubtleMotion: false })
+  expect(reopened.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!.params).toEqual({ ...defaultParams('vectorGroups'), splitSubtleMotion: false, splitDistantRegions: false, proximityGap: 0 })
   expect(original.nodes.find(node => node.id === 'ngroups')!.params.minimumOverlap).toBe(4)
 })
 
@@ -107,6 +107,19 @@ test('subtle-motion switch retains typed wiring through a saved custom-node scop
   expect(plan.steps.some(step => step.node.type === 'boolean' && step.node.params.value === false)).toBe(true)
 })
 
+test('foreground proximity controls retain typed wiring and explicit values in custom-node scopes', () => {
+  const original = vectorLayersGraph()
+  original.nodes.push({ id: 'ndistant', type: 'boolean', params: { value: false }, position: { x: 1000, y: 500 } })
+  original.nodes.push({ id: 'ngap', type: 'constant', params: { value: 0 }, position: { x: 1000, y: 700 } })
+  const wires = [{ source: 'ndistant', sourceHandle: 'out:boolean:value', target: 'ngroups', targetHandle: 'param:splitDistantRegions' },
+    { source: 'ngap', sourceHandle: 'out:scalar:value', target: 'ngroups', targetHandle: 'param:proximityGap' }]
+  let wired = original
+  for (const wire of wires) { expect(validateConnection(wired, wire)).toBeNull(); wired = connect(wired, wire) }
+  const nested = groupNodes(wired, undefined, ['ndistant', 'ngap', 'ngroups'], 'Spatial groups', 'gdistant', 'ndistantgroup')
+  const restored = parseDocument(JSON.parse(JSON.stringify(nested)))
+  for (const wire of wires) expect(restored.definitions![0]!.graph.edges).toContainEqual(expect.objectContaining(wire))
+})
+
 test('group inspector paints every candidate including mixed cells without a temporal history filter', () => {
   const data = groupedFixture(), original = structuredClone(data), rendered = renderVectorPanels(data, 7)
   const at = (pixels: Uint8Array, x: number) => pixels.slice((4 * 40 + x) * 4, (4 * 40 + x) * 4 + 4)
@@ -117,6 +130,8 @@ test('group inspector paints every candidate including mixed cells without a tem
   expect(rendered.summary).toContain('Candidate cells: 4; grouped cells: 4; temporal filtering: none')
   expect(rendered.summary).toContain('1 frame-local motion groups; maximum radius 0.75')
   expect(rendered.summary).toContain('Subtle motion separation: enabled; candidate support preserved')
+  expect(rendered.summary).toContain('Distant region separation: enabled; foreground gap 4 cells; dominant background unchanged')
+  expect(rendered.summary).toContain('parent motion 0')
   expect(rendered.summary).not.toMatch(/ambiguous|unassigned candidate|minimum shared/)
   expect(data).toEqual(original)
 })
@@ -126,6 +141,34 @@ test('group inspector refuses stale history data and missing current-frame assig
   expect(() => renderVectorPanels({ ...data, frameVectorGroups: undefined }, 7)).toThrow(/recompute legacy/)
   data.frameVectorGroups!.frames[0]!.labels[1] = -1
   expect(() => renderVectorPanels(data, 7)).toThrow(/preserve every candidate/)
+})
+
+test('foreground proximity changes only distant foreground colors, not background pixels or vector evidence', () => {
+  const data = candidatesFixture(), width = 160, height = 64, columns = width / 8, rows = height / 8
+  const cells: MotionCell[] = Array.from({ length: columns * rows }, (_, id) => {
+    const x = id % columns, y = Math.floor(id / columns), foreground = y >= 2 && y <= 4 && (x >= 2 && x <= 3 || x >= 15 && x <= 16)
+    return { x: x * 8, y: y * 8, width: 8, height: 8, dx: foreground ? 2 : 0, dy: 0, accepted: 64, coverage: 1, spread: .01, coherent: id !== 42 }
+  })
+  data.scene = { ...data.scene, sourceWidth: width, sourceHeight: height, frames: Array.from({ length: 2 }, () => ({ width, height, data: new Uint8Array(width * height * 3).fill(30) })) }
+  data.sequence = { width, height, frameCount: 2, pairs: [{ frame: 0, flow: { width, height, vectors: new Float32Array(width * height * 2), valid: new Uint8Array(width * height).fill(255), roundTrip: new Float32Array(width * height), pan: { dx: 0, dy: 0, response: 0, used: false } }, grids: [{ cellSize: 8, columns, rows, cells }] }] }
+  const before = groupFrameVectors(data.sequence, { splitDistantRegions: false }), after = groupFrameVectors(data.sequence)
+  const first = before.frames[0]!, next = after.frames[0]!
+  expect(first.labels[42]).toBe(first.labels[55])
+  expect(next.labels[42]).not.toBe(next.labels[55])
+  expect(next.observations.find(group => group.id === next.labels[42])!.motionId).toBe(next.observations.find(group => group.id === next.labels[55])!.motionId)
+  const baseline = renderVectorPanels({ ...data, stage: 'vector-groups', frameVectorGroups: before }, 7)
+  const split = renderVectorPanels({ ...data, stage: 'vector-groups', frameVectorGroups: after }, 7)
+  for (const port of ['source', 'candidates', 'confidence'] as const) expect(split.panels[port]).toEqual(baseline.panels[port])
+  expect(split.panels.groups).not.toEqual(baseline.panels.groups)
+  for (const [id, cell] of cells.entries()) {
+    expect(next.labels[id]).toBeGreaterThanOrEqual(0)
+    if (first.labels[id] !== 0) continue
+    expect(next.labels[id]).toBe(0)
+    for (let y = cell.y; y < cell.y + cell.height; y++) {
+      const start = (y * width + cell.x) * 4, end = start + cell.width * 4
+      expect(split.panels.groups.subarray(start, end)).toEqual(baseline.panels.groups.subarray(start, end))
+    }
+  }
 })
 
 test('last frame has no fabricated motion and all four panel buffers are independent', () => {
@@ -271,8 +314,16 @@ test('direct analysis caches across scrub order and display edits; velocity edit
       }
     } finally { summary.release() }
     expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(3)
+    doc.nodes.find(node => node.id === 'ngroups')!.params.splitDistantRegions = false
+    doc.nodes.find(node => node.id === 'ngroups')!.params.proximityGap = 2
+    const proximity = await evaluate('nview', 2, 'out:string:summary')
+    try {
+      expect(proximity.value.kind).toBe('string')
+      if (proximity.value.kind === 'string') expect(proximity.value.value).toContain('Distant region separation: disabled; foreground gap 2 cells; dominant background unchanged')
+    } finally { proximity.release() }
+    expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(4)
     doc.nodes.find(node => node.id === 'ncandidates')!.params.cellSize = 12
     const candidates = await evaluate('ncandidateview', 2, 'out:frame:candidates'); candidates.release()
-    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(3)
+    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(4)
   } finally { cache.clear() }
 })

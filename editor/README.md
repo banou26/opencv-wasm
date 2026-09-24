@@ -243,6 +243,16 @@ temporal ambiguity rejection, or spatial/temporal hole filling. A cell is
 unpainted only when it has no finite candidate vector. Every grouped inspector
 reports candidate and assigned cell counts; these must match exactly.
 
+**Separate distant regions**, enabled by default, then divides spatially distant
+parts of non-dominant motion groups. **Foreground gap (cells)** defaults to four
+empty cells, keeping nearby fragments together without requiring a precise
+silhouette. The dominant group is left exactly unchanged, including its cells,
+ID, velocity and display color. It is only a background hypothesis, not semantic
+background detection. Split regions inherit their original parent motion vector;
+the summary exposes that parent motion ID. Their IDs append after existing IDs,
+so this pass does not recolor untouched groups. Disable it to compare the same
+cached motion grouping without spatial separation. No missing cells are filled.
+
 Groups are recomputed at each neighboring pair, so easing, acceleration and
 direction changes are not forced into one fixed velocity for the whole clip.
 IDs and colors are **frame-local**, not persistent identities; a repeated color
@@ -255,9 +265,10 @@ This replaces the earlier experimental history filter, which incorrectly dropped
 many visible candidate vectors from the first-pass preview. Saved graphs retire
 the former minimum-history and mode-consensus controls and their wires while
 preserving velocity tolerance. Saved graphs missing the subtle-motion option
-acquire its enabled default; explicit disabled settings and their wires survive.
+acquire its enabled default; missing proximity settings acquire enabled/four-cell
+defaults. Explicit disabled settings, zero gap and their typed wires survive.
 The grouping cache version is incremented, so previous groups cannot be reused.
-Radius and subtle-motion edits still reuse the cached scene vectors. The old
+Radius, subtle-motion and proximity edits still reuse the cached scene vectors. The old
 history algorithm remains available in the Cadence
 research core, but this prefab no longer executes or displays it.
 
@@ -1031,6 +1042,10 @@ that browser session. It exports the four native PNG ports, decodes group colors
 at fixed diagnostic cells, checks moving cells against a background control, and
 checks held frames do not fabricate that separation. Controls are test-only,
 never segmentation inputs; they compare IDs within one frame, not across time.
+Its proximity comparison toggles **Separate distant regions** off/on, requires
+the sampled actor and lone-character groups to separate, and compares every
+dominant-background pixel exactly. Source, candidate and confidence panels must
+also remain byte-identical across that toggle.
 Sheets and the report reuse `diagnostics/` with stable filenames.
 
 This is an experiment, not a replacement for Whole-scene regional analysis.

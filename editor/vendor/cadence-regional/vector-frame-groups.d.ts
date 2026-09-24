@@ -7,6 +7,8 @@ export type FrameVectorGroups = {
     options: {
         tolerance: number;
         splitSubtleMotion: boolean;
+        splitDistantRegions: boolean;
+        proximityGap: number;
     };
     frames: {
         frame: number;
@@ -16,6 +18,7 @@ export type FrameVectorGroups = {
         confidence: Uint8Array;
         observations: {
             id: number;
+            motionId: number;
             cells: number[];
             dx: number;
             dy: number;
@@ -31,4 +34,6 @@ export type FrameVectorGroups = {
 export declare function groupFrameVectors(sequence: RegionalSupportSequence, options?: {
     tolerance?: number;
     splitSubtleMotion?: boolean;
+    splitDistantRegions?: boolean;
+    proximityGap?: number;
 }): FrameVectorGroups;

@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32FC1, CV_8UC1, MORPH_CLOSE, MORPH_ELLIPSE, Mat, blur, connectedComponentsWithStats, erode, getStructuringElement, matFromArray, morphologyEx, } from '@banou/opencv-wasm';
+import { CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32FC1, CV_8UC1, MORPH_CLOSE, MORPH_ELLIPSE, MORPH_RECT, Mat, blur, connectedComponentsWithStats, dilate, erode, getStructuringElement, matFromArray, morphologyEx, } from '@banou/opencv-wasm';
 import { CHANGED, INK_HERE, INK_THERE, NEAR } from "./pixel-change.js";
 /** Ink appears across the pair: the later frame is darker. */
 export const ARRIVE = 1;
@@ -155,13 +155,15 @@ export function pairEvidence(camera, atlas, pair, forward, backward, dilation = 
  * `fraction` of the ink of the dominant bracket within `radius`: every line of one drawing changes at the
  * same redraws, while scenery revealed or about to be covered next to it has a bracket of its own.
  */
-export function drawingInk(evidence, frame, rule = 'either', recurrence = 0, consistency, spread = 1, sceneryLeaves = 'recurring') {
+export function drawingInk(evidence, frame, rule = 'either', recurrence = 0, consistency, spread = 1, sceneryLeaves = 'recurring', leaveHorizon = 0, hold) {
+    const range = hold && lumaRange(hold.luma, evidence.camera.width, evidence.camera.height);
     const { camera, atlas, pairs } = evidence, { width, height } = camera, size = width * height;
     if (!Number.isInteger(frame) || frame < 0 || frame > pairs.length)
         throw new RangeError('Frame is outside the evidence');
     const offset = frameOffset(camera, atlas, frame);
     const last = new Uint8Array(size), next = new Uint8Array(size);
     const lastPair = new Int16Array(size).fill(-1), nextPair = new Int16Array(size).fill(-1), current = new Int16Array(size).fill(-1);
+    const arrivedValue = new Int16Array(size).fill(-1), leavingValue = new Int16Array(size).fill(-1);
     const visit = (pair, each) => {
         const { indices } = pairs[pair];
         for (let i = 0; i < indices.length; i++) {
@@ -177,17 +179,25 @@ export function drawingInk(evidence, frame, rule = 'either', recurrence = 0, con
             lastPair[p] = pair;
             if (f & VALUED && pairs[pair].after)
                 current[p] = pairs[pair].after[i];
+            arrivedValue[p] = f & VALUED && pairs[pair].after ? pairs[pair].after[i] : -1;
         });
     for (let pair = pairs.length - 1; pair >= frame; pair--)
         visit(pair, (p, i) => {
-            next[p] = pairs[pair].flags[i];
+            const f = pairs[pair].flags[i];
+            next[p] = f;
             nextPair[p] = pair;
+            leavingValue[p] = f & VALUED && pairs[pair].before ? pairs[pair].before[i] : -1;
         });
     const ink = new Uint8Array(size);
     for (let p = 0; p < size; p++) {
         // Ink that did not merely boil and whose value is the pixel's scenery was revealed or is about to be covered.
-        const revealed = !(last[p] & BOILED) && last[p] & AFTER_SCENERY, covered = sceneryLeaves === 'always' && !(next[p] & BOILED) && next[p] & BEFORE_SCENERY;
-        const arrived = revealed ? 0 : last[p] & ARRIVE, leaves = covered ? 0 : next[p] & LEAVE;
+        const scenic = !(next[p] & BOILED) && next[p] & BEFORE_SCENERY, distant = leaveHorizon > 0 && nextPair[p] - frame + 1 >= leaveHorizon;
+        const revealed = !(last[p] & BOILED) && last[p] & AFTER_SCENERY, settled = lastPair[p] < 0 || !!revealed;
+        const covered = scenic && (sceneryLeaves === 'always' || (sceneryLeaves === 'known' && settled) || distant);
+        // The frame must still show what the bracket measured, or the pixel changed without an event.
+        const within = (value) => value < 0 || (value >= range.lo[p] - hold.tolerance && value <= range.hi[p] + hold.tolerance);
+        const heldIn = !hold || within(arrivedValue[p]), heldOut = !hold || within(leavingValue[p]);
+        const arrived = revealed || !heldIn ? 0 : last[p] & ARRIVE, leaves = covered || !heldOut ? 0 : next[p] & LEAVE;
         ink[p] = rule === 'both' && last[p] & CHANGE && next[p] & CHANGE ? (arrived && leaves ? arrived | leaves : 0) : arrived | leaves;
     }
     if (consistency && consistency.radius > 0) {
@@ -285,13 +295,30 @@ export function drawingInk(evidence, frame, rule = 'either', recurrence = 0, con
     }
     return ink;
 }
-export function fillEnclosed(mask, width, height) {
+/** Per pixel the least and greatest luma of its 3x3 neighborhood: a held line keeps its value within a pixel as the sampling phase moves. */
+function lumaRange(luma, width, height) {
     const env_2 = { stack: [], error: void 0, hasError: false };
+    try {
+        const source = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, luma), false), low = __addDisposableResource(env_2, new Mat(), false), high = __addDisposableResource(env_2, new Mat(), false), kernel = __addDisposableResource(env_2, getStructuringElement(MORPH_RECT, { width: 3, height: 3 }), false);
+        erode(source, low, kernel);
+        dilate(source, high, kernel);
+        return { lo: low.data.slice(), hi: high.data.slice() };
+    }
+    catch (e_2) {
+        env_2.error = e_2;
+        env_2.hasError = true;
+    }
+    finally {
+        __disposeResources(env_2);
+    }
+}
+export function fillEnclosed(mask, width, height) {
+    const env_3 = { stack: [], error: void 0, hasError: false };
     try {
         const inverse = new Uint8Array(mask.length);
         for (let p = 0; p < mask.length; p++)
             inverse[p] = mask[p] ? 0 : 255;
-        const source = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, inverse), false), labels = __addDisposableResource(env_2, new Mat(), false), stats = __addDisposableResource(env_2, new Mat(), false), centroids = __addDisposableResource(env_2, new Mat(), false);
+        const source = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, inverse), false), labels = __addDisposableResource(env_3, new Mat(), false), stats = __addDisposableResource(env_3, new Mat(), false), centroids = __addDisposableResource(env_3, new Mat(), false);
         const count = connectedComponentsWithStats(source, labels, stats, centroids, 4);
         const touches = new Uint8Array(count), s = stats.data32S, columns = stats.cols;
         for (let label = 1; label < count; label++) {
@@ -305,31 +332,31 @@ export function fillEnclosed(mask, width, height) {
                 out[p] = 1;
         return out;
     }
-    catch (e_2) {
-        env_2.error = e_2;
-        env_2.hasError = true;
+    catch (e_3) {
+        env_3.error = e_3;
+        env_3.hasError = true;
     }
     finally {
-        __disposeResources(env_2);
+        __disposeResources(env_3);
     }
 }
-export function drawingSilhouette(evidence, frame, options = {}) {
-    const env_3 = { stack: [], error: void 0, hasError: false };
+export function drawingSilhouette(evidence, frame, options = {}, luma) {
+    const env_4 = { stack: [], error: void 0, hasError: false };
     try {
         const closeRadius = options.closeRadius ?? 6, minimumArea = options.minimumArea ?? 800;
         if (!Number.isInteger(closeRadius) || closeRadius < 0 || closeRadius > 32 || !Number.isInteger(minimumArea) || minimumArea < 1
             || !Number.isInteger(options.erode ?? 0) || (options.erode ?? 0) < 0 || (options.erode ?? 0) > 8)
             throw new RangeError('Invalid silhouette options');
         const { width, height } = evidence.camera;
-        const ink = drawingInk(evidence, frame, options.inkRule, options.recurrence ?? 0, options.consistency ?? { radius: 0, fraction: .3 }, options.spread ?? 1, options.sceneryLeaves ?? 'never');
+        const ink = drawingInk(evidence, frame, options.inkRule, options.recurrence ?? 0, options.consistency ?? { radius: 0, fraction: .3 }, options.spread ?? 1, options.sceneryLeaves ?? 'never', options.leaveHorizon ?? 0, luma && { luma, tolerance: options.holdTolerance ?? 12 });
         const binary = new Uint8Array(ink.length);
         for (let p = 0; p < ink.length; p++)
             binary[p] = ink[p] ? 255 : 0;
         const minimumInk = options.minimumInk ?? 0;
         if (minimumInk > 1) {
-            const env_4 = { stack: [], error: void 0, hasError: false };
+            const env_5 = { stack: [], error: void 0, hasError: false };
             try {
-                const strokes = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, binary), false), labels = __addDisposableResource(env_4, new Mat(), false), stats = __addDisposableResource(env_4, new Mat(), false), centroids = __addDisposableResource(env_4, new Mat(), false);
+                const strokes = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, binary), false), labels = __addDisposableResource(env_5, new Mat(), false), stats = __addDisposableResource(env_5, new Mat(), false), centroids = __addDisposableResource(env_5, new Mat(), false);
                 const count = connectedComponentsWithStats(strokes, labels, stats, centroids, 8), l = labels.data32S, small = new Uint8Array(count);
                 for (let label = 1; label < count; label++)
                     small[label] = Number(stats.data32S[label * stats.cols + CC_STAT_AREA] < minimumInk);
@@ -339,21 +366,6 @@ export function drawingSilhouette(evidence, frame, options = {}) {
                         ink[p] = 0;
                     }
             }
-            catch (e_3) {
-                env_4.error = e_3;
-                env_4.hasError = true;
-            }
-            finally {
-                __disposeResources(env_4);
-            }
-        }
-        const source = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, binary), false), closed = __addDisposableResource(env_3, new Mat(), false);
-        if (closeRadius > 0) {
-            const env_5 = { stack: [], error: void 0, hasError: false };
-            try {
-                const kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_ELLIPSE, { width: closeRadius * 2 + 1, height: closeRadius * 2 + 1 }), false);
-                morphologyEx(source, closed, MORPH_CLOSE, kernel);
-            }
             catch (e_4) {
                 env_5.error = e_4;
                 env_5.hasError = true;
@@ -362,16 +374,12 @@ export function drawingSilhouette(evidence, frame, options = {}) {
                 __disposeResources(env_5);
             }
         }
-        else
-            source.copyTo(closed);
-        const filled = fillEnclosed(closed.data.map(v => Number(v !== 0)), width, height);
-        const solid = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, filled), false), labels = __addDisposableResource(env_3, new Mat(), false), stats = __addDisposableResource(env_3, new Mat(), false), centroids = __addDisposableResource(env_3, new Mat(), false);
-        const shrink = options.erode ?? 0;
-        if (shrink > 0) {
+        const source = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, binary), false), closed = __addDisposableResource(env_4, new Mat(), false);
+        if (closeRadius > 0) {
             const env_6 = { stack: [], error: void 0, hasError: false };
             try {
-                const kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_ELLIPSE, { width: shrink * 2 + 1, height: shrink * 2 + 1 }), false);
-                erode(solid, solid, kernel);
+                const kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_ELLIPSE, { width: closeRadius * 2 + 1, height: closeRadius * 2 + 1 }), false);
+                morphologyEx(source, closed, MORPH_CLOSE, kernel);
             }
             catch (e_5) {
                 env_6.error = e_5;
@@ -379,6 +387,25 @@ export function drawingSilhouette(evidence, frame, options = {}) {
             }
             finally {
                 __disposeResources(env_6);
+            }
+        }
+        else
+            source.copyTo(closed);
+        const filled = fillEnclosed(closed.data.map(v => Number(v !== 0)), width, height);
+        const solid = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, filled), false), labels = __addDisposableResource(env_4, new Mat(), false), stats = __addDisposableResource(env_4, new Mat(), false), centroids = __addDisposableResource(env_4, new Mat(), false);
+        const shrink = options.erode ?? 0;
+        if (shrink > 0) {
+            const env_7 = { stack: [], error: void 0, hasError: false };
+            try {
+                const kernel = __addDisposableResource(env_7, getStructuringElement(MORPH_ELLIPSE, { width: shrink * 2 + 1, height: shrink * 2 + 1 }), false);
+                erode(solid, solid, kernel);
+            }
+            catch (e_6) {
+                env_7.error = e_6;
+                env_7.hasError = true;
+            }
+            finally {
+                __disposeResources(env_7);
             }
         }
         const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8);
@@ -403,11 +430,11 @@ export function drawingSilhouette(evidence, frame, options = {}) {
             }
         return { width, height, frame, mask, ink, components };
     }
-    catch (e_6) {
-        env_3.error = e_6;
-        env_3.hasError = true;
+    catch (e_7) {
+        env_4.error = e_7;
+        env_4.hasError = true;
     }
     finally {
-        __disposeResources(env_3);
+        __disposeResources(env_4);
     }
 }

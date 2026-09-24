@@ -358,11 +358,13 @@ export const unpackMask = (packed, length) => {
         out[p] = (packed[p >> 3] >> (7 - (p & 7))) & 1;
     return out;
 };
+/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`). */
 export async function sceneSilhouettes(evidence, options = {}) {
-    const { progress, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
+    const { progress, source, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
     for (let frame = 0; frame <= evidence.pairs.length; frame++) {
         await progress?.(frame, evidence.pairs.length + 1);
-        const silhouette = drawingSilhouette(evidence, frame, silhouetteOptions);
+        const luma = source && Uint8Array.from(pixelLuma(await source.frame(frame)), v => Math.max(0, Math.min(255, Math.round(v))));
+        const silhouette = drawingSilhouette(evidence, frame, silhouetteOptions, luma);
         frames.push({ packed: packMask(silhouette.mask), area: silhouette.components.reduce((sum, c) => sum + c.area, 0), components: silhouette.components });
     }
     return { width, height, options: silhouetteOptions, frames };

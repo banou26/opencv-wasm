@@ -107,8 +107,10 @@ export type SceneSilhouettes = {
         }[];
     }[];
 };
+/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`). */
 export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: SilhouetteOptions & {
     progress?: StageProgress;
+    source?: PixelFrameSource;
 }): Promise<SceneSilhouettes>;
 /**
  * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near

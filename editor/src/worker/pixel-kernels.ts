@@ -69,7 +69,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     output = { ...data, stage: 'pixel-evidence', pixelEvidence: await annotateScenery(source, data.pixelEvidence, { tolerance: Number(params.tolerance), minimumSamples: Number(params.minimumSamples), progress }) }
   } else if (type === 'pixelSilhouettes') {
     if (!data.pixelEvidence) throw new Error('Drawing Silhouettes needs Redraw Ink Evidence')
-    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), recurrence: Number(params.recurrence), sceneryLeaves: String(params.sceneryLeaves) as 'never' | 'recurring' | 'always', progress }) }
+    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), recurrence: Number(params.recurrence), sceneryLeaves: String(params.sceneryLeaves) as 'never' | 'recurring' | 'known' | 'always', leaveHorizon: Number(params.leaveHorizon), holdTolerance: Number(params.holdTolerance), progress, ...(Number(params.holdTolerance) > 0 ? { source } : {}) }) }
   } else if (type === 'pixelPlate') {
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
     const silhouettes = data.pixelSilhouettes, size = source.width * source.height, drawn = (frame: number) => unpackMask(silhouettes.frames[frame]!.packed, size)

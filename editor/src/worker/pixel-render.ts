@@ -1,4 +1,4 @@
-import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, renderCover, renderPlate, renderScene, unpackMask, type PixelFrame } from 'cadence/regional'
+import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, pixelLuma, renderCover, renderPlate, renderScene, unpackMask, type PixelFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
 type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; drawings: Uint8Array }
@@ -44,7 +44,9 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
       if (x >= 0 && y >= 0 && x < width && y < height) changes[y * width + x] = pair.flags[i]!
     }
   }
-  const ink = evidence ? drawingInk(evidence, index, 'either', Number(data.pixelSilhouettes?.options.recurrence ?? 0), undefined, 1, data.pixelSilhouettes?.options.sceneryLeaves ?? 'never') : new Uint8Array(size)
+  const options = data.pixelSilhouettes?.options, tolerance = options?.holdTolerance ?? 0
+  const hold = tolerance > 0 ? { luma: Uint8Array.from(pixelLuma(pixels), v => Math.max(0, Math.min(255, Math.round(v)))), tolerance } : undefined
+  const ink = evidence ? drawingInk(evidence, index, 'either', Number(options?.recurrence ?? 0), undefined, 1, options?.sceneryLeaves ?? 'never', options?.leaveHorizon ?? 0, hold) : new Uint8Array(size)
   const mask = data.pixelSilhouettes ? unpackMask(data.pixelSilhouettes.frames[index]!.packed, size) : new Uint8Array(size)
   const edge = new Uint8Array(size)
   for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {

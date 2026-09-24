@@ -73,11 +73,26 @@ export type SilhouetteOptions = {
     spread?: number;
     /**
      * Leaving ink whose value is the scenery: 'never' (default) keeps it, 'recurring' rejects it when the value
-     * also recurs across a different stretch of time, 'always' whenever it did not boil. A drawing that stood
-     * still from the first frame is its own median, so both rejections can cost its outline; on market-pan
-     * 'recurring' removes scenery about to be covered but splits a mostly static character off its group.
+     * also recurs across a different stretch of time, 'known' when the pixel never changed before the frame or
+     * its last change revealed the scenery (the value shown now is scenery either way), 'always' whenever it
+     * did not boil. A drawing that stood still from the first frame is its own median, so the rejections can
+     * cost its outline; on market-pan 'recurring' removes scenery about to be covered but splits a mostly
+     * static character off its group.
      */
-    sceneryLeaves?: 'never' | 'recurring' | 'always';
+    sceneryLeaves?: 'never' | 'recurring' | 'known' | 'always';
+    /**
+     * Leaving ink whose value is the scenery and that did not boil is dropped when its change is at least
+     * this many frames away (0 disables). A drawing on twos or threes leaves within a few frames; scenery an
+     * effect sweeps over late in the shot would otherwise be ink for every frame before it.
+     */
+    leaveHorizon?: number;
+    /**
+     * With the frame's own luma, held ink must show the value its bracket measured, within this many codes
+     * of the range of its 3x3 neighborhood:
+     * a pixel that fades in below the change threshold and then vanishes has one change, and its value
+     * just before it is not the value of the frames long before.
+     */
+    holdTolerance?: number;
 };
 /**
  * Pixels of one frame that belong to a drawing held at that frame. A pixel is ink of the held drawing
@@ -114,6 +129,9 @@ export type BracketConsistency = {
  * `fraction` of the ink of the dominant bracket within `radius`: every line of one drawing changes at the
  * same redraws, while scenery revealed or about to be covered next to it has a bracket of its own.
  */
-export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both', recurrence?: number, consistency?: BracketConsistency, spread?: number, sceneryLeaves?: 'never' | 'recurring' | 'always'): Uint8Array;
+export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both', recurrence?: number, consistency?: BracketConsistency, spread?: number, sceneryLeaves?: 'never' | 'recurring' | 'known' | 'always', leaveHorizon?: number, hold?: {
+    luma: Uint8Array;
+    tolerance: number;
+}): Uint8Array;
 export declare function fillEnclosed(mask: Uint8Array, width: number, height: number): Uint8Array;
-export declare function drawingSilhouette(evidence: DrawingEvidence, frame: number, options?: SilhouetteOptions): DrawingSilhouette;
+export declare function drawingSilhouette(evidence: DrawingEvidence, frame: number, options?: SilhouetteOptions, luma?: Uint8Array): DrawingSilhouette;

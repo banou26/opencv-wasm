@@ -7,7 +7,7 @@ export type MotionCompletionOptions = {
     maxBorderDistance?: number;
     /** Competing families and contradictory motion must be farther by this many cells. */
     competitorClearance?: number;
-    /** Fill enclosed empty cells and final coherent single-cell gaps, without iterative growth. */
+    /** Fill enclosed empty cells, narrow pockets and matching singletons, without iterative growth. */
     fillIsolated?: boolean;
     /** Resolve compatible rejected motion and empty runs from frozen scene-wide support. */
     bridgeTemporal?: boolean;
@@ -26,6 +26,8 @@ export type MotionCompletionFrame = {
         enclosedCells?: number[];
         /** Subset of border cells closed from final frozen support; never temporal donors. */
         terminalBorderCells?: number[];
+        /** Final narrow pockets, a subset of motion/isolated cells; never evidence for another pass. */
+        pocketCells?: number[];
     }[];
     counts: {
         measured: number;

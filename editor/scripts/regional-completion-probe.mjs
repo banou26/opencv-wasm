@@ -12,6 +12,8 @@ const frames = (process.env.PROBE_FRAMES ?? '20,22,28,33,84,88,89,90,91,92,93,94
 assert.ok(frames.length > 0 && frames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
 const imageFrames = process.env.PROBE_IMAGE_FRAMES === undefined ? frames : process.env.PROBE_IMAGE_FRAMES.split(',').filter(Boolean).map(Number)
 assert.ok(imageFrames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
+const sampleCells = (process.env.PROBE_CELLS ?? '').split(',').filter(Boolean).map(Number)
+assert.ok(sampleCells.every(cell => Number.isSafeInteger(cell) && cell >= 0))
 const prefix = process.env.PROBE_PREFIX ?? 'regional-completion-probe'
 assert.match(prefix, /^[a-z0-9-]+$/)
 const directory = resolve('build-smoke'), url = process.env.APP_URL ?? 'http://127.0.0.1:4560'
@@ -93,9 +95,11 @@ try {
     })
     assert.ok(cells.every(cell => [cell.measured, cell.completed, cell.provenance].every(value => value !== 'unclassified')), `Unrecognized diagnostic color at source frame ${frame}`)
     const counts = Object.fromEntries(['measured', 'completed', 'provenance'].map(key => [key, cells.reduce((all, cell) => { all[cell[key]] = (all[cell[key]] ?? 0) + 1; return all }, {})]))
-    const record = { sourceFrame: frame, seconds: frame / sourceFps, output60First: Math.ceil(frame * 60 / sourceFps), output60Last: Math.ceil((frame + 1) * 60 / sourceFps) - 1, width, height, columns, rows, summary, counts, cells, path }
+    assert.ok(sampleCells.every(cell => cell < cells.length), 'PROBE_CELLS must address cells in the analysis grid')
+    const samples = sampleCells.map(cell => cells[cell])
+    const record = { sourceFrame: frame, seconds: frame / sourceFps, output60First: Math.ceil(frame * 60 / sourceFps), output60Last: Math.ceil((frame + 1) * 60 / sourceFps) - 1, width, height, columns, rows, summary, counts, samples, cells, path }
     records.push(record)
-    console.log(JSON.stringify({ sourceFrame: frame, output60: [record.output60First, record.output60Last], counts }))
+    console.log(JSON.stringify({ sourceFrame: frame, output60: [record.output60First, record.output60Last], counts, samples }))
   }
   assert.deepEqual(errors, [])
   await writeFile(resolve(directory, `${prefix}.json`), `${JSON.stringify({ clip, metadata, sourceFps, analysisWidth, analysisHeight, description: 'Native editor PNG exports. Sheets: source/measured above completed/provenance. Cells classified from center pixels of known diagnostic colors; unknown means unpainted (blocked or unknown support), not recovered ownership ground truth.', records, errors }, null, 2)}\n`)

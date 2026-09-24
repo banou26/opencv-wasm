@@ -473,6 +473,15 @@ background in that baseline, and the central characters remain fragmented.
   competitor checks. New border fills never become donors or restart growth.
   Optional `terminalBorderCells` metadata marks a subset of `borderCells`, not
   extra cells; the inspector keeps the ordinary teal border provenance and counts.
+  With both cleanups enabled, one final frozen pass also considers fully enclosed
+  pockets of at most four cells. Raw-unknown pockets must stay one cell wide;
+  informative pockets must be a single coherent cell matching the surrounding
+  family, with competitor clearance across its entire eight-cell ring.
+  Competing ownership, incompatible motion, and contradictions along the
+  original transported history still veto completion. The additions cannot become
+  donors, seeds, or evidence for another pocket. Optional `pocketCells` metadata
+  marks a subset of `motionCells` or `isolatedCells`; their existing purple or
+  pink colors and counts are unchanged. This is coarse support, not a silhouette.
   These are analysis-grid distances, not
   full-resolution pixels. The source-backed four-panel view shows source /
   measured support on top, completed support / inference distinction below.
@@ -558,6 +567,8 @@ selects source indices. `PROBE_IMAGE_FRAMES` limits which of those frames also
 overwrite four-panel PNG sheets; set it to an empty string for metrics only.
 `PROBE_PREFIX` changes their shared filename prefix within `build-smoke/`, so a
 different source encode can be checked without replacing the original report.
+`PROBE_CELLS` highlights comma-separated fine-grid cell indices in each console
+record and the JSON's `samples`; every grid cell remains available in `cells`.
 The classifier's `unknown` means unpainted, including both blocked and unknown
 support. These colors identify motion-family evidence, not true object ownership.
 The probe uses a disposable browser profile and leaves the dev server running.
@@ -580,19 +591,39 @@ that transient failure.
 
 The saved project's `test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4`
 is a different encode at 24000/1001fps. Its motion evidence differs, so the
-original-encode coverage claim does not apply to it. The terminal-border check
+original-encode coverage claim does not apply to it. The terminal-border baseline
 uses this actual asset at sources 63, 66, 78, 84, 110, 113, 114, 115 and 116.
-Native inspector PNGs agree with the frozen browser-input core replay across
+Native inspector PNGs agreed with the frozen browser-input core replay across
 all 8,280 grid cells. At 110/113/114/115 the pass adds 24 right-edge support
 cells per frame, without changing measured labels or existing owners. Seven
-unpainted cells remain in the right-wall ROI at 110/113/114, and eight at 115;
-these retained gaps are not claimed to be fixed. Source 116 has no outgoing
+unpainted cells remained in the right-wall ROI at 110/113/114, and eight at 115.
+Source 116 has no outgoing
 pair and therefore shows no support, unchanged by this pass. It maps to
 zero-based 60fps output frames 291-292; source 113 maps to 283-285 and 114 to
 286-287. The prior report remains `build-smoke/regional-completion-market-asset-tail.json`;
-the current report and nine sheets use the `regional-completion-market-asset-candidate`
-prefix. These diagnostics do not resolve the pre-existing character/family
-conflation or establish object ownership.
+the terminal-border baseline is also preserved as
+`build-smoke/regional-completion-market-asset-baseline.json`.
+
+The current narrow-pocket check uses those same nine source indices and the
+`regional-completion-market-asset-candidate` report/sheets. All 8,280 native
+inspector cell labels match the frozen-input core replay, with every original
+measured label and prior completed owner/provenance unchanged. At
+110/113/114/115, door-apex cell 317 gains motion-associated support and turret
+cells 444/484/524 gain isolated support. The crop-left door cell 515 stays
+unknown: its connected gap reaches another family and lacks eligible full
+temporal donors. All 23 selected character/boundary samples keep their exact
+baseline labels. These are coarse review coordinates, not semantic masks;
+the pre-existing character/family conflation remains unresolved.
+
+The actual-asset one-worker and default-four-worker exports both contain all
+293 frames at 1920x1080/60fps, with decoded SHA-256
+`a81a250f224b7a121436e94d0c26638b39d089bfdf4bedc32b61c041f2f99dcc`.
+Reported render times are 7.56s and 15.34s after 11.50s and 11.59s initial
+analysis. Four workers remain the existing default; this scene is faster with
+one worker. Candidate videos and reports are
+`build-smoke/regional-market-editor-single` and `regional-market-editor-render`.
+Validation passes 177 editor tests, typecheck, lint, build and actual-asset
+regional desktop/mobile smoke.
 
 The core is a generated, committed browser-safe snapshot from Cadence under
 `vendor/cadence-regional/`, imported through `cadence/regional`. Normal installs,

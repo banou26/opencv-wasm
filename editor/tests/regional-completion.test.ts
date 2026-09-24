@@ -87,7 +87,7 @@ test('completion controls use bounded whole fine-grid distances', () => {
     for (const value of [-1, .5, 33, NaN]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).not.toBeNull()
   }
   const doc = regionalLayersGraph(), spec = specFor(doc.nodes.find(node => node.id === 'ncomplete')!, doc)
-  expect(spec.version).toBe(7)
+  expect(spec.version).toBe(8)
   for (const key of ['fillIsolated', 'bridgeTemporal']) {
     expect(spec.inputs.find(port => port.parameter === key)?.type).toBe('boolean')
     for (const value of [true, false]) expect(validateParams('regionalComplete', { ...defaultParams('regionalComplete'), [key]: value })).toBeNull()
@@ -172,6 +172,24 @@ test('terminal border metadata preserves ordinary border colors and counts', () 
   const pixel = ((2 * 8 + 4) * 72 + 3 * 8 + 4) * 4
   expect([...after.panels.provenance.subarray(pixel, pixel + 4)]).toEqual([72, 164, 142, 255])
   expect(after.summary).toContain('inferred border 1')
+})
+
+test('pocket metadata preserves motion and isolated colors without adding counts or measured support', () => {
+  const data = fixture(), completion = completeMotionSupport(data.sequence!, data.families!, { maxHoleDistance: 0, maxBorderDistance: 0, fillIsolated: false, bridgeTemporal: false })
+  const frame = completion.frames[0]!, observation = frame.observations[0]!
+  observation.motionCells = [21]; observation.isolatedCells = [23]
+  frame.counts.motion = 1; frame.counts.isolated = 1; frame.counts.unknown -= 2
+  const before = renderCompletionPanels({ ...data, completion }, 10), summary = regionalSummary({ ...data, completion })
+  observation.pocketCells = [21, 23]
+  const after = renderCompletionPanels({ ...data, completion }, 10)
+  expect(after).toEqual(before)
+  expect(regionalSummary({ ...data, completion })).toEqual(summary)
+  const pixel = (cell: number) => ((Math.floor(cell / 9) * 8 + 4) * 72 + cell % 9 * 8 + 4) * 4
+  expect([...after.panels.provenance.subarray(pixel(21), pixel(21) + 4)]).toEqual([140, 102, 178, 255])
+  expect([...after.panels.provenance.subarray(pixel(23), pixel(23) + 4)]).toEqual([176, 96, 134, 255])
+  expect(after.summary).toContain('motion-associated 1')
+  expect(after.summary).toContain('isolated 1; temporal 0')
+  expect(observation.measuredCells).toEqual([20, 24])
 })
 
 test('temporal cleanup uses both adjacent pairs even when geometric completion is disabled', async () => {

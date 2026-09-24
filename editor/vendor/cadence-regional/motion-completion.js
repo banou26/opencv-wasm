@@ -561,6 +561,84 @@ export function* completeMotionSupportSteps(sequence, families, options = {}) {
                 for (const observation of current.frame.observations)
                     observation.borderCells.sort((a, b) => a - b);
             }
+            if (resolved.fillIsolated) {
+                // Judge whole small pockets against one frozen raster; repaired cells never close another gap.
+                const raster = current.owner.slice(), context = byFrame.get(current.frame.frame);
+                for (const [label, observation] of current.frame.observations.entries()) {
+                    for (const cells of [observation.motionCells, observation.isolatedCells, observation.temporalCells, observation.borderCells]) {
+                        for (const p of cells)
+                            raster[p] = label;
+                    }
+                }
+                const visited = new Uint8Array(count), margins = new Map();
+                for (let start = 0; start < count; start++) {
+                    if (raster[start] >= 0 || visited[start])
+                        continue;
+                    const pocket = [start], boundary = new Set();
+                    let edge = false;
+                    visited[start] = 1;
+                    for (const p of pocket) {
+                        const x = p % columns, y = Math.floor(p / columns);
+                        if (!x || !y || x === columns - 1 || y === rows - 1)
+                            edge = true;
+                        for (let dy = -1; dy <= 1; dy++)
+                            for (let dx = -1; dx <= 1; dx++) {
+                                if ((!dx && !dy) || x + dx < 0 || x + dx >= columns || y + dy < 0 || y + dy >= rows)
+                                    continue;
+                                const q = (y + dy) * columns + x + dx;
+                                if (raster[q] >= 0)
+                                    boundary.add(raster[q]);
+                                else if (!visited[q]) {
+                                    visited[q] = 1;
+                                    pocket.push(q);
+                                }
+                            }
+                    }
+                    if (edge || pocket.length > 4 || boundary.size !== 1)
+                        continue;
+                    const label = boundary.values().next().value, observation = current.frame.observations[label];
+                    const velocity = context.velocities.get(observation.id);
+                    if (![velocity.dx, velocity.dy].every(Number.isFinite))
+                        continue;
+                    const informative = pocket.some(p => raster[p] === -2);
+                    if (informative) {
+                        if (pocket.length !== 1 || !fits(context.grid.cells[start], velocity))
+                            continue;
+                        if (!margins.has(label))
+                            margins.set(label, distances(context.grid.cells.flatMap((raw, p) => raster[p] >= 0 && raster[p] !== label || raster[p] === -2 && !fits(raw, velocity) ? [p] : []), columns, rows));
+                        const ring = [start - columns - 1, start - columns, start - columns + 1, start - 1,
+                            start + 1, start + columns - 1, start + columns, start + columns + 1];
+                        // The enclosing evidence, not just the center, must clear competing motion.
+                        if (ring.some(p => margins.get(label)[p] <= Math.max(1, resolved.competitorClearance)))
+                            continue;
+                    }
+                    else if (pocket.some(p => !(raster[p - 1] === label && raster[p + 1] === label)
+                        && !(raster[p - columns] === label && raster[p + columns] === label)))
+                        continue;
+                    if (pocket.some(p => !temporalStable(context, p, observation.id, false)
+                        || !consistentTrajectory(context, p, observation.id)))
+                        continue;
+                    for (const p of pocket) {
+                        if (informative) {
+                            observation.motionCells.push(p);
+                            current.frame.counts.motion++;
+                            current.frame.counts.blocked--;
+                        }
+                        else {
+                            observation.isolatedCells.push(p);
+                            current.frame.counts.isolated++;
+                            current.frame.counts.unknown--;
+                        }
+                        observation.pocketCells ??= [];
+                        observation.pocketCells.push(p);
+                    }
+                }
+                for (const observation of current.frame.observations) {
+                    observation.motionCells.sort((a, b) => a - b);
+                    observation.isolatedCells.sort((a, b) => a - b);
+                    observation.pocketCells?.sort((a, b) => a - b);
+                }
+            }
         }
         yield current.frame;
     }

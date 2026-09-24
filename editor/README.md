@@ -232,6 +232,11 @@ dominant tight cluster using its measured variation, so a small consistent
 character movement need not disappear inside the broad initial radius. Disable
 it to compare the earlier radius-only behavior using the same cached vectors.
 This refinement is local to each pair, not a constant-velocity assumption.
+Each proposed subtle split needs at least three coherent witnesses two cells
+inside both frames, with a median difference at least twice the measured noise
+radius. Border-only excursions and weak interior patches cannot establish a
+split; their candidates keep the original assignment rather than being removed.
+An interior-supported component may still extend to the frame edge.
 A mixed measurement still receives a group: its confidence
 does not remove its support. There is no minimum group size, minimum history,
 temporal ambiguity rejection, or spatial/temporal hole filling. A cell is

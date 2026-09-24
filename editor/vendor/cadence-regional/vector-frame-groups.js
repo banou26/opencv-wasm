@@ -67,7 +67,7 @@ function coarseClusters(grid, tolerance, included) {
     }
     return clusters.sort(order);
 }
-function splitTightCore(group, grid, tolerance, maxSide) {
+function splitTightCore(group, grid, tolerance, width, height) {
     const strong = group.cells.filter(index => grid.cells[index].coherent);
     if (strong.length < 12)
         return [group];
@@ -75,7 +75,7 @@ function splitTightCore(group, grid, tolerance, maxSide) {
     const residual = (index) => Math.hypot(grid.cells[index].dx - dominant.dx, grid.cells[index].dy - dominant.dy);
     // A broad velocity radius is not a noise estimate. Protect a tightly measured
     // dominant motion, using the same minimum image-relative displacement at each resolution.
-    const radius = Math.max(.03 * maxSide / 320, 4 * median(strong.map(residual)));
+    const radius = Math.max(.03 * Math.max(width, height) / 320, 4 * median(strong.map(residual)));
     if (radius >= tolerance / 2)
         return [group];
     const outliers = new Set(strong.filter(index => residual(index) > radius));
@@ -106,9 +106,19 @@ function splitTightCore(group, grid, tolerance, maxSide) {
                 seen.add(next);
                 component.push(next);
             }
-        if (component.length >= 3)
+        // Reflected-border excursions cannot establish a new motion by themselves.
+        // Interior witnesses may still carry a supported component to the frame edge.
+        const margin = grid.cellSize * 2;
+        const witnesses = component.filter(index => {
+            const cell = grid.cells[index];
+            return [0, 1].every(t => cell.x + t * cell.dx >= margin && cell.y + t * cell.dy >= margin
+                && cell.x + cell.width + t * cell.dx <= width - margin
+                && cell.y + cell.height + t * cell.dy <= height - margin);
+        });
+        if (witnesses.length >= 3 && median(witnesses.map(residual)) >= radius * 2) {
             for (const cell of component)
                 supported.add(cell);
+        }
     }
     if (!supported.size)
         return [group];
@@ -122,9 +132,9 @@ function splitTightCore(group, grid, tolerance, maxSide) {
         return [group];
     return [core, ...coarseClusters(grid, tolerance, remaining)];
 }
-function groupGrid(grid, tolerance, splitSubtleMotion, maxSide) {
+function groupGrid(grid, tolerance, splitSubtleMotion, width, height) {
     const coarse = coarseClusters(grid, tolerance);
-    const clusters = (splitSubtleMotion ? coarse.flatMap(group => splitTightCore(group, grid, tolerance, maxSide)) : coarse).sort(order);
+    const clusters = (splitSubtleMotion ? coarse.flatMap(group => splitTightCore(group, grid, tolerance, width, height)) : coarse).sort(order);
     const labels = new Int32Array(grid.cells.length).fill(-1), confidence = new Uint8Array(grid.cells.length);
     const observations = clusters.map((group, id) => {
         group.cells.sort((a, b) => a - b);
@@ -172,7 +182,7 @@ export function groupFrameVectors(sequence, options = {}) {
                 || (cell.coherent && cell.dx === null))
                 throw new RangeError('Invalid candidate measurement');
         }
-        return { ...groupGrid(grid, tolerance, splitSubtleMotion, Math.max(width, height)), frame };
+        return { ...groupGrid(grid, tolerance, splitSubtleMotion, width, height), frame };
     });
     return { width, height, frameCount, cellSize, options: { tolerance, splitSubtleMotion }, frames };
 }

@@ -61,7 +61,7 @@ test('direct prefab has a separate pipeline, four independent outputs and no com
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005 })
   expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, splitSubtleMotion: true })
-  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(4)
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(5)
   expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')
 })
 

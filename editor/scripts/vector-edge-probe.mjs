@@ -6,12 +6,15 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
-import { captureSupportFlashes } from './vector-character-check.mjs'
+import { captureSupportFlashes, checkSupportCompletion } from './vector-character-check.mjs'
 
 const clip = process.env.REGIONAL_CLIP ?? '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const output = resolve(process.env.VECTOR_OUTPUT ?? '../../cadence/test/out/layers-market-pan/diagnostics')
 const prefix = process.env.VECTOR_PREFIX ?? 'vector-edge'
 const frames = (process.env.VECTOR_FRAMES ?? '15,16,17,18,19,20,71,72,73').split(',').map(Number)
+const checkCompletion = process.env.VECTOR_CHECK_COMPLETION ?? 'false'
+assert(['true', 'false'].includes(checkCompletion), 'VECTOR_CHECK_COMPLETION must be true or false')
+assert(frames.length > 0 && frames.every(frame => Number.isSafeInteger(frame) && frame >= 0), 'VECTOR_FRAMES must contain nonnegative source-frame indices')
 assert.match(prefix, /^[a-z0-9-]+$/)
 assert((await stat(output)).isDirectory(), 'Reuse an existing results directory')
 const url = process.env.APP_URL ?? 'http://127.0.0.1:4560', errors = []
@@ -56,9 +59,10 @@ try {
     const control = page.getByLabel('Scene Vector Candidates Verify border vectors', { exact: true }), enabled = process.env.VECTOR_VERIFY_BORDERS === 'true'
     if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled))
   }
-  await captureSupportFlashes({ page, change, output, prefix, frames })
+  if (checkCompletion === 'true') await checkSupportCompletion({ page, change, output, prefix, cases: frames.map(frame => ({ frame })) })
+  else await captureSupportFlashes({ page, change, output, prefix, frames })
   assert.deepEqual(errors, [])
-  console.log(`PASS edge probe: ${frames.length} source frames, raw/completed native PNGs; no movie render`)
+  console.log(`PASS edge probe: ${frames.length} source frames, ${checkCompletion === 'true' ? 'completion disabled/enabled checks' : 'raw/completed native PNGs'}; no movie render`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])
   await Promise.race([browser?.close().catch(() => {}), pause(2000)])

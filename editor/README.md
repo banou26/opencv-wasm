@@ -1137,9 +1137,10 @@ provenance for every addition. Raw PNG labels independently determine original
 frame-wide group sizes and the IDs touching each edge: every proposed unknown
 edge cell must receive the largest touching group, and competing corner owners
 use the same size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
-`requireBottomRight` controls. The market smoke checks source 26 and 65 explicitly
-for the reported corner gap. It restores both controls enabled and leaves
-`ncompletionview` selected.
+`requireBottomRight` controls. The market smoke checks source 25, 26 and 65
+explicitly for the reported corner gap. Output frame 65 at 60fps maps to source
+25 at the clip's 24000/1001fps, not 26 from a rounded 24fps rate. It restores both
+controls enabled and leaves `ncompletionview` selected.
 The helper independently floods the unknown cells after reconstructing edge
 additions from provenance. Each enclosed component must use its largest touching
 group by original measured frame-wide count, with lowest-ID ties; an open
@@ -1160,6 +1161,12 @@ For a bounded capture without rerendering the review movie, run
 It opens the current Direct prefab and captures source frames 15-20 and 71-73;
 `VECTOR_FRAMES`, `VECTOR_PREFIX`, `VECTOR_OUTPUT` and `REGIONAL_CLIP` override the
 probe selection and existing destination. The default prefix is `vector-edge`.
+`VECTOR_CHECK_COMPLETION=true` runs the independent disabled/enabled completion
+checks for those frames instead of the default read-only flash capture, still
+without rendering a movie. For the reported output-frame-65 corner, use
+`VECTOR_FRAMES=25 VECTOR_PREFIX=vector-edge VECTOR_CHECK_COMPLETION=true` with the
+same command; results are `vector-edge-support-025.png` and
+`vector-edge-support-browser.json` in the existing diagnostics directory.
 `VECTOR_VERIFY_BORDERS=false` selects the original pooled-vector control;
 otherwise the probe uses the prefab's enabled default and records it.
 The initial `vector-edge-before` browser probe reproduces measured edge groups at source 16 (three

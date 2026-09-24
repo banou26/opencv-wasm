@@ -214,3 +214,50 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
     return records
   } finally { await setEnabled(true); await select() }
 }
+
+/** Read-only neighboring-frame evidence for transient edge holes; do not alter analysis controls. */
+export async function captureSupportFlashes({ page, change, output, prefix, frames }) {
+  assert(frames.length > 0 && frames.every(frame => Number.isSafeInteger(frame) && frame >= 0))
+  const records = [], settings = {
+    analysisMaxSide: Number(await page.getByLabel('Scene Range Analysis max side', { exact: true }).inputValue()),
+    tolerance: Number(await page.getByLabel('Frame Velocity Groups Maximum velocity radius', { exact: true }).inputValue()),
+    splitSubtleMotion: await page.getByLabel('Frame Velocity Groups Separate subtle motion', { exact: true }).isChecked(),
+    splitDistantRegions: await page.getByLabel('Frame Velocity Groups Separate distant regions', { exact: true }).isChecked(),
+    proximityGap: Number(await page.getByLabel('Frame Velocity Groups Foreground gap (cells)', { exact: true }).inputValue()),
+    fillHoles: await page.getByLabel('Complete Direct Support Fill enclosed holes', { exact: true }).isChecked(),
+    fillEdges: await page.getByLabel('Complete Direct Support Extend to edges', { exact: true }).isChecked(),
+    edgeReach: Number(await page.getByLabel('Complete Direct Support Edge reach (cells)', { exact: true }).inputValue()),
+  }
+  const save = status => writeFile(resolve(output, `${prefix}-flash-browser.json`), `${JSON.stringify({ status, description: 'Read-only native PNG evidence across neighboring source frames. Same-cell changes are raster diagnostics, not tracked layer identities. No analysis or completion settings are changed.', settings, records }, null, 2)}\n`)
+  for (const frame of [...new Set(frames)].sort((a, b) => a - b)) {
+    if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'nview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click())
+    const raw = await capture(page, change, frame)
+    await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Completion' }).click())
+    const completed = await capture(page, change, frame, true)
+    assert(raw.rasters.source.equals(completed.rasters.source), `Source ${frame}: raw/completed source pixels differ`)
+    assert(raw.rasters.groups.equals(completed.rasters.measured), `Source ${frame}: completion changed the raw group display`)
+    const cells = Array.from({ length: raw.cells }, (_, cell) => ({ cell, raw: raw.labelAt(cell).label, completed: completed.labelAt(cell).label }))
+    for (const cell of cells) if (cell.raw >= 0) assert.equal(cell.completed, cell.raw, `Source ${frame} cell ${cell.cell}: completion changed measured ownership`)
+    const rows = Math.ceil(raw.analysisHeight / raw.size), columns = raw.columns
+    const edgeCells = {
+      left: cells.filter(cell => cell.cell % columns === 0), right: cells.filter(cell => cell.cell % columns === columns - 1),
+      top: cells.slice(0, columns), bottom: cells.slice((rows - 1) * columns),
+    }
+    const edges = Object.fromEntries(Object.entries(edgeCells).map(([edge, selected]) => [edge, {
+      cells: selected.length, rawUnknown: selected.filter(cell => cell.raw < 0).length, completedUnknown: selected.filter(cell => cell.completed < 0).length,
+      completedGroups: Object.fromEntries([...new Set(selected.map(cell => cell.completed).filter(label => label >= 0))].map(label => [label, selected.filter(cell => cell.completed === label).length])),
+      unknownCells: selected.filter(cell => cell.completed < 0).map(cell => cell.cell),
+    }]))
+    const names = [`${prefix}-flash-${String(frame).padStart(3, '0')}-raw.png`, `${prefix}-flash-${String(frame).padStart(3, '0')}-completed.png`]
+    saveSheet(raw, output, names[0]); saveSheet(completed, output, names[1])
+    const previous = records.at(-1)
+    const unknownChange = previous ? { fromFrame: previous.frame,
+      appeared: cells.filter(cell => cell.completed < 0 && previous.cells[cell.cell]?.completed >= 0).map(cell => cell.cell),
+      disappeared: cells.filter(cell => cell.completed >= 0 && previous.cells[cell.cell]?.completed < 0).map(cell => cell.cell) } : undefined
+    records.push({ frame, width: raw.width, height: raw.height, columns, rows, counts: completed.counts, edges, cells, unknownChange, rawSummary: raw.summary, completionSummary: completed.summary, images: names })
+    await save('incomplete')
+    console.log(`Edge probe source ${frame}: ${Object.entries(edges).map(([edge, counts]) => `${edge} ${counts.completedUnknown}/${counts.cells} unknown`).join('; ')}`)
+  }
+  await save('passed')
+  return records
+}

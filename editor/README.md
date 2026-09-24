@@ -1083,6 +1083,14 @@ provenance for every addition. Cases may add `minimumHoles` or `minimumBorder`
 controls. It restores both controls enabled and leaves `ncompletionview` selected.
 Native four-panel sheets use `${prefix}-support-020.png` and the report uses
 `${prefix}-support-browser.json` in the existing output directory.
+`captureSupportFlashes({ page, change, output, prefix, frames })` is a read-only
+neighboring-frame probe. It captures both raw and completed four-panel PNGs,
+checks their measured pixels agree, records every cell's raw/completed ID and
+each edge's unknown coverage, and reports newly appearing/disappearing unknown
+cells. It preserves all controls and records their current values. Its numeric
+IDs are frame-local; same-cell changes are not motion-compensated identity
+tracking. Use source-frame indices, for example 15 to 20 and 71 to 73 when
+investigating 60fps output frames 42, 43, 48 and 181 from a 24000/1001fps clip.
 Sheets and the report reuse `diagnostics/` with stable filenames.
 
 The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:

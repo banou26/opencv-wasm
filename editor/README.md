@@ -1240,8 +1240,8 @@ sampled parent. The helper writes `${prefix}-fragment-{frame}-{original,merged}.
 and `${prefix}-fragment-browser.json` in the existing diagnostics directory,
 preserves failing captures, and restores the enabled tracked view.
 
-Verified on 2026-09-25 local: 220 tests, typecheck, lint, build and the complete
-dedicated desktop/mobile browser smoke pass. Source pairs 85/115 merge 16/1
+Verified on 2026-09-25 local: 221 tests, typecheck, lint, build and the complete
+dedicated desktop/mobile browser smoke pass. Source pairs 82/85/115 merge 15/16/1
 cells into the enclosing pink/purple character groups; independent/held
 controls 109/101 merge zero. Each checks 518,400 completed-support pixels,
 unchanged source/measurement bytes and all unlisted memberships. The usual
@@ -1249,10 +1249,14 @@ grouping, character, border, completion and identity controls also pass.
 The refreshed `diagnostics/vector-market-review.mp4` in the adjacent Cadence
 repo has 293 frames at 1920x1080/60fps. Its lower-left panel uses the derived
 memberships; the decoded SHA-256 is
-`0b4f9224a8176fe978eb8b12950ede753233bffb5bbd647de9ca60ef0a978a01`.
+`921451e5d887ef63ad09201b95af0b472749711b724bf6bca8ad9527213d4731`.
 The movie remains a source-clock diagnostic, not an interpolated anime result.
-Decoded checks at output frames 213/236/273/288 are saved in
-`diagnostics/vector-fragment-video-sheet.png`. Reopen **Direct motion layers**
+Decoded checks at output frames 206/213/273/288 are saved in
+`diagnostics/vector-fragment-video-sheet.png`. The exact four-cell orange head
+patch from source pair 82 is now purple; its before/after crop is
+`diagnostics/vector-fragment-head-comparison.png`. Larger or ambiguous patches
+may still remain separate, including the eight-cell head patch at pair 79.
+Reopen **Direct motion layers**
 to include **Merge Transient Fragments** in an existing editor session.
 
 The exported `checkSupportCompletion({ page, change, output, prefix, cases })`

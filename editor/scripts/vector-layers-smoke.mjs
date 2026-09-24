@@ -157,6 +157,8 @@ try {
     ] })),
   }) : []
   const fragmentChecks = clip === defaultClip ? await checkFragmentMerges({ page, change, output, prefix, cases: [
+    { frame: 67, minimumMerged: 11, expected: [{ cells: [695, 696, 735, 736, 775, 776, 777, 815, 816, 817, 857], parentCell: 734 }], protectedCells: [896] },
+    { frame: 79, minimumMerged: 8, expected: [{ cells: [388, 389, 390, 428, 429, 430, 431, 469], parentCell: 468 }], protectedCells: [348] },
     { frame: 82, minimumMerged: 4, expected: [{ cells: [389, 390, 428, 429], parentCell: 468 }], protectedCells: [348] },
     { frame: 85, minimumMerged: 5, expected: [{ cells: [610, 611], parentCell: 609 }], protectedCells: [468, 508] },
     { frame: 115, minimumMerged: 1, maximumMerged: 1, expected: [{ cells: [589], parentCell: 588 }] },

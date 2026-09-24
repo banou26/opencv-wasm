@@ -1256,8 +1256,8 @@ sampled parent. The helper writes `${prefix}-fragment-{frame}-{original,merged}.
 and `${prefix}-fragment-browser.json` in the existing diagnostics directory,
 preserves failing captures, and restores the enabled tracked view.
 
-Verified on 2026-09-25 local: 222 tests, typecheck, lint, build and the complete
-dedicated desktop/mobile browser smoke pass. Source pairs 82/85/115 merge 15/16/1
+Verified on 2026-09-25 local: 225 tests, typecheck, lint, build and the complete
+dedicated desktop/mobile browser smoke pass. Source pairs 67/79/82/85/115 merge 15/18/15/16/1
 cells into the enclosing pink/purple character groups; independent/held
 controls 109/101 merge zero. Each checks 518,400 completed-support pixels,
 unchanged source/measurement bytes and all unlisted memberships. The usual
@@ -1265,13 +1265,21 @@ grouping, character, border, completion and identity controls also pass.
 The refreshed `diagnostics/vector-market-review.mp4` in the adjacent Cadence
 repo has 293 frames at 1920x1080/60fps. Its lower-left panel uses the derived
 memberships; the decoded SHA-256 is
-`921451e5d887ef63ad09201b95af0b472749711b724bf6bca8ad9527213d4731`.
+`5066a6fe445172611e3c4a536146cdf965a7427ed59c9585d88682359dddacd5`.
 The movie remains a source-clock diagnostic, not an interpolated anime result.
-Decoded checks at output frames 206/213/273/288 are saved in
-`diagnostics/vector-fragment-video-sheet.png`. The exact four-cell orange head
-patch from source pair 82 is now purple; its before/after crop is
-`diagnostics/vector-fragment-head-comparison.png`. Larger or ambiguous patches
-may still remain separate, including the eight-cell head patch at pair 79.
+Decoded checks at output frames 168/198/206/288 are saved in
+`diagnostics/vector-fragment-video-sheet.png`. Source pair 67's eleven-cell
+lower patch is now pink, corroborated by raw host observations 61/70 on nine
+common cells. Source pair 79's eight-cell head patch is now purple, corroborated
+by observations 85/88 on six common cells under the first-observation exception.
+Their before/after crops are `diagnostics/vector-fragment-lower-comparison.png`
+and `diagnostics/vector-fragment-head-comparison.png`. These exact cells must
+adopt separately sampled parent colors in the browser regression. The renderer
+also requires temporal evidence to cover every originally measured merge cell.
+The Cadence six-scene audit adds 35 temporal cells while preserving all 305
+previous transfers, with zero retargeted cells. Larger or ambiguous patches
+without sufficient raw evidence remain separate. Coarse support can still
+include nearby background pixels; these checks do not prove clean silhouettes.
 Reopen **Direct motion layers**
 to include **Merge Transient Fragments** in an existing editor session.
 

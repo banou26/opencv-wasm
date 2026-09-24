@@ -35,7 +35,7 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
     'Provenance: gray measured; amber enclosed-hole inference; teal edge inference; unpainted unknown.',
     'Measured groups, velocities and confidence remain unchanged. Inferred cells have no measured motion.',
     'Completed support is not a recovered layer silhouette or recovered pixels. Group IDs remain frame-local.',
-    'Completion order: resolve edge support, then fill single-owner enclosed holes.',
+    'Completion order: resolve 75% measured-edge support, then fill single-owner enclosed holes until stable.',
     `Enclosed holes: ${completion.options.fillHoles ? 'enabled' : 'disabled'}; edge extension: ${completion.options.fillEdges ? 'enabled' : 'disabled'}; edge reach ${completion.options.edgeReach} cells`,
     ...(frame?.observations ?? []).map(group => `Group ${group.id}: inferred holes ${group.holeCells.length}; inferred edge ${group.borderCells.length}`),
   ].join('\n')

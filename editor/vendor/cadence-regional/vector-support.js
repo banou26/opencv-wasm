@@ -73,14 +73,20 @@ function completeFrame(frame, columns, rows, options) {
             const at = (line, step) => edge === 0 ? line * columns + step
                 : edge === 1 ? line * columns + columns - step - 1 : edge === 2 ? step * columns + line
                     : (rows - step - 1) * columns + line;
-            // Only original cells touching this edge can identify its sole owner.
+            // Only original measured cells touching this edge vote for its owner.
             // New corner fills must not establish ownership of an adjacent empty edge.
-            const touching = new Set();
-            for (let line = 0; line < lineCount; line++)
-                if (raw[at(line, 0)] >= 0)
-                    touching.add(raw[at(line, 0)]);
-            if (touching.size === 1) {
-                const owner = touching.values().next().value;
+            const touching = new Map();
+            let measured = 0;
+            for (let line = 0; line < lineCount; line++) {
+                const owner = raw[at(line, 0)];
+                if (owner < 0)
+                    continue;
+                touching.set(owner, (touching.get(owner) ?? 0) + 1);
+                measured++;
+            }
+            const edgeWinner = [...touching].find(([, count]) => count * 4 >= measured * 3);
+            if (edgeWinner) {
+                const owner = edgeWinner[0];
                 for (let line = 0; line < lineCount; line++) {
                     const index = at(line, 0);
                     if (raw[index] >= 0)
@@ -161,18 +167,26 @@ function completeFrame(frame, columns, rows, options) {
             }
         }
     }
-    if (options.fillHoles)
-        for (const { cells, boundary, edges } of unknownComponents(labels, columns, rows)) {
-            if (edges || boundary.size !== 1)
-                continue;
-            const owner = boundary.values().next().value;
-            for (const index of cells) {
-                labels[index] = owner;
-                provenance[index] = 2;
-                byId.get(owner).holeCells.push(index);
+    if (options.fillHoles) {
+        // Repeat to a fixed point without rerunning edge votes or changing known
+        // labels. Whole connected holes normally finish in one productive pass.
+        let added;
+        do {
+            added = 0;
+            for (const { cells, boundary, edges } of unknownComponents(labels, columns, rows)) {
+                if (edges || boundary.size !== 1)
+                    continue;
+                const owner = boundary.values().next().value;
+                for (const index of cells) {
+                    labels[index] = owner;
+                    provenance[index] = 2;
+                    byId.get(owner).holeCells.push(index);
+                }
+                added += cells.length;
             }
-            counts.holes += cells.length;
-        }
+            counts.holes += added;
+        } while (added > 0);
+    }
     for (const group of observations)
         group.holeCells.sort((a, b) => a - b);
     counts.unknown = raw.length - counts.measured - counts.holes - counts.border;

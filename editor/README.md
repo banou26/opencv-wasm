@@ -322,9 +322,10 @@ The final source frame has no outgoing motion pair and consequently no motion ov
 
 **Complete Direct Support** is a separate stage after grouping, with edge filling
 first and enclosed-hole filling second. **Extend to edges** checks measured cells
-on each actual frame edge. If at least one touches that edge and every measured
-cell there has the same group ID, the group fills all unknown cells along that
-edge. Two different measured owners prevent this full-edge rule. Conflicting
+on each actual frame edge. If one group owns at least 75% of the original measured
+cells touching that edge, it fills all unknown cells along the edge. Unknown cells
+are excluded from the vote denominator; measured minority cells keep their own
+groups unchanged. An edge without measured cells has no majority. Conflicting
 corner proposals stay unknown, and filled corners cannot establish ownership of
 another edge. This exact-edge proposal takes priority over inward fallback.
 
@@ -334,14 +335,17 @@ prefixes along edge-normal rays need anchors on at least half the scan lines,
 need one original boundary owner, an independently qualified edge, and original
 support within reach and competitor clearance at every cell. Competing groups
 block nearby fallback extensions. **Edge reach (cells)**, default eight, bounds
-these inward proposals, not the distance along a unanimous frame edge. Zero
+these inward proposals, not the distance along a majority-owned frame edge. Zero
 disables all edge filling. Neither edge method uses additions as new votes.
 
 After edge proposals are resolved, **Fill enclosed holes** fills each remaining
 eight-connected unknown component only when it no longer touches the frame and
 its entire boundary has one group ID. That boundary can include the newly filled
 edge: the enclosed interior then records hole inference, while the edge retains
-edge inference. Both stages remain optional and never reassign measured cells.
+edge inference. The hole pass repeats until no cells change. Because each pass
+already handles complete connected components, it normally reaches that fixed
+point after the first filling pass. Both stages remain optional and never
+reassign measured cells.
 
 Completion returns a separate label raster and explicit provenance: measured,
 enclosed-hole inference, edge inference, or unknown. It never modifies the raw
@@ -1125,7 +1129,7 @@ helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
 compares both fill controls disabled/enabled. It requires identical source and
 measured panels, unchanged measured pixels and IDs, and explicit hole/edge
 provenance for every addition. Raw PNG border labels independently determine
-unanimous exact-edge owners: every proposed edge cell must receive that owner,
+75% measured-edge majorities: every proposed unknown edge cell must receive that owner,
 while corners with conflicting owners must remain unknown. Cases may add
 `minimumHoles` or `minimumBorder`
 controls. It restores both controls enabled and leaves `ncompletionview` selected.

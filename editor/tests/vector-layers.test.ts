@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from 'vite-plus/test'
 import { initOpenCV, Mat, matFromArray, cvtColor, CV_8UC3, CV_32F, COLOR_BGR2RGBA } from '@banou/opencv-wasm'
-import { estimateVectorCandidates, groupVectorCandidates, poolVectorCandidates, type AnalysisFrame, type MotionCell } from 'cadence/regional'
+import { estimateVectorCandidates, groupFrameVectors, poolVectorCandidates, type AnalysisFrame, type MotionCell } from 'cadence/regional'
 import { ResultCache } from '../src/engine/cache'
 import { evaluateGraph } from '../src/engine/evaluate'
 import { groupNodes, parseDocument, validateConnection } from '../src/engine/graph'
@@ -31,8 +31,7 @@ const candidatesFixture = (): RegionalData => {
 }
 const groupedFixture = (): RegionalData => {
   const data = candidatesFixture()
-  return { ...data, stage: 'vector-groups', vectorGroups: { width: 40, height: 8, frameCount: 2, cellSize: 8, options: { tolerance: .75, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 }, groups: [{ id: 0, trackCount: 2, observedPairs: 1 }], tracks: [],
-    frames: [{ frame: 0, labels: Int32Array.from([-1, 0, 0, -1, -1]), confidence: Uint8Array.from([0, 1, 2, 3, 4]), observations: [{ id: 0, cells: [1, 2], dx: 1, dy: 0, strongCells: 1 }] }] } }
+  return { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!) }
 }
 const sceneFixture = (): RegionalData => {
   const width = 96, height = 64, count = 7, frames: AnalysisFrame[] = []
@@ -61,8 +60,9 @@ test('direct prefab has a separate pipeline, four independent outputs and no com
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
   expect(defaultParams('vectorCandidates')).toEqual({ cellSize: 8, window: 25, levels: 4, roundTrip: 1.5, textureFraction: .005 })
-  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 })
-  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(2)
+  expect(defaultParams('vectorGroups')).toEqual({ tolerance: .75 })
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).version).toBe(3)
+  expect(specFor(doc.nodes.find(node => node.id === 'ngroups')!, doc).title).toBe('Frame Velocity Groups')
 })
 
 test('candidate rendering retains weak arrows, distinguishes unknown support and does not invent groups', () => {
@@ -79,28 +79,39 @@ test('candidate rendering retains weak arrows, distinguishes unknown support and
   expect(data).toEqual(original)
 })
 
-test('saved direct-motion graphs acquire missing mode controls without replacing explicit settings', () => {
+test('saved direct-motion graphs retire history controls and wires while preserving velocity tolerance', () => {
   const original = vectorLayersGraph()
-  delete original.nodes.find(node => node.id === 'ngroups')!.params.modeRadius
-  delete original.nodes.find(node => node.id === 'ngroups')!.params.minimumModeCells
+  original.nodes.find(node => node.id === 'ngroups')!.params = { tolerance: .5, minimumOverlap: 4, modeRadius: .75, minimumModeCells: 4 }
+  for (const control of ['minimumOverlap', 'modeRadius', 'minimumModeCells']) original.edges.push({ id: `eold${control}`, source: 'ntime', sourceHandle: 'out:scalar:index', target: 'ngroups', targetHandle: `param:${control}` })
   const restored = parseDocument(original)
-  expect(restored.nodes.find(node => node.id === 'ngroups')!.params).toEqual(defaultParams('vectorGroups'))
+  expect(restored.nodes.find(node => node.id === 'ngroups')!.params).toEqual({ tolerance: .5 })
+  expect(restored.edges.some(edge => edge.id.startsWith('eold'))).toBe(false)
   const nested = groupNodes(vectorLayersGraph(), undefined, ['ngroups'], 'Direct groups', 'gdirect', 'ndirect')
   const node = nested.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!
-  node.params.modeRadius = 0; delete node.params.minimumModeCells
+  node.params.modeRadius = 0; node.params.minimumOverlap = 8; node.params.minimumModeCells = 2
   const reopened = parseDocument(JSON.parse(JSON.stringify(nested)))
-  expect(reopened.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!.params).toEqual({ ...defaultParams('vectorGroups'), modeRadius: 0 })
+  expect(reopened.definitions![0]!.graph.nodes.find(node => node.type === 'vectorGroups')!.params).toEqual(defaultParams('vectorGroups'))
+  expect(original.nodes.find(node => node.id === 'ngroups')!.params.minimumOverlap).toBe(4)
 })
 
-test('group inspector separates weak, coherent, ambiguous, unassigned and unknown cells', () => {
+test('group inspector paints every candidate including mixed cells without a temporal history filter', () => {
   const data = groupedFixture(), original = structuredClone(data), rendered = renderVectorPanels(data, 7)
   const at = (pixels: Uint8Array, x: number) => pixels.slice((4 * 40 + x) * 4, (4 * 40 + x) * 4 + 4)
-  expect(new Set([4, 12, 20, 28, 36].map(x => at(rendered.panels.confidence, x).join(','))).size).toBe(5)
-  for (const x of [4, 28, 36]) expect(at(rendered.panels.groups, x)).toEqual(at(rendered.panels.source, x))
-  for (const x of [12, 20]) expect(at(rendered.panels.groups, x)).not.toEqual(at(rendered.panels.source, x))
-  expect(rendered.summary).toContain('unknown 1; weak assigned 1; coherent assigned 1; ambiguous 1; unassigned candidate 1')
-  expect(rendered.summary).toContain('Velocity modes: radius 0.75 analysis pixels/pair; minimum cells 4')
+  expect(new Set([4, 12, 20, 28, 36].map(x => at(rendered.panels.confidence, x).join(','))).size).toBe(3)
+  expect(at(rendered.panels.groups, 4)).toEqual(at(rendered.panels.source, 4))
+  for (let x = 8; x < 40; x++) expect(at(rendered.panels.groups, x)).not.toEqual(at(rendered.panels.source, x))
+  expect(rendered.summary).toContain('unknown 1; mixed assigned 1; coherent assigned 3')
+  expect(rendered.summary).toContain('Candidate cells: 4; grouped cells: 4; temporal filtering: none')
+  expect(rendered.summary).toContain('1 frame-local motion groups; tolerance 0.75')
+  expect(rendered.summary).not.toMatch(/ambiguous|unassigned candidate|minimum shared/)
   expect(data).toEqual(original)
+})
+
+test('group inspector refuses stale history data and missing current-frame assignments', () => {
+  const data = groupedFixture()
+  expect(() => renderVectorPanels({ ...data, frameVectorGroups: undefined }, 7)).toThrow(/recompute legacy/)
+  data.frameVectorGroups!.frames[0]!.labels[1] = -1
+  expect(() => renderVectorPanels(data, 7)).toThrow(/preserve every candidate/)
 })
 
 test('last frame has no fabricated motion and all four panel buffers are independent', () => {
@@ -115,9 +126,9 @@ test('last frame has no fabricated motion and all four panel buffers are indepen
 })
 
 test('motion group colors do not repeat every six IDs', () => {
-  const data = groupedFixture(), frame = data.vectorGroups!.frames[0]!
+  const data = groupedFixture(), frame = data.frameVectorGroups!.frames[0]!
   frame.labels[1] = 0; frame.labels[2] = 6
-  frame.confidence[1] = 2; frame.confidence[2] = 2
+  data.sequence!.pairs[0]!.grids[0]!.cells[1]!.coherent = true; frame.confidence[1] = 2
   const { panels } = renderVectorPanels(data, 7)
   const color = (x: number) => panels.groups.slice((4 * 40 + x) * 4, (4 * 40 + x) * 4 + 3)
   expect(color(12)).not.toEqual(color(20))
@@ -157,7 +168,7 @@ test('native candidate and direct grouping stages use the shared core without re
     try {
       const grouped = groupedBundle!.outputs['out:regions:data']!
       if (grouped.kind !== 'regions') throw new Error('Expected grouped data')
-      expect(grouped.data.vectorGroups).toEqual(groupVectorCandidates(candidate.data.sequence!))
+      expect(grouped.data.frameVectorGroups).toEqual(groupFrameVectors(candidate.data.sequence!))
       expect(grouped.data.tracks).toBeUndefined(); expect(grouped.data.families).toBeUndefined(); expect(grouped.data.completion).toBeUndefined()
     } finally { groupedBundle!.dispose() }
   } finally { candidateBundle!.dispose() }
@@ -235,16 +246,17 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     doc.nodes.find(node => node.id === 'ngroups')!.params.tolerance = .5
     const groups = await evaluate('nview', 2, 'out:frame:groups'); groups.release()
     expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(2)
-    doc.nodes.find(node => node.id === 'ngroups')!.params.modeRadius = 0
-    doc.nodes.find(node => node.id === 'ngroups')!.params.minimumModeCells = 2
-    const modes = await evaluate('nview', 2, 'out:string:summary')
+    const summary = await evaluate('nview', 2, 'out:string:summary')
     try {
-      expect(modes.value.kind).toBe('string')
-      if (modes.value.kind === 'string') expect(modes.value.value).toContain('Velocity modes: radius 0 analysis pixels/pair; minimum cells 2')
-    } finally { modes.release() }
-    expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(3)
+      expect(summary.value.kind).toBe('string')
+      if (summary.value.kind === 'string') {
+        expect(summary.value.value).toContain('temporal filtering: none')
+        expect(summary.value.value).toContain('frame-local motion groups; tolerance 0.5')
+      }
+    } finally { summary.release() }
+    expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(2)
     doc.nodes.find(node => node.id === 'ncandidates')!.params.cellSize = 12
     const candidates = await evaluate('ncandidateview', 2, 'out:frame:candidates'); candidates.release()
-    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(3)
+    expect(calls.get('vectorCandidates')).toBe(2); expect(calls.get('vectorGroups')).toBe(2)
   } finally { cache.clear() }
 })

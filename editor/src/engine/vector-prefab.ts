@@ -4,7 +4,7 @@ import type { GraphDocument, GraphNode, NodeType, Params } from './types'
 
 const node = (id: string, type: NodeType, x: number, y: number, params: Params = {}): GraphNode => ({ id, type, params: { ...defaultParams(type), ...params }, position: { x, y } })
 
-/** Direct candidate histories are independent of the existing regional/completion experiment. */
+/** Frame-local velocity grouping is independent of the existing regional/completion experiment. */
 export const vectorLayersGraph = (): GraphDocument => {
   let doc: GraphDocument = { version: 1, nodes: [
     node('n1', 'clip', 20, 40), node('ninfo', 'videoInfo', 20, 400), node('nlast', 'math', 350, 400, { operation: 'subtract', b: 1 }),

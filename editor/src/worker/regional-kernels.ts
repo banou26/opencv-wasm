@@ -1,5 +1,5 @@
 import { Mat, matFromArray, cvtColor, resize, putText, FONT_HERSHEY_SIMPLEX, LINE_AA, CV_8UC4, CV_32F, COLOR_RGBA2BGR, INTER_AREA } from '@banou/opencv-wasm'
-import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, groupVectorCandidates, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
+import { analyzeMotionPair, poolMotionSequence, trackRegionalMotion, groupMotionHistories, completeMotionSupport, completeMotionSupportSteps, analyzeRegionalTimingFrame, finishRegionalTiming, estimateVectorCandidates, poolVectorCandidates, groupFrameVectors, type AnalysisFrame, type RegionalAnalysis, type RegionalMotionSequence } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -80,7 +80,7 @@ export const regionalKernel = async (step: Step, inputs: Record<string, Payload>
     output = { ...data, stage: 'vector-candidates', sequence }
   } else if (type === 'vectorGroups') {
     requireStage('vector-candidates'); await checkpoint()
-    output = { ...data, stage: 'vector-groups', vectorGroups: groupVectorCandidates(data.sequence!, { tolerance: Number(params.tolerance), minimumOverlap: Number(params.minimumOverlap), modeRadius: Number(params.modeRadius), minimumModeCells: Number(params.minimumModeCells) }) }
+    output = { ...data, stage: 'vector-groups', frameVectorGroups: groupFrameVectors(data.sequence!, { tolerance: Number(params.tolerance) }) }
   } else if (type === 'regionalMotion') {
     requireStage('scene')
     const frames = data.scene.frames, { width, height } = frames[0]!

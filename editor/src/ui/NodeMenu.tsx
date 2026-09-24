@@ -11,7 +11,7 @@ const prefabs = [
   { id: 'texture', title: 'Procedural stripe texture', description: 'No video required: pixel coordinates + seeded noise → editable RGB arithmetic → Time-driven wrapped translation → output' },
   { id: 'motionVectors', title: 'Regional motion vectors', description: 'Motion cookbook: explicit frame pair → coarse pan → forward and reverse dense flow → texture + round-trip checks → regional medians → arrows over video' },
   { id: 'regionalLayers', title: 'Whole-scene regional analysis', description: 'Explicit scene range -> dense motion -> multiscale cells -> temporal motion groups -> drawing events -> evidence inspectors' },
-  { id: 'vectorLayers', title: 'Direct motion layers', description: 'Scene range -> Regional motion vectors candidates -> direct velocity histories -> separate candidate, group and confidence panels; no support completion' },
+  { id: 'vectorLayers', title: 'Direct motion layers', description: 'Scene range -> Regional motion vectors candidates -> frame-local velocity groups -> separate candidate, group and confidence panels; every candidate retained' },
   { id: 'difference', title: 'Compare neighboring frames', description: 'Video + explicit indices → two frames → grayscale → blur → difference → output' },
   { id: 'motion', title: 'Camera in-betweens', description: 'Two explicit frames → translation × fraction → move previous → fill revealed borders from next → output' },
   { id: 'mask', title: 'Changed-pixel mask', description: 'Frame comparison → threshold → output' },

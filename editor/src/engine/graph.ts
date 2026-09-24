@@ -103,11 +103,15 @@ export const parseDocument = (value: unknown): GraphDocument => {
       fillIsolated: n.params.fillIsolated === undefined ? true : n.params.fillIsolated,
       bridgeTemporal: n.params.bridgeTemporal === undefined ? true : n.params.bridgeTemporal,
     } } : n) }
-    // Early direct-motion graphs predate the independently adjustable mode consensus.
-    body = { ...body, nodes: body.nodes.map(n => n?.type === 'vectorGroups' && n.params ? { ...n, params: { ...n.params,
-      modeRadius: n.params.modeRadius === undefined ? .75 : n.params.modeRadius,
-      minimumModeCells: n.params.minimumModeCells === undefined ? 4 : n.params.minimumModeCells,
-    } } : n) }
+    // Frame-local grouping replaces the experimental history filter and its controls.
+    const vectorGroups = new Set(body.nodes.filter(n => n?.type === 'vectorGroups').map(n => n.id))
+    const retiredVectorControls = new Set(['minimumOverlap', 'modeRadius', 'minimumModeCells'])
+    body = { ...body, nodes: body.nodes.map(n => {
+      if (n?.type !== 'vectorGroups' || !n.params) return n
+      const params = { ...n.params }
+      for (const key of retiredVectorControls) delete params[key]
+      return { ...n, params }
+    }), edges: body.edges.filter(e => !(vectorGroups.has(e?.target) && retiredVectorControls.has(e.targetHandle?.replace(/^param:/, '') ?? ''))) }
     // Retire the rejected spatial prior, including saved wires to its former control.
     const histories = new Set(body.nodes.filter(n => n?.type === 'regionalHistory').map(n => n.id))
     body = { ...body, nodes: body.nodes.map(n => {

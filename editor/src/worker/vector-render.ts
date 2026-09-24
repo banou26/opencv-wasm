@@ -7,18 +7,20 @@ const groupColor = (id: number): [number, number, number] => {
   const low = 45, high = 231, falling = Math.round(high - (high - low) * fraction), rising = Math.round(low + (high - low) * fraction)
   return [[high, rising, low], [falling, high, low], [low, high, rising], [low, falling, high], [rising, low, high], [high, low, falling]][Math.floor(sector)]! as [number, number, number]
 }
-const CONFIDENCE = [[102, 106, 113], [238, 177, 65], [63, 216, 180], [237, 90, 115], [160, 124, 221]] as const
+const CONFIDENCE = [[102, 106, 113], [238, 177, 65], [63, 216, 180]] as const
 
 /** Motion proposals stay distinct from observed pixels and from ownership/silhouette claims. */
 export const renderVectorPanels = (data: RegionalData, sourceFrame: number, displaySource?: AnalysisFrame, gain = 3) => {
   if (!['vector-candidates', 'vector-groups'].includes(data.stage) || !data.sequence) throw new Error('Direct motion inspection requires vector candidates or vector groups')
+  if (data.stage === 'vector-groups' && !data.frameVectorGroups) throw new Error('Frame-local group data is required; recompute legacy direct-motion groups')
   if (!Number.isFinite(gain) || gain < .1 || gain > 20) throw new RangeError('Vector display gain must be between 0.1 and 20')
   const { index, width, height, analysisWidth, analysisHeight, sourcePixels, paintRect } = regionalCanvas(data, sourceFrame, displaySource)
   const pair = data.sequence.pairs.find(pair => pair.frame === index), grid = pair?.grids[0]
-  const grouped = data.vectorGroups?.frames.find(frame => frame.frame === index)
+  const grouped = data.frameVectorGroups?.frames.find(frame => frame.frame === index)
+  if (pair && data.frameVectorGroups && !grouped) throw new Error('Frame-local groups are missing for this candidate pair')
   const panels = { source: sourcePixels(), candidates: sourcePixels(), groups: sourcePixels(), confidence: sourcePixels() }
-  const counts = [0, 0, 0, 0, 0]
-  let candidates = 0, mixed = 0
+  const counts = [0, 0, 0]
+  let candidates = 0, mixed = 0, assigned = 0
   const dot = (x: number, y: number, rgb: readonly number[], radius = 0) => {
     const cx = Math.round(x), cy = Math.round(y)
     for (let py = cy - radius; py <= cy + radius; py++) for (let px = cx - radius; px <= cx + radius; px++) {
@@ -36,10 +38,14 @@ export const renderVectorPanels = (data: RegionalData, sourceFrame: number, disp
   for (const [id, cell] of (grid?.cells ?? []).entries()) {
     const valid = cell.dx !== null && cell.dy !== null && Number.isFinite(cell.dx) && Number.isFinite(cell.dy)
     const confidence = grouped ? grouped.confidence[id]! : valid ? cell.coherent ? 2 : 1 : 0
+    const label = grouped?.labels[id] ?? -1
+    if (grouped && (valid !== (label >= 0) || confidence !== (valid ? cell.coherent ? 2 : 1 : 0))) throw new Error('Frame-local grouping must preserve every candidate and its confidence')
     counts[confidence]!++
     paintRect(panels.confidence, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, CONFIDENCE[confidence]!, .6)
-    const label = grouped?.labels[id] ?? -1
-    if (label >= 0) paintRect(panels.groups, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, groupColor(label), confidence === 1 ? .38 : .6)
+    if (label >= 0) {
+      assigned++
+      paintRect(panels.groups, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, groupColor(label), confidence === 1 ? .38 : .6)
+    }
     if (!valid) continue
     candidates++; mixed += Number(!cell.coherent)
     const rgb = cell.coherent ? CONFIDENCE[2] : CONFIDENCE[1]
@@ -57,11 +63,11 @@ export const renderVectorPanels = (data: RegionalData, sourceFrame: number, disp
     `${width} x ${height} display / ${analysisWidth} x ${analysisHeight} analysis`,
     `Candidate vectors: ${candidates}; mixed/weak ${mixed}; cell size ${grid?.cellSize ?? data.sequence.pairs[0]?.grids[0]?.cellSize ?? '?'}`,
     'Candidate arrows: teal coherent; amber mixed/weak. Display gain changes arrow length only.',
-    grouped ? `Confidence cells: unknown ${counts[0]}; weak assigned ${counts[1]}; coherent assigned ${counts[2]}; ambiguous ${counts[3]}; unassigned candidate ${counts[4]}`
+    grouped ? `Candidate cells: ${candidates}; grouped cells: ${assigned}; temporal filtering: none\nConfidence cells: unknown ${counts[0]}; mixed assigned ${counts[1]}; coherent assigned ${counts[2]}`
       : `Ungrouped candidate confidence: unknown ${counts[0]}; weak ${counts[1]}; coherent ${counts[2]}. Motion-group panel is unpainted before grouping.`,
-    'Confidence colors: gray unknown; amber weak; teal coherent; red ambiguous; purple unassigned candidate.',
+    'Confidence colors: gray missing vector; amber mixed; teal coherent.',
     'No hole filling. Group colors are motion proposals, not pixel ownership or recovered artwork.',
-    ...(data.vectorGroups ? [`${data.vectorGroups.groups.length} whole-scene motion groups; tolerance ${data.vectorGroups.options.tolerance} analysis pixels/pair; minimum shared pairs ${data.vectorGroups.options.minimumOverlap}`, `Velocity modes: radius ${data.vectorGroups.options.modeRadius} analysis pixels/pair; minimum cells ${data.vectorGroups.options.minimumModeCells}; radius 0 disables consensus. Candidate arrows remain raw medians.`] : []),
+    ...(data.frameVectorGroups ? [`${grouped?.observations.length ?? 0} frame-local motion groups; tolerance ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, 'Velocities are recomputed per pair, allowing easing and direction changes.', 'Group IDs and colors are frame-local, not tracked identities. Candidate arrows remain raw medians.'] : []),
     ...(grouped?.observations ?? []).map(observation => `Group ${observation.id}: ${observation.cells.length} cells; ${observation.strongCells} coherent; velocity ${observation.dx.toFixed(3)}, ${observation.dy.toFixed(3)}`),
   ].join('\n')
   return { width, height, panels, summary }

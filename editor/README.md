@@ -211,7 +211,7 @@ existing **Regional motion vectors** and **Whole-scene regional analysis** prefa
 remain unchanged.
 
 ```text
-Scene Range -> Scene Vector Candidates -> Direct Velocity Groups
+Scene Range -> Scene Vector Candidates -> Frame Velocity Groups
             -> Inspect Direct Motion -> Frame Layouts -> Output
 ```
 
@@ -225,33 +225,39 @@ Reflected-border estimates and mixed medians are still uncertain, not observed
 layer ownership. Default cells are 8 analysis pixels; their size, texture cutoff,
 flow settings and grouping tolerance remain editable.
 
-Direct Velocity Groups first identifies supported modes in velocity space:
-nearby vectors vote for a shared median velocity before individual cell histories
-are tracked. **Mode radius** defaults to 0.75 analysis pixels per pair and
-**Minimum mode cells** defaults to four. Set radius to zero to compare the
-unsnapped candidate-history experiment. This is consensus among measured vectors,
-not support completion: empty cells receive no motion, and the original candidate
-medians and their confidence remain unchanged in the candidate inspector.
-Saved experimental graphs acquire missing mode controls automatically; explicit
-values, including radius zero, are preserved. Mode edits invalidate grouping but
-reuse the cached scene vectors.
+Frame Velocity Groups clusters every available candidate by its measured dx/dy
+within each frame. **Velocity tolerance** defaults to 0.75 analysis pixels per
+neighboring pair. A mixed measurement still receives a group: its confidence
+does not remove its support. There is no minimum group size, minimum history,
+temporal ambiguity rejection, or spatial/temporal hole filling. A cell is
+unpainted only when it has no finite candidate vector. Every grouped inspector
+reports candidate and assigned cell counts; these must match exactly.
 
-It then advects individual candidate-cell histories and compares their
-time-varying velocities directly, without first building spatial regional groups.
-Coherent histories establish motion models. Weak or short candidates may
-join a uniquely compatible model but cannot grow it. Conflicting or ambiguous
-candidates remain explicitly unresolved. No spatial or temporal support-completion
-pass runs. Same motion is a candidate motion group, not proof of shared artwork;
-co-moving characters/backgrounds and true rotation or scale remain limitations.
+Groups are recomputed at each neighboring pair, so easing, acceleration and
+direction changes are not forced into one fixed velocity for the whole clip.
+IDs and colors are **frame-local**, not persistent identities; a repeated color
+across frames does not prove a tracked layer. Temporal identity remains a later
+problem and must not erase this first-pass support. Same motion is a candidate
+motion group, not proof of shared artwork; co-moving characters/backgrounds and
+true rotation or scale remain limitations.
+
+This replaces the earlier experimental history filter, which incorrectly dropped
+many visible candidate vectors from the first-pass preview. Saved graphs retire
+the former minimum-history and mode-consensus controls and their wires while
+preserving velocity tolerance. The grouping cache version is incremented, so
+the previous filtered groups cannot be reused. Tolerance edits still reuse the
+cached scene vectors. The old history algorithm remains available in the Cadence
+research core, but this prefab no longer executes or displays it.
 
 Two inspectors expose the evidence before and after grouping. Each provides four
 independent fullscreen-previewable outputs: **Source**, **Candidate vectors**,
 **Motion groups**, and **Confidence**. The sole default output joins these in a
 two-by-two layout. Candidate arrows are teal for coherent cells and amber for
 mixed/weak cells. Before grouping, the group panel is unpainted. After grouping,
-confidence distinguishes gray unknown, amber weak assignments, teal temporally
-supported coherent assignments, red ambiguity and purple unassigned candidates.
-Unpainted group cells are not silently filled. The final source frame has no
+confidence distinguishes gray missing vectors, amber mixed assignments and teal
+coherent assignments. There are no temporal ambiguity or rejected-candidate
+categories in this first pass. Unpainted group cells are not silently filled.
+The final source frame has no
 outgoing motion pair and consequently no motion overlay.
 
 Only inspectors depend on Time; the scene candidates and groups cache across
@@ -1008,12 +1014,13 @@ On this workstation run browser tests under the Wayland graphics session
 (`WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland`).
 
 This is an experiment, not a replacement for Whole-scene regional analysis.
-The six-shot Cadence audit finds more raw candidate vectors, but the subsequent
-scene grouping still fragments motion and leaves many candidates ambiguous.
-The native market shot has 80.1% candidate-cell coverage but only 33.6% assigned
-cells, versus 39.8% assigned by the strict path before completion. The browser's
-market upload is a different encode, so its counts differ. Colored cells remain
-motion hypotheses, not extracted layers. Existing prefabs and previews are kept.
+The earlier history-filtered version assigned only 33.6% of native market cells
+despite 80.1% raw candidate coverage. Those historical numbers describe the
+rejected first-pass filter, not the current output: frame-local grouping now
+preserves every finite candidate exactly. The browser's market upload is a
+different encode, so its candidate counts differ. Greater coverage does not
+establish correct segmentation. Colored cells remain motion hypotheses, not
+extracted layers. Existing regional prefabs and previews are kept.
 
 - `src/engine/`: browser-independent graph validation, typed definitions, custom
   node expansion, time demands, search, scheduling and owned LRU results.

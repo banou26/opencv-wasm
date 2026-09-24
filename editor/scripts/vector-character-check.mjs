@@ -191,9 +191,21 @@ export async function checkFragmentMerges({ page, change, output, prefix, cases 
       const limits = after.summary.match(/Fragment limits: partial (\d+) measured cells; enclosed or temporal (\d+); enclosure-corroborated (\d+); (\d+) consecutive pairs/)
       assert(limits, 'Fragment size limits must be explicit')
       assert.equal(Number(limits[2]), Number(limits[1]) * 4); assert.equal(Number(limits[3]), Number(limits[1]) * 8)
-      const merges = [...after.summary.matchAll(/^Merge: group (\d+) -> (\d+); track (\d+) -> (\d+); reason (enclosed|partial|temporal); run (\d+); cells ([\d,]+); measured ([\d,]*)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), fromTrackId: Number(match[3]), toTrackId: Number(match[4]), reason: match[5], runLength: Number(match[6]), cells: match[7].split(',').map(Number), measuredCells: match[8] ? match[8].split(',').map(Number) : [], temporal: [] }))
-      const temporal = [...after.summary.matchAll(/^Temporal: group (\d+) -> (\d+); component ([\d,]+); mode (bracketed|birth|enclosure); witness source (\d+) cells ([\d,]+); witness source (\d+) cells ([\d,]+); common ([\d,]+)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), cells: match[3].split(',').map(Number), mode: match[4], witnesses: [{ frame: Number(match[5]), cells: match[6].split(',').map(Number) }, { frame: Number(match[7]), cells: match[8].split(',').map(Number) }], commonCells: match[9].split(',').map(Number) }))
+      const merges = [...after.summary.matchAll(/^Merge: group (\d+) -> (\d+); track (\d+) -> (\d+); reason (enclosed|partial|clipped|temporal); run (\d+); cells ([\d,]+); measured ([\d,]*)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), fromTrackId: Number(match[3]), toTrackId: Number(match[4]), reason: match[5], runLength: Number(match[6]), cells: match[7].split(',').map(Number), measuredCells: match[8] ? match[8].split(',').map(Number) : [], temporal: [] }))
+      const temporal = [...after.summary.matchAll(/^Temporal: group (\d+) -> (\d+); component ([\d,]+); mode (bracketed|birth|enclosure|attachment|association); witness source (\d+) cells ([\d,]+); witness source (\d+) cells ([\d,]+); common ([\d,]+)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), cells: match[3].split(',').map(Number), mode: match[4], witnesses: [{ frame: Number(match[5]), cells: match[6].split(',').map(Number) }, { frame: Number(match[7]), cells: match[8].split(',').map(Number) }], commonCells: match[9].split(',').map(Number) }))
       assert.equal(temporal.length, after.summary.split('\n').filter(line => line.startsWith('Temporal:')).length, 'Every temporal record must use a recognized evidence mode')
+      const associations = after.summary.split('\n').filter(line => line.startsWith('Association:')).map(line => JSON.parse(line.slice('Association:'.length)))
+      for (const association of associations) {
+        const matches = temporal.filter(evidence => evidence.mode === 'association' && evidence.fromGroupId === association.fromGroupId && evidence.toGroupId === association.toGroupId && JSON.stringify(evidence.cells) === JSON.stringify(association.cells))
+        assert.equal(matches.length, 1, 'Association metadata must identify one temporal component')
+        const evidence = matches[0]
+        assert.equal(association.witnesses.length, 2)
+        for (const [index, witness] of association.witnesses.entries()) {
+          assert.equal(witness.frame, evidence.witnesses[index].frame)
+          assert.equal(evidence.witnesses[index].hostCells, undefined, 'Association metadata cannot be duplicated')
+          evidence.witnesses[index].hostCells = witness.hostCells; evidence.witnesses[index].enclosed = witness.enclosed
+        }
+      }
       for (const evidence of temporal) {
         const matches = merges.filter(merge => merge.reason === 'temporal' && merge.fromGroupId === evidence.fromGroupId && merge.toGroupId === evidence.toGroupId && evidence.cells.every(cell => merge.measuredCells.includes(cell)))
         assert.equal(matches.length, 1, `Source ${sample.frame}: temporal evidence must identify one measured component merge`)
@@ -203,18 +215,45 @@ export async function checkFragmentMerges({ page, change, output, prefix, cases 
         if (evidence.mode === 'enclosure') {
           assert(component.size > Number(limits[2]) && component.size <= Number(limits[3]), 'Same-side enclosure evidence applies only to enlarged components')
           assert((a.frame < sample.frame && b.frame < sample.frame) || (a.frame > sample.frame && b.frame > sample.frame), 'Enclosure witnesses must both precede or both follow the fragment')
+        } else if (evidence.mode === 'attachment') {
+          assert(component.size <= Number(limits[2]), 'Attachment evidence remains within the original component size bound')
+          assert(a.frame !== sample.frame && b.frame !== sample.frame, 'Attachment witnesses cannot use their own source frame')
         } else assert(evidence.mode === 'birth' ? a.frame > sample.frame : a.frame < sample.frame && b.frame > sample.frame)
+        if (evidence.mode === 'association') assert(component.size <= Number(limits[2]), 'Association evidence remains within the original component size bound')
         assert.equal(component.size, evidence.cells.length); assert.equal(common.size, evidence.commonCells.length)
+        let enclosedComponents = 0
         for (const witness of evidence.witnesses) {
           assert.equal(new Set(witness.cells).size, witness.cells.length)
           assert(witness.cells.every(cell => component.has(cell)))
+          if (evidence.mode === 'association') {
+            assert(Array.isArray(witness.hostCells) && Array.isArray(witness.enclosed), 'Association witnesses must expose direct host and original donor support')
+            const claimed = new Set(), donorCells = new Set(), donorHosts = new Set()
+            const claim = cells => { for (const cell of cells) { assert(witness.cells.includes(cell) && !claimed.has(cell)); claimed.add(cell) } }
+            claim(witness.hostCells)
+            for (const donor of witness.enclosed) {
+              assert(Number.isSafeInteger(donor.groupId) && donor.groupId > 0 && Number.isSafeInteger(donor.hostGroupId) && donor.hostGroupId > 0 && donor.groupId !== donor.hostGroupId)
+              donorHosts.add(donor.hostGroupId); assert.equal(donorHosts.size, 1)
+              assert(donor.cells.length > 0 && donor.cells.length <= Number(limits[2]) && donor.currentCells.length > 0)
+              for (const cell of donor.cells) { assert(Number.isSafeInteger(cell) && cell >= 0 && cell < before.cells && !donorCells.has(cell)); donorCells.add(cell) }
+              claim(donor.currentCells); enclosedComponents++
+            }
+            assert.equal(claimed.size, witness.cells.length, 'Every association witness cell must have explicit direct or donor evidence')
+          }
         }
+        if (evidence.mode === 'association') assert(enclosedComponents > 0, 'Association mode must use an original enclosed component')
         const intersection = a.cells.filter(cell => b.cells.includes(cell))
         assert.equal(intersection.length, common.size); assert(intersection.every(cell => common.has(cell)))
         assert(common.size >= component.size * .75, `Source ${sample.frame}: temporal witnesses need shared original support`)
         matches[0].temporal.push(evidence)
       }
-      for (const merge of merges) assert.equal(merge.reason === 'temporal', merge.temporal.length > 0, `Source ${sample.frame}: temporal merges need explicit witness evidence`)
+      for (const merge of merges) {
+        assert.equal(merge.reason === 'temporal', merge.temporal.length > 0, `Source ${sample.frame}: temporal merges need explicit witness evidence`)
+        if (merge.reason === 'temporal') {
+          const measured = new Set(merge.measuredCells), reported = new Set()
+          for (const evidence of merge.temporal) for (const cell of evidence.cells) { assert(measured.has(cell) && !reported.has(cell)); reported.add(cell) }
+          assert.equal(reported.size, measured.size, 'Temporal component evidence must cover every measured merged cell')
+        }
+      }
       assert.equal(merges.length, Number(totals[2]))
       const mapping = new Map([...before.summary.matchAll(/^Track (\d+): local group (\d+);/gm)].map(match => [Number(match[2]), Number(match[1])]))
       const changed = new Map()

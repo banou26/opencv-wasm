@@ -68,6 +68,7 @@ export const renderVectorCompletionPanels = (data: RegionalData, sourceFrame: nu
       'Pink provenance: inferred fragment membership. Source, measured groups, original completion and track associations remain unchanged.',
       ...(fragmentFrame?.merges ?? []).map(merge => `Merge: group ${merge.fromGroupId} -> ${merge.toGroupId}; track ${merge.fromTrackId} -> ${merge.toTrackId}; reason ${merge.reason}; run ${merge.runLength}; cells ${merge.cells.join(',')}; measured ${merge.measuredCells.join(',')}`),
       ...(fragmentFrame?.merges ?? []).flatMap(merge => (merge.temporal ?? []).map(evidence => `Temporal: group ${merge.fromGroupId} -> ${merge.toGroupId}; component ${evidence.cells.join(',')}; mode ${evidence.mode}; witness source ${evidence.witnesses[0].frame + data.scene.first} cells ${evidence.witnesses[0].cells.join(',')}; witness source ${evidence.witnesses[1].frame + data.scene.first} cells ${evidence.witnesses[1].cells.join(',')}; common ${evidence.commonCells.join(',')}`)),
+      ...(fragmentFrame?.merges ?? []).flatMap(merge => (merge.temporal ?? []).filter(evidence => evidence.mode === 'association').map(evidence => `Association: ${JSON.stringify({ fromGroupId: merge.fromGroupId, toGroupId: merge.toGroupId, cells: evidence.cells, witnesses: evidence.witnesses.map(witness => ({ frame: witness.frame + data.scene.first, hostCells: witness.hostCells, enclosed: witness.enclosed })) })}`)),
     ] : []),
   ].join('\n')
   return { width, height, panels, summary }

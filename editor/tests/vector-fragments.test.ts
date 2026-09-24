@@ -265,3 +265,126 @@ test('enclosure mode rejects smaller components, oversized components and stradd
   const oversized = structuredClone(straddling); oversized.options.maxCells = 3
   expect(() => renderVectorCompletionPanels(data, 2, undefined, identities, oversized)).toThrow(/only to enlarged/)
 })
+
+test('attachment presentation accepts bounded bilateral or same-side witnesses but never the current pair', () => {
+  for (const current of [0, 1]) {
+    const data = fixture(), groups = data.frameVectorGroups!, [plain, fragmented] = groups.frames
+    if (current === 0) { groups.frames[0] = { ...fragmented!, frame: 0 }; groups.frames[1] = { ...plain!, frame: 1 } }
+    const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+    const fragments = mergeFrameVectorFragments(groups, support, identities), merge = fragments.frames[current]!.merges[0]!
+    merge.reason = 'temporal'
+    merge.temporal = [{ cells: [24], mode: 'attachment', witnesses: [{ frame: current === 0 ? 1 : 0, cells: [24] }, { frame: 2, cells: [24] }], commonCells: [24] }]
+    const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+    const original = renderVectorCompletionPanels(completed, current, undefined, identities)
+    const result = renderVectorCompletionPanels(completed, current, undefined, identities, fragments)
+    expect(result.summary).toContain('mode attachment')
+    for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
+    merge.temporal[0]!.witnesses[0].frame = current
+    expect(() => renderVectorCompletionPanels(completed, current, undefined, identities, fragments)).toThrow(/witness frames/)
+  }
+  const data = enlargedFixture(2), identities = data.frameVectorIdentities!
+  const fragments = mergeFrameVectorFragments(data.frameVectorGroups!, data.frameVectorSupport!, identities)
+  fragments.frames[2]!.merges[0]!.temporal![0]!.mode = 'attachment'
+  expect(() => renderVectorCompletionPanels(data, 2, undefined, identities, fragments)).toThrow(/bounded measured components/)
+})
+
+const associationFixture = () => {
+  const data = fixture(), identities = data.frameVectorIdentities!
+  data.scene.first = 10; data.scene.last = 13
+  const fragments = mergeFrameVectorFragments(data.frameVectorGroups!, data.frameVectorSupport!, identities)
+  const merge = fragments.frames[1]!.merges[0]!
+  merge.reason = 'temporal'
+  merge.temporal = [{ cells: [24], mode: 'association', witnesses: [
+    { frame: 0, cells: [24], hostCells: [], enclosed: [{ groupId: 2, hostGroupId: 1, cells: [23, 24], currentCells: [24] }] },
+    { frame: 2, cells: [24], hostCells: [24], enclosed: [] },
+  ], commonCells: [24] }]
+  return { data, identities, fragments }
+}
+
+test('association presentation exposes direct current cells and full original donor components with absolute frames', () => {
+  const { data, identities, fragments } = associationFixture()
+  const before = structuredClone({ data, fragments }), original = renderVectorCompletionPanels(data, 11, undefined, identities)
+  const result = renderVectorCompletionPanels(data, 11, undefined, identities, fragments)
+  expect(result.summary).toContain('mode association; witness source 10 cells 24; witness source 12 cells 24')
+  const record = JSON.parse(result.summary.split('\n').find(line => line.startsWith('Association:'))!.slice('Association:'.length))
+  expect(record).toEqual({ fromGroupId: 2, toGroupId: 1, cells: [24], witnesses: [
+    { frame: 10, hostCells: [], enclosed: [{ groupId: 2, hostGroupId: 1, cells: [23, 24], currentCells: [24] }] },
+    { frame: 12, hostCells: [24], enclosed: [] },
+  ] })
+  for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
+  expect({ data, fragments }).toEqual(before)
+})
+
+test('association presentation rejects incomplete, overlapping or unbounded donor metadata', () => {
+  const { data, identities, fragments } = associationFixture()
+  type Evidence = NonNullable<typeof fragments.frames[number]['merges'][number]['temporal']>[number]
+  const invalid: ((evidence: Evidence) => void)[] = [
+    evidence => { delete evidence.witnesses[0].hostCells },
+    evidence => { delete evidence.witnesses[0].enclosed },
+    evidence => { evidence.witnesses[0].hostCells = [24] },
+    evidence => { evidence.witnesses[1].hostCells = [24, 24] },
+    evidence => { evidence.witnesses[0].enclosed![0]!.currentCells = [24, 24] },
+    evidence => { evidence.witnesses[0].enclosed![0]!.currentCells = [23] },
+    evidence => { evidence.witnesses[0].enclosed![0]!.currentCells = [] },
+    evidence => { evidence.witnesses[0].enclosed![0]!.cells = [23, 23] },
+    evidence => { evidence.witnesses[0].enclosed!.push(structuredClone(evidence.witnesses[0].enclosed![0]!)) },
+    evidence => { evidence.witnesses[0].enclosed![0]!.cells = [49] },
+    evidence => { evidence.witnesses[0].enclosed![0]!.cells = Array.from({ length: 21 }, (_, cell) => cell) },
+    evidence => { evidence.witnesses[0].enclosed![0]!.groupId = 0 },
+    evidence => { evidence.witnesses[0].enclosed![0]!.hostGroupId = 2 },
+    evidence => { evidence.witnesses[0].enclosed = [] },
+    evidence => { evidence.witnesses[0].enclosed = []; evidence.witnesses[0].hostCells = [24] },
+    evidence => { evidence.witnesses[0].frame = 2 },
+  ]
+  for (const mutate of invalid) {
+    const changed = structuredClone(fragments); mutate(changed.frames[1]!.merges[0]!.temporal![0]!)
+    expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, changed)).toThrow()
+  }
+  const extra = structuredClone(fragments); extra.frames[1]!.merges[0]!.temporal![0]!.mode = 'bracketed'
+  expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, extra)).toThrow(/association mode/)
+})
+
+test('clipped presentation validates individual original components at one edge without altering raw panels', () => {
+  const data = fixture(), groups = data.frameVectorGroups!
+  for (const frame of groups.frames) {
+    frame.labels.fill(1); frame.labels[0] = 0
+    if (frame.frame === 1) frame.labels[27] = 2
+    frame.confidence.fill(2)
+    frame.observations = [...new Set(frame.labels)].map(id => {
+      const cells = [...frame.labels.keys()].filter(cell => frame.labels[cell] === id)
+      return { id, motionId: id, cells, dx: 0, dy: 0, strongCells: cells.length }
+    })
+  }
+  const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+  const fragments = mergeFrameVectorFragments(groups, support, identities)
+  expect(fragments.frames[1]!.merges.map(merge => ({ reason: merge.reason, cells: merge.cells }))).toEqual([{ reason: 'clipped', cells: [27] }])
+  const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+  const original = renderVectorCompletionPanels(completed, 1, undefined, identities)
+  const result = renderVectorCompletionPanels(completed, 1, undefined, identities, fragments)
+  expect(result.summary).toContain('reason clipped')
+  for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
+  const interior = fixture(), interiorIdentities = interior.frameVectorIdentities!
+  const interiorFragments = mergeFrameVectorFragments(interior.frameVectorGroups!, interior.frameVectorSupport!, interiorIdentities)
+  interiorFragments.frames[1]!.merges[0]!.reason = 'clipped'
+  expect(() => renderVectorCompletionPanels(interior, 1, undefined, interiorIdentities, interiorFragments)).toThrow(/one frame edge/)
+})
+
+test('clipped size and edge limits apply to original raw components rather than the aggregate merge record', () => {
+  const data = enlargedFixture(2), groups = data.frameVectorGroups!
+  for (const frame of groups.frames) {
+    frame.labels.fill(1); frame.labels[0] = 0
+    if (frame.frame === 2) for (let y = 2; y < 14; y++) { frame.labels[y * 17] = 2; frame.labels[y * 17 + 16] = 2 }
+    frame.observations = [...new Set(frame.labels)].map(id => {
+      const cells = [...frame.labels.keys()].filter(cell => frame.labels[cell] === id)
+      return { id, motionId: id, cells, dx: 0, dy: 0, strongCells: cells.length }
+    })
+  }
+  const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+  const fragments = mergeFrameVectorFragments(groups, support, identities), frame = fragments.frames[2]!
+  expect(frame.merges).toHaveLength(2)
+  expect(frame.merges.every(merge => merge.reason === 'clipped' && merge.measuredCells.length === 12)).toBe(true)
+  frame.merges = [{ ...frame.merges[0]!, cells: frame.merges.flatMap(merge => merge.cells), measuredCells: frame.merges.flatMap(merge => merge.measuredCells) }]
+  expect(frame.merges[0]!.measuredCells).toHaveLength(24)
+  const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+  expect(renderVectorCompletionPanels(completed, 2, undefined, identities, fragments).summary).toContain('reason clipped')
+})

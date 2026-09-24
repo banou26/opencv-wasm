@@ -157,6 +157,11 @@ try {
     ] })),
   }) : []
   const fragmentChecks = clip === defaultClip ? await checkFragmentMerges({ page, change, output, prefix, cases: [
+    { frame: 16, minimumMerged: 4, expected: [{ cells: [719, 759, 799, 839], parentCell: 718 }] },
+    { frame: 22, minimumMerged: 1, expected: [{ cells: [599], parentCell: 598 }], protectedCells: [839] },
+    { frame: 25, minimumMerged: 12, expected: [{ cells: [594, 595, 596, 597, 598, 599, 634, 635, 636, 637, 638, 639], parentCell: 593 }] },
+    { frame: 28, minimumMerged: 11, expected: [{ cells: [555, 556, 594, 595, 596, 597, 633, 634, 635, 636, 637], parentCell: 554 }] },
+    { frame: 37, minimumMerged: 12, expected: [{ cells: [587, 588, 628, 629, 668, 669, 670, 710, 711, 752, 792, 832], parentCell: 586 }] },
     { frame: 49, minimumMerged: 21, expected: [{ cells: [582, 583, 584, 622, 623, 624, 663, 664, 703, 704, 741, 742, 743, 744, 782, 783, 784, 822, 823, 824, 864], parentCell: 542 }], protectedCells: [903] },
     { frame: 67, minimumMerged: 11, expected: [{ cells: [695, 696, 735, 736, 775, 776, 777, 815, 816, 817, 857], parentCell: 734 }], protectedCells: [896] },
     { frame: 79, minimumMerged: 8, expected: [{ cells: [388, 389, 390, 428, 429, 430, 431, 469], parentCell: 468 }], protectedCells: [348] },

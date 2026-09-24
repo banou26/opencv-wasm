@@ -9,10 +9,17 @@ export type FrameVectorFragmentOptions = {
 export type FrameVectorFragmentWitness = {
     frame: number;
     cells: number[];
+    hostCells?: number[];
+    enclosed?: {
+        groupId: number;
+        hostGroupId: number;
+        cells: number[];
+        currentCells: number[];
+    }[];
 };
 export type FrameVectorFragmentTemporal = {
     cells: number[];
-    mode: 'bracketed' | 'birth' | 'enclosure';
+    mode: 'bracketed' | 'birth' | 'enclosure' | 'attachment' | 'association';
     witnesses: [FrameVectorFragmentWitness, FrameVectorFragmentWitness];
     commonCells: number[];
 };
@@ -36,7 +43,7 @@ export type FrameVectorFragments = {
             toTrackId: number;
             cells: number[];
             measuredCells: number[];
-            reason: 'enclosed' | 'partial' | 'temporal';
+            reason: 'enclosed' | 'partial' | 'temporal' | 'clipped';
             runLength: number;
             temporal?: FrameVectorFragmentTemporal[];
         }[];

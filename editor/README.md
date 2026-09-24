@@ -1239,19 +1239,53 @@ frame and lists its covered cells and common support in current-frame grid
 coordinates. Pink provenance continues to mark inferred membership, not measured
 motion or corrected source pixels.
 
-The five-cell partial and twenty-cell enclosed/temporal branches remain
-unchanged. A separate enlarged branch considers 21-40 measured cells at the
+The previously accepted five-cell partial and twenty-cell enclosed/temporal
+branches remain unchanged. A separate enlarged branch considers 21-40 measured cells at the
 default settings. Every child cell must have coherent original motion; its host
 must be at least twice as large, touch all four sides, cover at least 80% of the
 unique boundary and 90% of cardinal contacts, and have no cardinal contact with
 the dominant group. Child and host velocities must differ by no more than the
 grouping tolerance. These stronger local checks still need two original raw
 witnesses covering the same 75% of candidate cells. Bracketing is preferred;
-only this enlarged branch can use two past or two future witnesses under the
+this enlarged branch can use two past or two future witnesses under the
 explicit `enclosure` mode. The inspector validates that this mode is confined
 to the enlarged size range, keeps the original measured panel unchanged, and
 lists both witness frames and their common cells. Cached fragment results use
-stage version 6.
+stage version 7.
+
+Additional bounded branches run after those decisions, without changing their
+accepted membership. Components of at most twenty coherent measured cells may
+attach when their host has at least four times their area and compatible motion:
+
+- `clipped` means the component touches exactly one frame edge and the visible
+  boundary is strictly enclosed: no other measured owner, at least 75% host
+  coverage, 90% cardinal contact and every in-frame cardinal side supported.
+  The unseen side supplies no invented evidence. Corners remain excluded.
+- `attachment` records two raw witnesses for a single-edge
+  partial enclosure or a strongly attached interior component. The interior
+  case needs more than five cells, host support on all four sides, 75% unique
+  boundary support and 80% cardinal contact. Both cases retain motion vetoes,
+  the nearest-three/twelve-pair search and 75% common current-cell coverage.
+  Bilateral witnesses are preferred, with two past or two future observations
+  allowed when needed. All use `attachment` to distinguish these local gates
+  from the original temporal branch.
+- `association` is a bilateral fallback for strong interior attachments whose
+  neighboring observations still split the same child track. A donor sibling
+  must be an original coherent, transient, non-border component of that child
+  track, at most twenty cells, strictly enclosed by the same host track with a
+  four-to-one host area ratio and compatible motion. Its raw boundary must have
+  at least 75% host coverage, 90% cardinal contact and all four host directions.
+  Completed masks and earlier merge results never establish this association.
+
+`Temporal:` summary rows retain absolute witness-frame indices and current-cell
+coverage. Each `association` row also has a structured `Association:` record:
+`hostCells` lists direct host evidence in **current-frame** coordinates;
+`enclosed[].cells` lists each complete original **donor-frame** component;
+`enclosed[].currentCells` lists the current cells it supports. Direct and sibling
+coverage must be disjoint and exactly partition the witness coverage. Inspector
+validation and the browser audit reject missing, duplicate or unreported
+evidence. Native scene checks independently reconstruct donor geometry; these
+records are inspectable inference, not proof of a pixel-accurate object boundary.
 
 The initial partial-enclosure rule was rejected after visual review of the
 long-pan test scene: nine raw foreground-labeled cells beside a tree actually

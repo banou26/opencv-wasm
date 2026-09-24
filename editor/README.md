@@ -322,12 +322,14 @@ The final source frame has no outgoing motion pair and consequently no motion ov
 
 **Complete Direct Support** is a separate stage after grouping, with edge filling
 first and enclosed-hole filling second. **Extend to edges** checks measured cells
-on each actual frame edge. If one group owns at least 75% of the original measured
-cells touching that edge, it fills all unknown cells along the edge. Unknown cells
-are excluded from the vote denominator; measured minority cells keep their own
-groups unchanged. An edge without measured cells has no majority. Conflicting
-corner proposals stay unknown, and filled corners cannot establish ownership of
-another edge. This exact-edge proposal takes priority over inward fallback.
+on each actual frame edge. Among the groups touching that edge, the largest by
+original measured cell count across the entire frame fills its unknown cells.
+There is no percentage threshold or minimum fraction of occupied edge cells.
+Equal sizes choose the lowest group ID, and different corner proposals use that
+same frozen size/ID ranking. All measured cells keep their own groups unchanged.
+An edge without measured cells gets no full-edge proposal, and filled corners
+cannot establish ownership of another edge. These exact-edge proposals take
+priority over inward fallback; additions never increase a group's size.
 
 The bounded inward fallback still uses only original measurements: missing
 prefixes along edge-normal rays need anchors on at least half the scan lines,
@@ -335,7 +337,7 @@ prefixes along edge-normal rays need anchors on at least half the scan lines,
 need one original boundary owner, an independently qualified edge, and original
 support within reach and competitor clearance at every cell. Competing groups
 block nearby fallback extensions. **Edge reach (cells)**, default eight, bounds
-these inward proposals, not the distance along a majority-owned frame edge. Zero
+these inward proposals, not the distance along a qualified frame edge. Zero
 disables all edge filling. Neither edge method uses additions as new votes.
 
 After edge proposals are resolved, **Fill enclosed holes** fills each remaining
@@ -1131,11 +1133,13 @@ The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
 helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
 compares both fill controls disabled/enabled. It requires identical source and
 measured panels, unchanged measured pixels and IDs, and explicit hole/edge
-provenance for every addition. Raw PNG border labels independently determine
-75% measured-edge majorities: every proposed unknown edge cell must receive that owner,
-while corners with conflicting owners must remain unknown. Cases may add
-`minimumHoles` or `minimumBorder`
-controls. It restores both controls enabled and leaves `ncompletionview` selected.
+provenance for every addition. Raw PNG labels independently determine original
+frame-wide group sizes and the IDs touching each edge: every proposed unknown
+edge cell must receive the largest touching group, and competing corner owners
+use the same size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
+`requireBottomRight` controls. The market smoke checks source 26 and 65 explicitly
+for the reported corner gap. It restores both controls enabled and leaves
+`ncompletionview` selected.
 The helper independently floods the unknown cells after reconstructing edge
 additions from provenance. Each enclosed component must use its largest touching
 group by original measured frame-wide count, with lowest-ID ties; an open

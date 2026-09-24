@@ -180,7 +180,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
   const controls = ['Fill enclosed holes', 'Extend to edges'].map(label => page.getByLabel(`Complete Direct Support ${label}`, { exact: true }))
   const setEnabled = async enabled => { for (const control of controls) if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const records = [], provenanceColors = [[150, 150, 165], [240, 178, 72], [66, 220, 183]]
-  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. At least 75% of original measured actual-edge cells establishes an owner independently from the raw PNG; unknown edge cells must receive it, minority measurements stay fixed and conflicting corners stay unknown. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. Raw PNGs determine original frame-wide measured group sizes. Each actual edge and competing corner picks the largest touching group, with lowest-ID ties and no percentage threshold; only unknown cells fill. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
   try {
     for (const sample of cases) {
       await setEnabled(false)
@@ -227,26 +227,33 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
       }
       const name = `${prefix}-support-${String(sample.frame).padStart(3, '0')}.png`
       saveSheet(after, output, name)
-      const rows = Math.ceil(after.analysisHeight / after.size), proposals = new Map()
+      const rows = Math.ceil(after.analysisHeight / after.size), proposals = new Map(), measuredSizes = new Map()
+      for (const item of cells) if (item.raw >= 0) measuredSizes.set(item.raw, (measuredSizes.get(item.raw) ?? 0) + 1)
+      const rankOwners = (a, b) => measuredSizes.get(b) - measuredSizes.get(a) || a - b
       const edges = Object.entries({ left: cells.filter(item => item.cell % after.columns === 0), right: cells.filter(item => item.cell % after.columns === after.columns - 1),
         top: cells.slice(0, after.columns), bottom: cells.slice((rows - 1) * after.columns) }).map(([edge, selected]) => {
         const measured = selected.filter(item => item.raw >= 0), owners = [...new Set(measured.map(item => item.raw))]
-        const votes = owners.map(owner => ({ owner, count: measured.filter(item => item.raw === owner).length }))
-        const winner = votes.find(vote => vote.count / measured.length >= .75)
-        if (winner) for (const item of selected) if (item.raw < 0) {
+        const votes = owners.map(owner => ({ owner, touchingCells: measured.filter(item => item.raw === owner).length, measuredCells: measuredSizes.get(owner) }))
+        const winner = owners.slice().sort(rankOwners)[0]
+        if (winner !== undefined) for (const item of selected) if (item.raw < 0) {
           if (!proposals.has(item.cell)) proposals.set(item.cell, new Set())
-          proposals.get(item.cell).add(winner.owner)
+          proposals.get(item.cell).add(winner)
         }
-        return { edge, owners, votes, measured: measured.length, majorityOwner: winner?.owner ?? null, rawUnknown: selected.filter(item => item.raw < 0).map(item => item.cell) }
+        return { edge, owners, votes, measured: measured.length, largestOwner: winner ?? null, rawUnknown: selected.filter(item => item.raw < 0).map(item => item.cell) }
       })
       const edgeReach = Number(await page.getByLabel('Complete Direct Support Edge reach (cells)', { exact: true }).inputValue())
-      const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: owners.size === 1 ? [...owners][0] : -1, ...cells[cell] })) : []
+      const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: [...owners].sort(rankOwners)[0], ...cells[cell] })) : []
       const holeComponents = expectedHoleOwners(cells, after.columns, rows)
       const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, holeComponents, beforeSummary: before.summary, afterSummary: after.summary, image: name }
       records.push(record); await save('incomplete')
       for (const item of exactEdgeCells) {
-        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: 75% measured-edge majority must fill unknown cells, except conflicting corners`)
+        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: edge and corner proposals must choose the largest original measured touching group`)
         assert.equal(item.provenance, item.expected >= 0 ? 3 : 0, `Source ${sample.frame} cell ${item.cell}: exact edge provenance is wrong`)
+      }
+      if (sample.requireBottomRight) {
+        const corner = exactEdgeCells.find(item => item.cell === cells.length - 1)
+        assert(corner || cells.at(-1).raw >= 0, `Source ${sample.frame}: bottom-right needs a measured cell or an independently qualified edge proposal`)
+        assert(cells.at(-1).completed >= 0, `Source ${sample.frame}: qualified bottom-right corner must be filled`)
       }
       for (const component of holeComponents) for (const cell of component.cells) {
         assert.equal(cells[cell].completed, component.expected, `Source ${sample.frame} cell ${cell}: enclosed hole must use the largest original measured touching group; open voids must stay unknown`)

@@ -136,7 +136,7 @@ try {
     await page.waitForFunction(() => !document.fullscreenElement)
   }
   const supportChecks = clip === defaultClip ? await checkSupportCompletion({ page, change, output, prefix,
-    cases: [0, 20, 94, 103].map(frame => ({ frame, minimumHoles: 3, minimumBorder: 20 })),
+    cases: [...[0, 20, 94, 103].map(frame => ({ frame, minimumHoles: 3, minimumBorder: 20 })), { frame: 26, requireBottomRight: true }, { frame: 65, requireBottomRight: true }],
   }) : []
   for (const check of supportChecks.filter(record => [0, 20].includes(record.frame))) {
     assert.equal(check.counts.unknown, 0, 'Early single-owner background must close winding edge pockets too')

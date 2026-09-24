@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { movieFile } from './generation-smoke.mjs'
 import { assertViewport } from './layout-smoke.mjs'
-import { checkCharacterGroups, checkDistantGroups, checkSupportCompletion } from './vector-character-check.mjs'
+import { checkCharacterGroups, checkDistantGroups, checkSupportCompletion, checkBorderRefinement } from './vector-character-check.mjs'
 
 const defaultClip = '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const clip = process.env.REGIONAL_CLIP ?? defaultClip
@@ -59,7 +59,7 @@ try {
   await page.getByRole('button', { name: 'Save graph', exact: true }).click()
   await page.waitForFunction(() => document.querySelector('[data-testid=folder-state]')?.textContent.includes('Saved'))
   const graph = await page.evaluate(async () => JSON.parse(await (await (await window.vectorFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
-  assert(graph.nodes.some(node => node.type === 'vectorCandidates'))
+  assert.equal(graph.nodes.find(node => node.type === 'vectorCandidates')?.params.verifyBorders, true)
   const grouping = graph.nodes.find(node => node.type === 'vectorGroups')
   assert(grouping)
   assert.deepEqual(grouping.params, { tolerance: 0.75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
@@ -106,6 +106,15 @@ try {
     ].map(sample => ({ ...sample, minimumActorCells: 20, minimumCharacterCells: 15,
       characterCells: [427, 428, 429, 430, 467, 468, 469, 470, 507, 508, 509, 510, 547, 548, 549, 550, 587, 588, 589, 590],
     })),
+  }) : []
+  const borderChecks = clip === defaultClip ? await checkBorderRefinement({ page, change, output, prefix,
+    cases: [
+      { frame: 16, correctedCells: [400, 440, 480], foregroundCells: [516, 517, 518, 519, 556, 557, 558, 559, 596, 597, 598, 599, 636, 637, 638, 639, 676, 677, 678, 679, 716, 717, 718, 756, 757, 796, 797, 798, 836, 837, 838, 877, 719, 758, 759, 799, 839] },
+      { frame: 17, correctedCells: [560] },
+      { frame: 19, correctedCells: [800, 801], foregroundCells: [475, 476, 514, 515, 516, 517, 518, 519, 554, 555, 556, 557, 558, 559, 594, 595, 596, 597, 598, 599, 634, 635, 636, 637, 638, 639, 674, 675, 676, 677, 678, 679, 714, 715, 716, 717, 718, 719, 754, 755, 756, 757, 758, 759, 794, 795, 796, 797, 798, 799, 834, 835, 836, 837, 838, 839, 875, 877, 878, 879, 918] },
+      { frame: 72, correctedCells: [] },
+      ...[100, 106].map(frame => ({ frame, correctedCells: [], foregroundCells: [427, 428, 429, 430, 467, 468, 469, 470, 507, 508, 509, 510, 547, 548, 549, 550, 587, 588, 589, 590] })),
+    ],
   }) : []
   await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(Math.min(20, last))))
   for (const port of ['source', 'candidates', 'groups', 'confidence']) {
@@ -176,7 +185,7 @@ try {
   assert.deepEqual([video.width, video.height, video.r_frame_rate, Number(video.nb_read_frames)], [1920, 1080, '60/1', count])
   const hash = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(output, `${prefix}-review.mp4`), '-f', 'hash', '-hash', 'sha256', '-'], { encoding: 'utf8' }).trim()
   assert.deepEqual(errors, [])
-  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, supportChecks, errors }, null, 2) + '\n')
+  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, borderChecks, supportChecks, errors }, null, 2) + '\n')
   console.log(`PASS direct prefab: desktop/mobile, 4 full-size ports, ${count} video frames; ${hash}`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])

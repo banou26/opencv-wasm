@@ -34,7 +34,12 @@ export async function checkCharacterGroups({ page, change, output, prefix, cases
       })
       await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
       await waitForBrowser(page, async previous => {
-        try { const dir = await window.vectorFolder.getDirectoryHandle('exports'); return (await Array.fromAsync(dir.keys())).some(name => name.endsWith('.png') && !previous.includes(name)) } catch { return false }
+        if (document.querySelector('[data-testid=folder-state]')?.getAttribute('data-pending') !== '0') return false
+        try {
+          const dir = await window.vectorFolder.getDirectoryHandle('exports')
+          const name = (await Array.fromAsync(dir.keys())).find(name => name.endsWith('.png') && !previous.includes(name))
+          return name !== undefined && (await (await dir.getFileHandle(name)).getFile()).size > 0
+        } catch { return false }
       }, previous)
       const dataUrl = await page.evaluate(async previous => {
         const dir = await window.vectorFolder.getDirectoryHandle('exports'), names = await Array.fromAsync(dir.keys())
@@ -59,8 +64,9 @@ export async function checkCharacterGroups({ page, change, output, prefix, cases
       return { cell, label: matches[0] }
     }
     const background = sample.backgroundCells.map(labelAt), character = sample.characterCells.map(labelAt)
+    const measuredBackground = background.filter(item => item.label >= 0)
     const votes = new Map()
-    for (const item of background) if (item.label >= 0) votes.set(item.label, (votes.get(item.label) ?? 0) + 1)
+    for (const item of measuredBackground) votes.set(item.label, (votes.get(item.label) ?? 0) + 1)
     const backgroundId = [...votes].sort((a, b) => b[1] - a[1])[0]?.[0]
     assert.notEqual(backgroundId, undefined, `Source ${sample.frame}: background control has no candidates`)
     const available = character.filter(item => item.label >= 0), separate = available.filter(item => item.label !== backgroundId)
@@ -71,6 +77,8 @@ export async function checkCharacterGroups({ page, change, output, prefix, cases
     const record = { frame: sample.frame, expected: sample.expect, summary, backgroundId, background, character, available: available.length, separate: separate.length, image: name }
     records.push(record)
     await save('incomplete')
+    assert(measuredBackground.length >= 3, `Source ${sample.frame}: at least three background controls must have candidates`)
+    assert(measuredBackground.every(item => item.label === backgroundId), `Source ${sample.frame}: wall controls must not fragment into multiple motion groups`)
     console.log(`Character source ${sample.frame} (${sample.expect}): ${separate.length}/${available.length} candidate cells differ from background`)
     if (sample.expect === 'moving') assert(separate.length >= (sample.minimumSeparate ?? 1), `Source ${sample.frame}: moving character must separate from background`)
     if (sample.expect === 'held') assert(separate.length <= (sample.maximumSeparate ?? 0), `Source ${sample.frame}: held character must not become a fake motion group`)

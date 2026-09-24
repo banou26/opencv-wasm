@@ -102,13 +102,64 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
                 runs[frames[i]].set(track, end - first);
             first = end;
         }
+    const camera = [{ x: 0, y: 0, missing: 0 }];
+    for (const frame of groups.frames) {
+        const dominant = frame.observations.find(group => group.id === 0), previous = camera.at(-1);
+        camera.push({ x: previous.x + (dominant?.dx ?? 0), y: previous.y + (dominant?.dy ?? 0),
+            missing: previous.missing + Number(!dominant) });
+    }
+    const temporalEvidence = (index, cells, child, host) => {
+        const observations = history.get(host);
+        const before = observations.filter(frame => frame < index && index - frame <= 12).slice(-3).reverse();
+        const after = observations.filter(frame => frame > index && frame - index <= 12).slice(0, 3);
+        const witness = (frame) => {
+            if (camera[frame].missing !== camera[index].missing)
+                return;
+            const dx = camera[frame].x - camera[index].x, dy = camera[frame].y - camera[index].y;
+            const raw = groups.frames[frame], mapping = validated[frame].mapping, covered = [];
+            for (const cell of cells) {
+                const left = cell % columns * cellSize, top = Math.floor(cell / columns) * cellSize;
+                const x = (left + Math.min(width, left + cellSize)) / 2 + dx;
+                const y = (top + Math.min(height, top + cellSize)) / 2 + dy;
+                if (x < 0 || y < 0 || x >= width || y >= height)
+                    return;
+                const target = Math.floor(y / cellSize) * columns + Math.floor(x / cellSize);
+                const track = mapping.get(raw.labels[target]) ?? -1;
+                if (track > 0 && track !== host && track !== child)
+                    return;
+                if (track === host && raw.confidence[target] === 2)
+                    covered.push(cell);
+            }
+            return covered.length >= cells.length * .75 ? { frame, cells: covered } : undefined;
+        };
+        const past = before.map(witness).filter((item) => Boolean(item));
+        const future = after.map(witness).filter((item) => Boolean(item));
+        const pairs = [];
+        for (const a of past)
+            for (const b of future)
+                pairs.push({ mode: 'bracketed', witnesses: [a, b] });
+        if (observations[0] === index && history.get(child)[0] === index) {
+            for (let a = 0; a < future.length; a++)
+                for (let b = a + 1; b < future.length; b++) {
+                    pairs.push({ mode: 'birth', witnesses: [future[a], future[b]] });
+                }
+        }
+        pairs.sort((a, b) => a.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
+            - b.witnesses.reduce((sum, item) => sum + Math.abs(item.frame - index), 0)
+            || a.witnesses[0].frame - b.witnesses[0].frame || a.witnesses[1].frame - b.witnesses[1].frame);
+        for (const pair of pairs) {
+            const covered = new Set(pair.witnesses[1].cells), commonCells = pair.witnesses[0].cells.filter(cell => covered.has(cell));
+            if (commonCells.length >= cells.length * .75)
+                return { cells, ...pair, commonCells };
+        }
+    };
     const frames = groups.frames.map((frame, index) => {
         const { mapping, known } = validated[index], completed = support.frames[index], raw = frame.labels;
         const output = { frame: index,
             trackLabels: Int32Array.from(completed.labels, id => id < 0 ? -1 : mapping.get(id)), merged: new Uint8Array(raw.length), merges: [] };
         if (!resolved.enabled)
             return output;
-        const proposals = new Map();
+        const proposals = new Map(), temporalProposals = new Map();
         const sourceGroups = new Set();
         for (const component of components(raw, columns, rows)) {
             const runLength = runs[index].get(mapping.get(component.id));
@@ -147,25 +198,32 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             // from the far background. A bare foreground majority is not sufficient.
             // Missing motion abstains from the ownership vote, but at least half
             // the boundary still needs measured support before a partial merge.
-            const partial = component.cells.length <= resolved.maxCells && count + background >= boundary.size * .5
+            const partialBoundary = count + background >= boundary.size * .5
                 && count >= background * 2 && [1, 2, 4, 8].filter(side => sides & side).length >= 2;
-            if (!fully && !partial)
-                continue;
-            if (count < boundary.size * .5) {
-                const dominant = frame.observations.find(group => group.id === 0);
-                const child = frame.observations.find(group => group.id === component.id);
-                const parent = frame.observations.find(group => group.id === owner);
-                // Missing boundary evidence cannot justify pulling a background-moving
-                // fragment into a distinctly moving neighbor (e.g. another actor).
-                if (dominant && Math.hypot(parent.dx - dominant.dx, parent.dy - dominant.dy) > groups.options.tolerance
-                    && Math.hypot(child.dx - dominant.dx, child.dy - dominant.dy) * 2
-                        < Math.hypot(child.dx - parent.dx, child.dy - parent.dy))
+            const partial = component.cells.length <= resolved.maxCells && partialBoundary;
+            const dominant = frame.observations.find(group => group.id === 0);
+            const child = frame.observations.find(group => group.id === component.id);
+            const parent = frame.observations.find(group => group.id === owner);
+            // Incomplete enclosure cannot override clear independent motion.
+            const contradictsMotion = dominant && Math.hypot(parent.dx - dominant.dx, parent.dy - dominant.dy) > groups.options.tolerance
+                && Math.hypot(child.dx - dominant.dx, child.dy - dominant.dy) * 2
+                    < Math.hypot(child.dx - parent.dx, child.dy - parent.dy);
+            if (fully || partial) {
+                if (count < boundary.size * .5 && contradictsMotion)
                     continue;
+                const proposal = { id: component.id, owner, cells: component.cells, reason: fully ? 'enclosed' : 'partial', runLength };
+                for (const cell of component.cells)
+                    proposals.set(cell, proposal);
+                sourceGroups.add(component.id);
             }
-            const proposal = { id: component.id, owner, cells: component.cells, reason: fully ? 'enclosed' : 'partial', runLength };
-            for (const cell of component.cells)
-                proposals.set(cell, proposal);
-            sourceGroups.add(component.id);
+            else if (component.cells.length > resolved.maxCells && partialBoundary && !contradictsMotion) {
+                const temporal = temporalEvidence(index, component.cells, mapping.get(component.id), host);
+                if (!temporal)
+                    continue;
+                const proposal = { id: component.id, owner, cells: component.cells, reason: 'temporal', runLength, temporal };
+                for (const cell of component.cells)
+                    temporalProposals.set(cell, proposal);
+            }
         }
         // Inferred attachments follow only unanimous measured anchors in the same
         // original completed component. Decisions never grow hosts or merge chains.
@@ -185,6 +243,26 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
             output.merges.push({ fromGroupId: component.id, toGroupId: first.owner, fromTrackId, toTrackId,
                 cells: component.cells, measuredCells, reason: measuredCells.every(cell => proposals.get(cell).reason === 'enclosed') ? 'enclosed' : 'partial',
                 runLength: first.runLength });
+        }
+        // Preserve the spatial pass before considering temporal additions. New
+        // proposals cannot veto or retarget an already accepted local decision.
+        const baseTargets = new Set([...proposals.values()].map(item => item.owner));
+        const temporalSources = new Set([...temporalProposals.values()].map(item => item.id));
+        for (const component of components(completed.labels, columns, rows)) {
+            if (component.cells.some(cell => output.merged[cell]) || baseTargets.has(component.id))
+                continue;
+            const measuredCells = component.cells.filter(cell => raw[cell] === component.id), first = temporalProposals.get(measuredCells[0]);
+            if (!first || component.cells.length > measuredCells.length * 4 || sourceGroups.has(first.owner) || temporalSources.has(first.owner)
+                || measuredCells.some(cell => temporalProposals.get(cell)?.owner !== first.owner))
+                continue;
+            const fromTrackId = mapping.get(component.id), toTrackId = mapping.get(first.owner);
+            const evidence = [...new Set(measuredCells.map(cell => temporalProposals.get(cell).temporal))];
+            for (const cell of component.cells) {
+                output.trackLabels[cell] = toTrackId;
+                output.merged[cell] = 1;
+            }
+            output.merges.push({ fromGroupId: component.id, toGroupId: first.owner, fromTrackId, toTrackId,
+                cells: component.cells, measuredCells, reason: 'temporal', runLength: first.runLength, temporal: evidence });
         }
         return output;
     });

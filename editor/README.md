@@ -1226,6 +1226,19 @@ with a four-times-area cap and no merge chains. These are conservative membershi
 hypotheses, not proof that a small independently animated object is noise and not
 pixel-accurate silhouettes.
 
+Partially enclosed components above the five-cell limit can qualify up to twenty
+measured cells only with explicit temporal support. Two camera-aligned witness
+frames must contain original measured host support on at least 75% of the same
+current fragment cells. The search considers the nearest three host observations
+on each side within twelve pairs. Normally one witness precedes the fragment and
+one follows it; only when both child and host first appear in the current pair
+may two future witnesses be used. Current partial-enclosure and motion guards
+still apply. Completed or previously merged support never supplies witnesses.
+The summary labels these merges `temporal`, names each absolute source witness
+frame and lists its covered cells and common support in current-frame grid
+coordinates. Pink provenance continues to mark inferred membership, not measured
+motion or corrected source pixels.
+
 The initial partial-enclosure rule was rejected after visual review of the
 long-pan test scene: nine raw foreground-labeled cells beside a tree actually
 fit background motion better. Its 9:7 and 9:5 host-to-dominant boundary ratios

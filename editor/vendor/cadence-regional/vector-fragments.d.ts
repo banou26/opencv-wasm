@@ -6,6 +6,16 @@ export type FrameVectorFragmentOptions = {
     maxCells?: number;
     maxRun?: number;
 };
+export type FrameVectorFragmentWitness = {
+    frame: number;
+    cells: number[];
+};
+export type FrameVectorFragmentTemporal = {
+    cells: number[];
+    mode: 'bracketed' | 'birth';
+    witnesses: [FrameVectorFragmentWitness, FrameVectorFragmentWitness];
+    commonCells: number[];
+};
 export type FrameVectorFragments = {
     width: number;
     height: number;
@@ -26,8 +36,9 @@ export type FrameVectorFragments = {
             toTrackId: number;
             cells: number[];
             measuredCells: number[];
-            reason: 'enclosed' | 'partial';
+            reason: 'enclosed' | 'partial' | 'temporal';
             runLength: number;
+            temporal?: FrameVectorFragmentTemporal[];
         }[];
     }[];
 };

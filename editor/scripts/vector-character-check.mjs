@@ -188,7 +188,25 @@ export async function checkFragmentMerges({ page, change, output, prefix, cases 
       assert.match(before.summary, /Transient fragment merging: disabled; merged cells 0; components 0/)
       const totals = after.summary.match(/Transient fragment merging: enabled; merged cells (\d+); components (\d+)/)
       assert(totals, 'Fragment totals must be explicit')
-      const merges = [...after.summary.matchAll(/^Merge: group (\d+) -> (\d+); track (\d+) -> (\d+); reason (enclosed|partial); run (\d+); cells ([\d,]+); measured ([\d,]*)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), fromTrackId: Number(match[3]), toTrackId: Number(match[4]), reason: match[5], runLength: Number(match[6]), cells: match[7].split(',').map(Number), measuredCells: match[8] ? match[8].split(',').map(Number) : [] }))
+      const merges = [...after.summary.matchAll(/^Merge: group (\d+) -> (\d+); track (\d+) -> (\d+); reason (enclosed|partial|temporal); run (\d+); cells ([\d,]+); measured ([\d,]*)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), fromTrackId: Number(match[3]), toTrackId: Number(match[4]), reason: match[5], runLength: Number(match[6]), cells: match[7].split(',').map(Number), measuredCells: match[8] ? match[8].split(',').map(Number) : [], temporal: [] }))
+      const temporal = [...after.summary.matchAll(/^Temporal: group (\d+) -> (\d+); component ([\d,]+); mode (bracketed|birth); witness source (\d+) cells ([\d,]+); witness source (\d+) cells ([\d,]+); common ([\d,]+)$/gm)].map(match => ({ fromGroupId: Number(match[1]), toGroupId: Number(match[2]), cells: match[3].split(',').map(Number), mode: match[4], witnesses: [{ frame: Number(match[5]), cells: match[6].split(',').map(Number) }, { frame: Number(match[7]), cells: match[8].split(',').map(Number) }], commonCells: match[9].split(',').map(Number) }))
+      for (const evidence of temporal) {
+        const matches = merges.filter(merge => merge.reason === 'temporal' && merge.fromGroupId === evidence.fromGroupId && merge.toGroupId === evidence.toGroupId && evidence.cells.every(cell => merge.measuredCells.includes(cell)))
+        assert.equal(matches.length, 1, `Source ${sample.frame}: temporal evidence must identify one measured component merge`)
+        const [a, b] = evidence.witnesses, component = new Set(evidence.cells), common = new Set(evidence.commonCells)
+        assert(a.frame < b.frame && Math.abs(a.frame - sample.frame) <= 12 && Math.abs(b.frame - sample.frame) <= 12)
+        assert(evidence.mode === 'birth' ? a.frame > sample.frame : a.frame < sample.frame && b.frame > sample.frame)
+        assert.equal(component.size, evidence.cells.length); assert.equal(common.size, evidence.commonCells.length)
+        for (const witness of evidence.witnesses) {
+          assert.equal(new Set(witness.cells).size, witness.cells.length)
+          assert(witness.cells.every(cell => component.has(cell)))
+        }
+        const intersection = a.cells.filter(cell => b.cells.includes(cell))
+        assert.equal(intersection.length, common.size); assert(intersection.every(cell => common.has(cell)))
+        assert(common.size >= component.size * .75, `Source ${sample.frame}: temporal witnesses need shared original support`)
+        matches[0].temporal.push(evidence)
+      }
+      for (const merge of merges) assert.equal(merge.reason === 'temporal', merge.temporal.length > 0, `Source ${sample.frame}: temporal merges need explicit witness evidence`)
       assert.equal(merges.length, Number(totals[2]))
       const mapping = new Map([...before.summary.matchAll(/^Track (\d+): local group (\d+);/gm)].map(match => [Number(match[2]), Number(match[1])]))
       const changed = new Map()

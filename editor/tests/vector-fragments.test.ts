@@ -159,3 +159,37 @@ test('weak enclosure preserves dominant-moving fragments but permits motion clos
     else for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
   }
 })
+
+test('temporal merge presentation records absolute witness frames and validates original component support', () => {
+  const data = fixture(), identities = data.frameVectorIdentities!
+  data.scene.first = 10; data.scene.last = 13
+  const fragments = mergeFrameVectorFragments(data.frameVectorGroups!, data.frameVectorSupport!, identities)
+  const merge = fragments.frames[1]!.merges[0]!
+  merge.reason = 'temporal'
+  merge.temporal = [{ cells: [24], mode: 'bracketed', witnesses: [{ frame: 0, cells: [24] }, { frame: 2, cells: [24] }], commonCells: [24] }]
+  const result = renderVectorCompletionPanels(data, 11, undefined, identities, fragments)
+  expect(result.summary).toContain('reason temporal')
+  expect(result.summary).toContain('component 24; mode bracketed; witness source 10 cells 24; witness source 12 cells 24; common 24')
+  expect(result.panels.measured).toEqual(renderVectorCompletionPanels(data, 11, undefined, identities).panels.measured)
+  const missing = structuredClone(fragments); delete missing.frames[1]!.merges[0]!.temporal
+  expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, missing)).toThrow(/explicit temporal witnesses/)
+  const futureOnly = structuredClone(fragments); futureOnly.frames[1]!.merges[0]!.temporal![0]!.witnesses[0].frame = 2
+  expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, futureOnly)).toThrow(/witness frames/)
+  const fabricated = structuredClone(fragments); fabricated.frames[1]!.merges[0]!.temporal![0]!.witnesses[0].cells = []
+  expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, fabricated)).toThrow(/common support/)
+  const outside = structuredClone(fragments); outside.frames[1]!.merges[0]!.temporal![0]!.cells = [0]
+  expect(() => renderVectorCompletionPanels(data, 11, undefined, identities, outside)).toThrow(/original measured fragment/)
+})
+
+test('birth-mode presentation accepts two distinct future witnesses without inventing a preceding frame', () => {
+  const data = fixture(), groups = data.frameVectorGroups!, [plain, fragmented] = groups.frames
+  groups.frames[0] = { ...fragmented!, frame: 0 }; groups.frames[1] = { ...plain!, frame: 1 }
+  const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+  const fragments = mergeFrameVectorFragments(groups, support, identities), merge = fragments.frames[0]!.merges[0]!
+  merge.reason = 'temporal'
+  merge.temporal = [{ cells: [24], mode: 'birth', witnesses: [{ frame: 1, cells: [24] }, { frame: 2, cells: [24] }], commonCells: [24] }]
+  const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+  expect(renderVectorCompletionPanels(completed, 0, undefined, identities, fragments).summary).toContain('mode birth; witness source 1 cells 24; witness source 2 cells 24')
+  merge.temporal[0]!.mode = 'bracketed'
+  expect(() => renderVectorCompletionPanels(completed, 0, undefined, identities, fragments)).toThrow(/witness frames/)
+})

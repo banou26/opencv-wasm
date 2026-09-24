@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { waitForBrowser } from './browser-poll.mjs'
+import { completeFrameVectorSupport as approvedSupport } from './vector-support-baseline.mjs'
+
+const baselineSourceHash = '12518861aa10a9000e2b8b9ab7edf92143eac9b5921885895e131768f79fe8a9'
+const baselineSource = await readFile(new URL('./vector-support-baseline.mjs', import.meta.url), 'utf8')
+assert.equal(createHash('sha256').update(baselineSource.slice(baselineSource.indexOf('\n') + 1)).digest('hex'), baselineSourceHash, 'Approved support baseline must remain frozen')
 
 const color = id => {
   const hue = (.61 + id * .61803398875) % 1, sector = hue * 6, fraction = sector - Math.floor(sector)
@@ -52,10 +58,19 @@ const capture = async (page, change, frame, completion = false) => {
     const y = Math.min(analysisHeight - .5, Math.floor(cell / columns) * size + size / 2)
     const pixel = (Math.floor(y * height / analysisHeight) * width + Math.floor(x * width / analysisWidth)) * 3
     const original = Array.from(rasters.source.subarray(pixel, pixel + 3)), grouped = Array.from(rasters[completion ? 'completed' : 'groups'].subarray(pixel, pixel + 3))
-    if (grouped.every((channel, index) => channel === original[index])) return { cell, label: -1 }
+    if (grouped.every((channel, index) => channel === original[index])) return { cell, label: -1, alpha: 0 }
     const matches = groups.filter(id => [.38, .6].some(alpha => color(id).every((channel, index) => Math.abs(grouped[index] - Math.round(original[index] * (1 - alpha) + channel * alpha)) <= 1)))
     assert.equal(matches.length, 1, `Source ${frame} cell ${cell}: diagnostic group color must be uniquely decodable`)
-    return { cell, label: matches[0] }
+    const tint = color(matches[0]), raster = rasters[completion ? 'completed' : 'groups']
+    const opacityAt = p => [.38, .6].filter(alpha => tint.every((channel, index) => Math.abs(raster[p + index] - Math.round(rasters.source[p + index] * (1 - alpha) + channel * alpha)) <= 1))
+    let alphas = opacityAt(pixel)
+    if (alphas.length !== 1) {
+      const left = Math.ceil(cell % columns * size * width / analysisWidth), right = Math.min(width, Math.ceil((cell % columns + 1) * size * width / analysisWidth))
+      const top = Math.ceil(Math.floor(cell / columns) * size * height / analysisHeight), bottom = Math.min(height, Math.ceil((Math.floor(cell / columns) + 1) * size * height / analysisHeight))
+      for (let iy = top; iy < bottom && alphas.length !== 1; iy++) for (let ix = left; ix < right && alphas.length !== 1; ix++) alphas = opacityAt((iy * width + ix) * 3)
+    }
+    assert.equal(alphas.length, 1, `Source ${frame} cell ${cell}: measured confidence opacity must be uniquely decodable`)
+    return { cell, label: matches[0], alpha: alphas[0] }
   }
   return { summary, width, height, analysisWidth, analysisHeight, size, columns, cells, rasters, labelAt,
     counts: completion ? { measured: Number(counts[1]), holes: Number(counts[2]), border: Number(counts[3]), unknown: Number(counts[4]) } : undefined }
@@ -180,7 +195,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
   const controls = ['Fill enclosed holes', 'Extend to edges'].map(label => page.getByLabel(`Complete Direct Support ${label}`, { exact: true }))
   const setEnabled = async enabled => { for (const control of controls) if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const records = [], provenanceColors = [[150, 150, 165], [240, 178, 72], [66, 220, 183]]
-  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. Raw PNGs determine original frame-wide measured group sizes. Each actual edge preserves any 75% original measured-edge winner, otherwise selecting its largest touching group. Competing corners use original measured size with lowest-ID ties; only unknown cells fill. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, baseline: { commit: '043d5c2', sha256: baselineSourceHash }, description: 'Native PNGs supply raw labels and confidence. Every assignment from the frozen approved 75%-edge/bounded completion must remain exact. Only its unknown cells may use new size-ranked edge/corner proposals. Measured pixels and IDs remain fixed. Independent post-edge hole flooding checks original measured touching-group sizes, lowest-ID ties and open void abstention.', records }, null, 2)}\n`)
   try {
     for (const sample of cases) {
       await setEnabled(false)
@@ -195,7 +210,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
       const counts = { measured: 0, holes: 0, border: 0, unknown: 0 }, additions = [], cells = []
       let measuredPixels = 0, changedMeasuredPixels = 0
       for (let cell = 0; cell < after.cells; cell++) {
-        const raw = before.labelAt(cell).label, completed = after.labelAt(cell).label
+        const rawPoint = before.labelAt(cell), raw = rawPoint.label, completed = after.labelAt(cell).label
         const x = cell % after.columns * after.size, y = Math.floor(cell / after.columns) * after.size
         const px = Math.floor(Math.min(after.analysisWidth - .5, x + after.size / 2) * after.width / after.analysisWidth)
         const py = Math.floor(Math.min(after.analysisHeight - .5, y + after.size / 2) * after.height / after.analysisHeight), pixel = (py * after.width + px) * 3
@@ -206,7 +221,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
           assert.equal(matches.length, 1, `Source ${sample.frame} cell ${cell}: provenance must be uniquely decodable`)
           provenance = matches[0]
         }
-        cells.push({ cell, raw, completed, provenance })
+        cells.push({ cell, raw, confidence: raw < 0 ? 0 : rawPoint.alpha === .38 ? 1 : 2, completed, provenance })
         if (raw >= 0) {
           assert.equal(completed, raw, `Source ${sample.frame} cell ${cell}: measured ID changed`)
           assert.equal(provenance, 1, `Source ${sample.frame} cell ${cell}: measured provenance changed`)
@@ -243,12 +258,18 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
         return { edge, owners, votes, measured: measured.length, majorityOwner: majorityOwner ?? null, largestOwner: largestOwner ?? null, edgeOwner: winner ?? null, rawUnknown: selected.filter(item => item.raw < 0).map(item => item.cell) }
       })
       const edgeReach = Number(await page.getByLabel('Complete Direct Support Edge reach (cells)', { exact: true }).inputValue())
-      const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: [...owners].sort(rankOwners)[0], ...cells[cell] })) : []
+      const baseline = approvedSupport({ width: after.analysisWidth, height: after.analysisHeight, frameCount: 2, cellSize: after.size, frames: [{ frame: 0,
+        labels: Int32Array.from(cells, item => item.raw), confidence: Uint8Array.from(cells, item => item.confidence),
+        observations: [...measuredSizes.keys()].map(id => ({ id, cells: cells.filter(item => item.raw === id).map(item => item.cell) })),
+      }] }, { edgeReach }).frames[0]
+      const preserved = cells.filter(item => baseline.labels[item.cell] >= 0).map(item => ({ cell: item.cell, expected: baseline.labels[item.cell], completed: item.completed }))
+      const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: baseline.labels[cell] >= 0 ? baseline.labels[cell] : [...owners].sort(rankOwners)[0], ...cells[cell] })) : []
       const holeComponents = expectedHoleOwners(cells, after.columns, rows)
-      const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, holeComponents, beforeSummary: before.summary, afterSummary: after.summary, image: name }
+      const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, holeComponents, baselineCounts: baseline.counts, preserved, beforeSummary: before.summary, afterSummary: after.summary, image: name }
       records.push(record); await save('incomplete')
+      for (const item of preserved) assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: extension retargeted established approved support`)
       for (const item of exactEdgeCells) {
-        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: preserve strong edge majorities, otherwise use the largest original touching group; corners use frozen size`)
+        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: preserve established edge support before extending remaining unknown cells`)
         assert.equal(item.provenance, item.expected >= 0 ? 3 : 0, `Source ${sample.frame} cell ${item.cell}: exact edge provenance is wrong`)
       }
       if (sample.requireBottomRight) {

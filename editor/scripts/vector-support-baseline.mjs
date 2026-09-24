@@ -1,3 +1,4 @@
+// Test-only frozen approved completion from opencv-js 043d5c2; original SHA-256 12518861aa10a9000e2b8b9ab7edf92143eac9b5921885895e131768f79fe8a9.
 function neighbors(index, columns, rows, visit) {
     const x = index % columns, y = Math.floor(index / columns);
     for (let j = Math.max(0, y - 1); j <= Math.min(rows - 1, y + 1); j++) {
@@ -64,11 +65,9 @@ function completeFrame(frame, columns, rows, options) {
     const observations = frame.observations.map(group => ({ id: group.id, holeCells: [], borderCells: [] }));
     const byId = new Map(observations.map(group => [group.id, group]));
     const measuredSizes = new Map(frame.observations.map(group => [group.id, group.cells.length]));
-    const largestMeasured = (ids) => [...ids].sort((a, b) => measuredSizes.get(b) - measuredSizes.get(a) || a - b)[0];
     const counts = { measured: raw.filter(label => label >= 0).length, holes: 0, border: 0, unknown: 0 };
     if (options.fillEdges && options.edgeReach > 0) {
         const edgeProposals = new Int32Array(raw.length).fill(-1);
-        const establishedEdges = new Int32Array(raw.length).fill(-1);
         const proposals = new Int32Array(raw.length).fill(-1), margins = new Map();
         const qualified = new Map();
         for (let edge = 0; edge < 4; edge++) {
@@ -76,7 +75,7 @@ function completeFrame(frame, columns, rows, options) {
             const at = (line, step) => edge === 0 ? line * columns + step
                 : edge === 1 ? line * columns + columns - step - 1 : edge === 2 ? step * columns + line
                     : (rows - step - 1) * columns + line;
-            // Only groups with original measured cells touching this edge compete.
+            // Only original measured cells touching this edge vote for its owner.
             // New corner fills must not establish ownership of an adjacent empty edge.
             const touching = new Map();
             let measured = 0;
@@ -87,25 +86,17 @@ function completeFrame(frame, columns, rows, options) {
                 touching.set(owner, (touching.get(owner) ?? 0) + 1);
                 measured++;
             }
-            if (touching.size) {
-                // Keep an established edge owner. Size resolves only the competition
-                // that previously blocked closure, not a strong local majority.
-                const majority = [...touching].find(([, count]) => count * 4 >= measured * 3)?.[0];
-                const owner = majority ?? largestMeasured(touching.keys());
+            const edgeWinner = [...touching].find(([, count]) => count * 4 >= measured * 3);
+            if (edgeWinner) {
+                const owner = edgeWinner[0];
                 for (let line = 0; line < lineCount; line++) {
                     const index = at(line, 0);
                     if (raw[index] >= 0)
                         continue;
                     if (edgeProposals[index] === -1)
                         edgeProposals[index] = owner;
-                    else
-                        edgeProposals[index] = largestMeasured([edgeProposals[index], owner]);
-                    if (majority !== undefined) {
-                        if (establishedEdges[index] === -1)
-                            establishedEdges[index] = majority;
-                        else if (establishedEdges[index] !== majority)
-                            establishedEdges[index] = -2;
-                    }
+                    else if (edgeProposals[index] !== owner)
+                        edgeProposals[index] = -2;
                 }
             }
             const rays = [], votes = new Map(), coherent = new Map();
@@ -166,11 +157,10 @@ function completeFrame(frame, columns, rows, options) {
                     proposals[index] = -2;
             }
         }
-        // Preserve prior majority-edge and bounded-fallback ownership. Size resolves
-        // only still-unknown edges/corners, never reassigning established support.
+        // Explicit edge ownership outranks bounded inward fallback. Conflicting
+        // corners remain unknown; neither kind of fill supplies new edge votes.
         for (let index = 0; index < raw.length; index++) {
-            const previous = establishedEdges[index] !== -1 ? establishedEdges[index] : proposals[index];
-            const owner = previous >= 0 ? previous : edgeProposals[index] !== -1 ? edgeProposals[index] : proposals[index];
+            const owner = edgeProposals[index] !== -1 ? edgeProposals[index] : proposals[index];
             if (owner >= 0 && raw[index] < 0) {
                 labels[index] = owner;
                 provenance[index] = 3;
@@ -190,7 +180,7 @@ function completeFrame(frame, columns, rows, options) {
                     continue;
                 // Only touching groups compete. Freeze their measured sizes so earlier
                 // inferred fills cannot enlarge a group and change later ownership.
-                const owner = largestMeasured(boundary);
+                const owner = [...boundary].sort((a, b) => measuredSizes.get(b) - measuredSizes.get(a) || a - b)[0];
                 for (const index of cells) {
                     labels[index] = owner;
                     provenance[index] = 2;

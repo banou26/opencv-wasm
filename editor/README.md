@@ -321,18 +321,26 @@ categories in this first pass. Unpainted group cells are not silently filled.
 The final source frame has no outgoing motion pair and consequently no motion overlay.
 
 **Complete Direct Support** is a separate stage after grouping, with edge filling
-first and enclosed-hole filling second. **Extend to edges** checks measured cells
-on each actual frame edge. A group owning at least 75% of that edge's original
+first and enclosed-hole filling second. **Extend to edges** preserves every
+assignment from the established 75%-edge and bounded-ray/winding-pocket rules.
+The new size-based extension is additive: only their remaining unknown cells
+can receive a new owner. In particular, an existing bounded foreground fill
+cannot be retargeted to a globally larger background.
+
+The extension checks measured cells on each actual frame edge. A group owning
+at least 75% of that edge's original
 measured cells keeps precedence. Only when no such majority exists does the edge
 choose its largest touching group by original measured count across the entire
 frame. This prevents a small contact from a globally large background from
 overriding an edge dominated by foreground. Unknown cells do not vote, and only
-unknown cells are filled. Equal sizes choose the lowest group ID, and different
-corner proposals use that same frozen size/ID ranking. All measured cells keep
-their own groups unchanged.
+unknown cells are filled. Equal sizes choose the lowest group ID. Corner conflicts
+that previously stayed unknown use the same frozen size/ID ranking; an existing
+corner assignment always stays unchanged. All measured cells keep their own
+groups unchanged.
 An edge without measured cells gets no full-edge proposal, and filled corners
 cannot establish ownership of another edge. These exact-edge proposals take
-priority over inward fallback; additions never increase a group's size.
+priority only on cells not already assigned by the established rules; additions
+never increase a group's size.
 
 The bounded inward fallback still uses only original measurements: missing
 prefixes along edge-normal rays need anchors on at least half the scan lines,
@@ -1138,9 +1146,9 @@ compares both fill controls disabled/enabled. It requires identical source and
 measured panels, unchanged measured pixels and IDs, and explicit hole/edge
 provenance for every addition. Raw PNG labels independently determine original
 frame-wide group sizes and the IDs touching each edge: every proposed unknown
-edge cell must preserve an existing 75% measured-edge winner or use the largest
-touching group when no majority qualifies. Competing corner owners use the
-frozen size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
+edge cell must preserve an existing 75% measured-edge or bounded assignment.
+Only still-unknown cells use the new largest-touching-group proposal or corner
+size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
 `requireBottomRight` controls. The market smoke checks source 25, 26 and 65
 explicitly for the reported corner gap. Output frame 65 at 60fps maps to source
 25 at the clip's 24000/1001fps, not 26 from a rounded 24fps rate. It restores both
@@ -1149,6 +1157,16 @@ The helper independently floods the unknown cells after reconstructing edge
 additions from provenance. Each enclosed component must use its largest touching
 group by original measured frame-wide count, with lowest-ID ties; an open
 component must stay unknown. Filled hole area never enters those size votes.
+`scripts/vector-support-baseline.mjs` pins the approved 75%-edge/bounded support
+implementation from editor commit `043d5c2`; its original generated source SHA-256
+is `12518861aa10a9000e2b8b9ab7edf92143eac9b5921885895e131768f79fe8a9`.
+It is test-only, outside production imports, and its hash is checked before the
+browser helper runs. The helper reconstructs raw labels and mixed/coherent
+confidence from native PNG colors and the measured overlay's 0.38/0.6 opacity,
+then requires every previously assigned baseline cell to keep exactly its owner.
+New edge/corner expectations apply only to baseline-unknown cells. This frozen
+reference includes bounded rays and winding pockets, without relying on Git
+history being available at test runtime.
 Native four-panel sheets use `${prefix}-support-020.png` and the report uses
 `${prefix}-support-browser.json` in the existing output directory.
 `captureSupportFlashes({ page, change, output, prefix, frames })` is a read-only

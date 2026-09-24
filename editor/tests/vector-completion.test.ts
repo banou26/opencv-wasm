@@ -30,7 +30,7 @@ const fixture = (): RegionalData => {
 test('direct completion exposes four typed panels and supplies the final comparison', () => {
   const graph = parseDocument(vectorLayersGraph()), inspector = graph.nodes.find(node => node.id === 'ncompletionview')!
   expect(defaultParams('vectorComplete')).toEqual({ fillHoles: true, fillEdges: true, edgeReach: 8 })
-  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(7)
+  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(8)
   expect(specFor(inspector, graph).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance'])
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:completed', target: 'nbottom', targetHandle: 'in:frame:a' }))
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:provenance', target: 'nbottom', targetHandle: 'in:frame:b' }))
@@ -118,7 +118,7 @@ test('a unanimous full edge closes first, then its enclosed interior records hol
   for (const cell of [6, 7, 8, 11, 12, 13, 16, 17, 18]) expect(support.frames[0]!.provenance[cell]).toBe(2)
   const data: RegionalData = { stage: 'vector-completion', scene: { asset: 'clip', first: 7, last: 8, sourceWidth: 40, sourceHeight: 40, frames: Array.from({ length: 2 }, () => ({ width: 40, height: 40, data: new Uint8Array(40 * 40 * 3).fill(30) })) }, frameVectorGroups: groups, frameVectorSupport: support }
   const rendered = renderVectorCompletionPanels(data, 7)
-  expect(rendered.summary).toContain('Completion order: preserve 75% measured-edge majorities; otherwise use the largest touching group.')
+  expect(rendered.summary).toContain('Completion order: preserve established 75% edge and bounded support; extend only remaining unknown edges and corners')
   for (const options of [{ fillHoles: false, edgeReach: 1 }, { fillEdges: false, edgeReach: 1 }, { edgeReach: 0 }]) {
     data.frameVectorSupport = completeFrameVectorSupport(groups, options)
     const result = renderVectorCompletionPanels(data, 7)
@@ -175,6 +175,42 @@ test('corners resolve different edge owners with original measured size and lowe
     for (const [cell, label] of labels.entries()) if (label >= 0) expect(completed.labels[cell]).toBe(label)
     expect(groups).toEqual(before)
   }
+})
+
+test('a newly proposed bottom owner cannot replace an established right-edge corner', () => {
+  const original = fixture().frameVectorGroups!, labels = new Int32Array(25).fill(-1)
+  for (const cell of [6, 7, 11, 12, 21]) labels[cell] = 0
+  labels[9] = 1; labels[23] = 4
+  const observations = [0, 1, 4].map(id => {
+    const cells = [...labels.keys()].filter(cell => labels[cell] === id)
+    return { id, motionId: id, cells, dx: id, dy: 0, strongCells: cells.length }
+  })
+  const groups = { ...original, width: 40, height: 40, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations }] }
+  const before = structuredClone(groups), completed = completeFrameVectorSupport(groups, { fillHoles: false, edgeReach: 1 }).frames[0]!
+  expect(completed.labels[24]).toBe(1)
+  expect(completed.labels[22]).toBe(0)
+  expect(completed.provenance[24]).toBe(3)
+  expect(groups).toEqual(before)
+})
+
+test('size-based edge extension preserves previously bounded foreground support', () => {
+  const original = fixture().frameVectorGroups!, labels = new Int32Array(70).fill(-1)
+  labels.fill(0, 0, 40); labels[60] = 0; labels[61] = 4
+  labels.fill(4, 51, 60)
+  const observations = [0, 4].map(id => {
+    const cells = [...labels.keys()].filter(cell => labels[cell] === id)
+    return { id, motionId: id, cells, dx: id, dy: 0, strongCells: cells.length }
+  })
+  const groups = { ...original, width: 80, height: 56, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations }] }
+  const before = structuredClone(groups), completed = completeFrameVectorSupport(groups, { fillHoles: false, edgeReach: 1 }).frames[0]!
+  for (const cell of [63, 64, 65, 66, 67, 68]) {
+    expect(completed.labels[cell]).toBe(4)
+    expect(completed.provenance[cell]).toBe(3)
+  }
+  expect(completed.labels[62]).toBe(0)
+  expect(completed.labels[69]).toBe(0)
+  for (const [cell, label] of labels.entries()) if (label >= 0) expect(completed.labels[cell]).toBe(label)
+  expect(groups).toEqual(before)
 })
 
 test('mixed holes choose the largest measured touching group, not contact votes or an unrelated larger group', () => {

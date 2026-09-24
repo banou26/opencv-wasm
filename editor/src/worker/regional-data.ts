@@ -1,4 +1,4 @@
-import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups } from 'cadence/regional'
+import type { AnalysisFrame, RegionalMotionSequence, RegionalTracks, RegionalAnalysis, MotionHistoryGroups, MotionCompletion, FrameVectorGroups, FrameVectorSupport } from 'cadence/regional'
 
 export type SceneData = {
   asset: string; first: number; last: number; sourceWidth: number; sourceHeight: number
@@ -6,7 +6,7 @@ export type SceneData = {
 }
 /** Immutable JS-owned data. No borrowed WASM views or decoded VideoFrame handles. */
 export type RegionalData = {
-  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion' | 'vector-candidates' | 'vector-groups'
+  stage: 'scene' | 'motion' | 'pooled' | 'tracks' | 'history' | 'timing' | 'completion' | 'vector-candidates' | 'vector-groups' | 'vector-completion'
   scene: SceneData
   sequence?: RegionalMotionSequence
   tracks?: RegionalTracks
@@ -14,6 +14,7 @@ export type RegionalData = {
   analysis?: RegionalAnalysis
   completion?: MotionCompletion
   frameVectorGroups?: FrameVectorGroups
+  frameVectorSupport?: FrameVectorSupport
 }
 
 export const regionalSummary = (data: RegionalData): string => {
@@ -26,6 +27,13 @@ export const regionalSummary = (data: RegionalData): string => {
     const grouped = data.frameVectorGroups.frames.reduce((sum, frame) => sum + frame.labels.reduce((count, label) => count + Number(label >= 0), 0), 0)
     lines.push(`Candidate cells: ${candidates}; grouped cells: ${grouped}; temporal filtering: none`, `Maximum velocity radius: ${data.frameVectorGroups.options.tolerance} analysis pixels/pair`, `Subtle motion separation: ${data.frameVectorGroups.options.splitSubtleMotion ? 'enabled' : 'disabled'}; candidate support preserved`, 'Group IDs and colors are frame-local, not tracked artwork identities')
     lines.push(`Distant region separation: ${data.frameVectorGroups.options.splitDistantRegions ? 'enabled' : 'disabled'}; foreground gap ${data.frameVectorGroups.options.proximityGap} cells; dominant background unchanged`)
+  }
+  if (data.frameVectorSupport) {
+    const completion = data.frameVectorSupport
+    const counts = completion.frames.reduce((sum, frame) => ({ measured: sum.measured + frame.counts.measured, holes: sum.holes + frame.counts.holes, border: sum.border + frame.counts.border, unknown: sum.unknown + frame.counts.unknown }), { measured: 0, holes: 0, border: 0, unknown: 0 })
+    lines.push(`Direct completion (cell-pair counts): measured ${counts.measured}; inferred holes ${counts.holes}; inferred edge ${counts.border}; unknown ${counts.unknown}`,
+      `Enclosed holes: ${completion.options.fillHoles ? 'enabled' : 'disabled'}; edge extension: ${completion.options.fillEdges ? 'enabled' : 'disabled'}; edge reach ${completion.options.edgeReach} cells`,
+      'Inferred cells have no measured vector or confidence; original groups and motion remain unchanged.')
   }
   if (data.stage === 'pooled' || data.tracks) lines.push('Cells: 96, 48, 24, 12, 8; one shared dense field')
   if (data.tracks) lines.push(`${data.tracks.groups.length} motion groups / ${data.tracks.tracks.length} support tracks; not silhouettes`)

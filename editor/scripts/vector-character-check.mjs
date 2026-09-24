@@ -11,18 +11,18 @@ const color = id => {
 }
 const decode = png => execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'], { input: png, maxBuffer: 32 * 1024 ** 2 })
 
-const capture = async (page, change, frame) => {
+const capture = async (page, change, frame, completion = false) => {
   if (Number(await page.getByLabel('Source frame', { exact: true }).inputValue()) !== frame) await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(frame)))
   if (await page.getByLabel('Output socket').inputValue() !== 'out:string:summary') await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
   const summary = await page.locator('.value-preview pre').innerText()
   const geometry = summary.match(/(\d+) x (\d+) display \/ (\d+) x (\d+) analysis/)
-  const counts = summary.match(/Candidate cells: (\d+); grouped cells: (\d+); temporal filtering: none/)
-  const size = Number(summary.match(/cell size (\d+)/)?.[1])
+  const counts = summary.match(completion ? /Cells: measured (\d+); inferred holes (\d+); inferred edge (\d+); unknown (\d+)/ : /Candidate cells: (\d+); grouped cells: (\d+); temporal filtering: none/)
+  const size = Number(summary.match(/cell size (\d+)/i)?.[1])
   assert(geometry && counts && Number.isSafeInteger(size) && size > 0)
-  assert.equal(counts[1], counts[2], `Source ${frame}: candidate support must be conserved`)
+  if (!completion) assert.equal(counts[1], counts[2], `Source ${frame}: candidate support must be conserved`)
   const [, width, height, analysisWidth, analysisHeight] = geometry.map(Number)
   const groups = [...summary.matchAll(/^Group (\d+):/gm)].map(match => Number(match[1])), rasters = {}
-  for (const port of ['source', 'candidates', 'groups', 'confidence']) {
+  for (const port of completion ? ['source', 'measured', 'completed', 'provenance'] : ['source', 'candidates', 'groups', 'confidence']) {
     await change(() => page.getByLabel('Output socket').selectOption(`out:frame:${port}`))
     const previous = await page.evaluate(async () => {
       try { const dir = await window.vectorFolder.getDirectoryHandle('exports'); return Array.fromAsync(dir.keys()) } catch { return [] }
@@ -51,13 +51,14 @@ const capture = async (page, change, frame) => {
     const x = Math.min(analysisWidth - .5, cell % columns * size + size / 2)
     const y = Math.min(analysisHeight - .5, Math.floor(cell / columns) * size + size / 2)
     const pixel = (Math.floor(y * height / analysisHeight) * width + Math.floor(x * width / analysisWidth)) * 3
-    const original = Array.from(rasters.source.subarray(pixel, pixel + 3)), grouped = Array.from(rasters.groups.subarray(pixel, pixel + 3))
+    const original = Array.from(rasters.source.subarray(pixel, pixel + 3)), grouped = Array.from(rasters[completion ? 'completed' : 'groups'].subarray(pixel, pixel + 3))
     if (grouped.every((channel, index) => channel === original[index])) return { cell, label: -1 }
     const matches = groups.filter(id => [.38, .6].some(alpha => color(id).every((channel, index) => Math.abs(grouped[index] - Math.round(original[index] * (1 - alpha) + channel * alpha)) <= 1)))
     assert.equal(matches.length, 1, `Source ${frame} cell ${cell}: diagnostic group color must be uniquely decodable`)
     return { cell, label: matches[0] }
   }
-  return { summary, width, height, analysisWidth, analysisHeight, size, columns, cells, rasters, labelAt }
+  return { summary, width, height, analysisWidth, analysisHeight, size, columns, cells, rasters, labelAt,
+    counts: completion ? { measured: Number(counts[1]), holes: Number(counts[2]), border: Number(counts[3]), unknown: Number(counts[4]) } : undefined }
 }
 
 const saveSheet = (result, output, name) => {
@@ -144,4 +145,72 @@ export async function checkDistantGroups({ page, change, output, prefix, cases }
     await save('passed')
     return records
   } finally { await setEnabled(original) }
+}
+
+/** Compare measured versus inferred support using the completion inspector's native exports. */
+export async function checkSupportCompletion({ page, change, output, prefix, cases }) {
+  const select = async () => {
+    if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'ncompletionview') await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Completion' }).click())
+  }
+  await select()
+  const controls = ['Fill enclosed holes', 'Extend to edges'].map(label => page.getByLabel(`Complete Direct Support ${label}`, { exact: true }))
+  const setEnabled = async enabled => { for (const control of controls) if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
+  const records = [], provenanceColors = [[150, 150, 165], [240, 178, 72], [66, 220, 183]]
+  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance.', records }, null, 2)}\n`)
+  try {
+    for (const sample of cases) {
+      await setEnabled(false)
+      const before = await capture(page, change, sample.frame, true)
+      assert(before.rasters.measured.equals(before.rasters.completed), `Source ${sample.frame}: disabled completion must equal measured support`)
+      assert.equal(before.counts.holes, 0); assert.equal(before.counts.border, 0)
+      await setEnabled(true)
+      const after = await capture(page, change, sample.frame, true)
+      assert.deepEqual([before.width, before.height, before.analysisWidth, before.analysisHeight, before.size], [after.width, after.height, after.analysisWidth, after.analysisHeight, after.size])
+      for (const port of ['source', 'measured']) assert(before.rasters[port].equals(after.rasters[port]), `Source ${sample.frame}: filling must not alter ${port}`)
+      const known = new Set([...before.summary.matchAll(/^Group (\d+):/gm)].map(match => Number(match[1])))
+      const counts = { measured: 0, holes: 0, border: 0, unknown: 0 }, additions = []
+      let measuredPixels = 0, changedMeasuredPixels = 0
+      for (let cell = 0; cell < after.cells; cell++) {
+        const raw = before.labelAt(cell).label, completed = after.labelAt(cell).label
+        const x = cell % after.columns * after.size, y = Math.floor(cell / after.columns) * after.size
+        const px = Math.floor(Math.min(after.analysisWidth - .5, x + after.size / 2) * after.width / after.analysisWidth)
+        const py = Math.floor(Math.min(after.analysisHeight - .5, y + after.size / 2) * after.height / after.analysisHeight), pixel = (py * after.width + px) * 3
+        const source = Array.from(after.rasters.source.subarray(pixel, pixel + 3)), marked = Array.from(after.rasters.provenance.subarray(pixel, pixel + 3))
+        let provenance = 0
+        if (!marked.every((channel, index) => channel === source[index])) {
+          const matches = provenanceColors.flatMap((rgb, index) => rgb.every((channel, c) => Math.abs(marked[c] - Math.round(source[c] * .4 + channel * .6)) <= 1) ? [index + 1] : [])
+          assert.equal(matches.length, 1, `Source ${sample.frame} cell ${cell}: provenance must be uniquely decodable`)
+          provenance = matches[0]
+        }
+        if (raw >= 0) {
+          assert.equal(completed, raw, `Source ${sample.frame} cell ${cell}: measured ID changed`)
+          assert.equal(provenance, 1, `Source ${sample.frame} cell ${cell}: measured provenance changed`)
+          counts.measured++
+          const left = Math.ceil(x * after.width / after.analysisWidth), right = Math.min(after.width, Math.ceil((x + after.size) * after.width / after.analysisWidth))
+          const top = Math.ceil(y * after.height / after.analysisHeight), bottom = Math.min(after.height, Math.ceil((y + after.size) * after.height / after.analysisHeight))
+          for (let iy = top; iy < bottom; iy++) for (let ix = left; ix < right; ix++) {
+            const p = (iy * after.width + ix) * 3
+            measuredPixels++
+            if ([0, 1, 2].some(c => after.rasters.completed[p + c] !== before.rasters.measured[p + c])) changedMeasuredPixels++
+          }
+        } else if (completed >= 0) {
+          assert(known.has(completed), `Source ${sample.frame} cell ${cell}: completion invented a group ID`)
+          assert(provenance === 2 || provenance === 3, `Source ${sample.frame} cell ${cell}: inference needs explicit provenance`)
+          counts[provenance === 2 ? 'holes' : 'border']++
+          additions.push({ cell, label: completed, provenance })
+        } else { assert.equal(provenance, 0); counts.unknown++ }
+      }
+      const name = `${prefix}-support-${String(sample.frame).padStart(3, '0')}.png`
+      saveSheet(after, output, name)
+      const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, beforeSummary: before.summary, afterSummary: after.summary, image: name }
+      records.push(record); await save('incomplete')
+      assert.deepEqual(counts, after.counts, `Source ${sample.frame}: pixel-derived completion counts differ from summary`)
+      assert.equal(changedMeasuredPixels, 0, `Source ${sample.frame}: measured pixels must remain identical`)
+      if (sample.minimumHoles !== undefined) assert(counts.holes >= sample.minimumHoles)
+      if (sample.minimumBorder !== undefined) assert(counts.border >= sample.minimumBorder)
+      console.log(`Support source ${sample.frame}: measured ${counts.measured}, holes ${counts.holes}, edge ${counts.border}, unknown ${counts.unknown}; ${measuredPixels} measured pixels unchanged`)
+    }
+    await save('passed')
+    return records
+  } finally { await setEnabled(true); await select() }
 }

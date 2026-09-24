@@ -212,7 +212,8 @@ remain unchanged.
 
 ```text
 Scene Range -> Scene Vector Candidates -> Frame Velocity Groups
-            -> Inspect Direct Motion -> Frame Layouts -> Output
+            -> Complete Direct Support -> Inspect Direct Completion
+            -> Frame Layouts -> Output
 ```
 
 Scene Vector Candidates applies the Regional motion vectors estimator to every
@@ -274,16 +275,39 @@ research core, but this prefab no longer executes or displays it.
 
 Two inspectors expose the evidence before and after grouping. Each provides four
 independent fullscreen-previewable outputs: **Source**, **Candidate vectors**,
-**Motion groups**, and **Confidence**. The sole default output joins these in a
-two-by-two layout. Candidate arrows are teal for coherent cells and amber for
+**Motion groups**, and **Confidence**. Candidate arrows are teal for coherent cells and amber for
 mixed/weak cells. Before grouping, the group panel is unpainted. After grouping,
 confidence distinguishes gray missing vectors, amber mixed assignments and teal
 coherent assignments. There are no temporal ambiguity or rejected-candidate
 categories in this first pass. Unpainted group cells are not silently filled.
-The final source frame has no
-outgoing motion pair and consequently no motion overlay.
+The final source frame has no outgoing motion pair and consequently no motion overlay.
 
-Only inspectors depend on Time; the scene candidates and groups cache across
+**Complete Direct Support** is a separate stage after grouping. **Fill enclosed
+holes** fills an eight-connected missing-vector component only when it does not
+touch the frame and every measured boundary cell has the same group ID. **Extend
+to edges** considers missing prefixes along inward edge-normal rays. At least
+half an edge's scan lines need a measured anchor within **Edge reach (cells)**
+(default eight), at least 90% of those anchors must agree on one group, and at
+least three winning anchors must be coherent. Competing measured groups block
+nearby extensions, and conflicting proposals from different edges stay unknown.
+More than 10% competing anchor votes disables that entire edge's extension.
+Reach zero disables edge filling. Filled cells never become votes or donors.
+
+Completion returns a separate label raster and explicit provenance: measured,
+enclosed-hole inference, edge inference, or unknown. It never modifies the raw
+groups, vectors, confidence or colors of measured cells. Its **Inspect Direct
+Completion** node exposes **Source**, **Measured groups**, **Completed support**
+and **Inference provenance** as four independent fullscreen frames. Provenance
+is gray for measured cells, amber for enclosed holes, teal for edge inference,
+and unpainted for unknown. These are support proposals, not recovered artwork or
+pixel-accurate silhouettes.
+
+The final two-by-two output now shows source/candidate vectors above completed
+support/provenance. Existing saved graphs are valid and stay unchanged; open a
+fresh Direct motion layers prefab or add the completion nodes to adopt that
+layout. Completion toggles reuse cached grouping and motion analysis.
+
+Only inspectors depend on Time; scene candidates, groups and completion cache across
 scrubbing. Scene Range keeps its existing single-shot bounds and memory budget:
 320-pixel analysis default, at most 640 pixels on the longest side, 500 frames
 and ten million total analysis pixels. Source-backed display defaults to 960
@@ -1046,6 +1070,14 @@ Its proximity comparison toggles **Separate distant regions** off/on, requires
 the sampled actor and lone-character groups to separate, and compares every
 dominant-background pixel exactly. Source, candidate and confidence panels must
 also remain byte-identical across that toggle.
+The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
+helper takes cases such as `{ frame: 20 }`, selects the completion inspector and
+compares both fill controls disabled/enabled. It requires identical source and
+measured panels, unchanged measured pixels and IDs, and explicit hole/edge
+provenance for every addition. Cases may add `minimumHoles` or `minimumBorder`
+controls. It restores both controls enabled and leaves `ncompletionview` selected.
+Native four-panel sheets use `${prefix}-support-020.png` and the report uses
+`${prefix}-support-browser.json` in the existing output directory.
 Sheets and the report reuse `diagnostics/` with stable filenames.
 
 The 2026-09-24 foreground-proximity run passes both source-frame 94/103 controls:

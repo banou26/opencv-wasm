@@ -2,7 +2,7 @@ import type { AnalysisFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 import { regionalCanvas } from './regional-render'
 
-const groupColor = (id: number): [number, number, number] => {
+export const groupColor = (id: number): [number, number, number] => {
   const hue = (.61 + id * .61803398875) % 1, sector = hue * 6, fraction = sector - Math.floor(sector)
   const low = 45, high = 231, falling = Math.round(high - (high - low) * fraction), rising = Math.round(low + (high - low) * fraction)
   return [[high, rising, low], [falling, high, low], [low, high, rising], [low, falling, high], [rising, low, high], [high, low, falling]][Math.floor(sector)]! as [number, number, number]

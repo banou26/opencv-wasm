@@ -47,15 +47,17 @@ const sceneFixture = (): RegionalData => {
   return { stage: 'scene', scene: { asset: 'clip', first: 0, last: count - 1, sourceWidth: width, sourceHeight: height, frames } }
 }
 
-test('direct prefab has a separate pipeline, four independent outputs and no completion dependency', () => {
+test('direct prefab keeps raw inspectors independent and completes support only in the final output', () => {
   const doc = parseDocument(vectorLayersGraph())
   expect(explicitGraph('vectorLayers')).toEqual(vectorLayersGraph())
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   expect(doc.nodes.some(node => node.type.startsWith('regional'))).toBe(false)
-  expect(doc.edges.filter(edge => edge.source === 'ntime').map(edge => edge.target)).toEqual(['ncandidateview', 'nview'])
+  expect(doc.edges.filter(edge => edge.source === 'ntime').map(edge => edge.target)).toEqual(['ncandidateview', 'nview', 'ncompletionview'])
   expect(specFor(doc.nodes.find(node => node.id === 'nview')!, doc).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:candidates', 'out:frame:groups', 'out:frame:confidence'])
   expect(planGraph(doc, 'n5', null, 2, 'clip', 7).steps.filter(step => step.node.type === 'frameLayout').map(step => step.node.params.direction)).toEqual(['horizontal', 'horizontal', 'vertical'])
   expect(planGraph(doc, 'ncandidateview', 'out:frame:candidates', 2, 'clip', 7).steps.some(step => step.node.type === 'vectorGroups')).toBe(false)
+  expect(planGraph(doc, 'nview', 'out:frame:groups', 2, 'clip', 7).steps.some(step => step.node.type === 'vectorComplete')).toBe(false)
+  expect(planGraph(doc, 'n5', null, 2, 'clip', 7).steps.some(step => step.node.type === 'vectorComplete')).toBe(true)
   expect(validateConnection(doc, { source: 'nscene', sourceHandle: 'out:regions:data', target: 'ngroups', targetHandle: 'in:regions:data' })).toMatch(/stages must match/)
   expect(usesSceneAnalysis(doc, 'n5')).toBe(true)
   expect(DEFAULT_RENDER_WORKERS).toBe(4)
@@ -295,8 +297,16 @@ test('direct analysis caches across scrub order and display edits; velocity edit
       const result = await evaluate('n5', frame)
       try { expect([image(result.value).mat.cols, image(result.value).mat.rows]).toEqual([192, 128]) } finally { result.release() }
     }
-    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups', 'vectorComplete']) expect(calls.get(type)).toBe(1)
     expect([...calls.keys()].some(type => type.startsWith('regional'))).toBe(false)
+    doc.nodes.find(node => node.id === 'ncomplete')!.params.fillHoles = false
+    const completion = await evaluate('ncompletionview', 2, 'out:string:summary')
+    try {
+      expect(completion.value.kind).toBe('string')
+      if (completion.value.kind === 'string') expect(completion.value.value).toContain('Enclosed holes: disabled')
+    } finally { completion.release() }
+    expect(calls.get('vectorComplete')).toBe(2)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
     doc.nodes.find(node => node.id === 'nview')!.params.gain = 5
     const display = await evaluate('nview', 2, 'out:frame:candidates'); display.release()
     expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(1)

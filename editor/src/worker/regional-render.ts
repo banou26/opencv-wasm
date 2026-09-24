@@ -13,7 +13,7 @@ const hue = (h: number): [number, number, number] => {
   return [[255, b, 35], [a, 255, 35], [35, 255, b], [35, a, 255], [b, 35, 255], [255, 35, a]][Math.floor(x) % 6]! as [number, number, number]
 }
 
-const regionalCanvas = (data: RegionalData, sourceFrame: number, displaySource?: AnalysisFrame) => {
+export const regionalCanvas = (data: RegionalData, sourceFrame: number, displaySource?: AnalysisFrame) => {
   const index = sourceFrame - data.scene.first, source = data.scene.frames[index]
   if (!Number.isSafeInteger(sourceFrame) || !source) throw new RangeError(`Source frame must be in the analyzed range ${data.scene.first} to ${data.scene.last}`)
   const { width: analysisWidth, height: analysisHeight } = source

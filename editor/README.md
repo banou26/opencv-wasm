@@ -204,6 +204,55 @@ Changing a port's type or removing it disconnects incompatible wires; Undo resto
 the previous interface and connections. An exported graph records clip identities
 and filenames; reattach missing clips in their source nodes after opening it.
 
+## Direct motion layers
+
+The **Direct motion layers** prefab is a separate comparison experiment. The
+existing **Regional motion vectors** and **Whole-scene regional analysis** prefabs
+remain unchanged.
+
+```text
+Scene Range -> Scene Vector Candidates -> Direct Velocity Groups
+            -> Inspect Direct Motion -> Frame Layouts -> Output
+```
+
+Scene Vector Candidates applies the Regional motion vectors estimator to every
+neighboring pair: phase-correlation camera initialization, compensated forward
+and backward Farneback flow, a fixed relative corner-strength threshold and a
+round-trip check, followed by cell medians. It retains mixed-cell candidates
+instead of rejecting their medians. It does not add the older whole-scene
+pipeline's grain-dependent texture threshold or border exclusion margin.
+Reflected-border estimates and mixed medians are still uncertain, not observed
+layer ownership. Default cells are 8 analysis pixels; their size, texture cutoff,
+flow settings and grouping tolerance remain editable.
+
+Direct Velocity Groups advects individual candidate-cell histories and compares
+their time-varying velocities directly, without first building spatial regional
+groups. Coherent histories establish motion models. Weak or short candidates may
+join a uniquely compatible model but cannot grow it. Conflicting or ambiguous
+candidates remain explicitly unresolved. No spatial or temporal support-completion
+pass runs. Same motion is a candidate motion group, not proof of shared artwork;
+co-moving characters/backgrounds and true rotation or scale remain limitations.
+
+Two inspectors expose the evidence before and after grouping. Each provides four
+independent fullscreen-previewable outputs: **Source**, **Candidate vectors**,
+**Motion groups**, and **Confidence**. The sole default output joins these in a
+two-by-two layout. Candidate arrows are teal for coherent cells and amber for
+mixed/weak cells. Before grouping, the group panel is unpainted. After grouping,
+confidence distinguishes gray unknown, amber weak assignments, teal temporally
+supported coherent assignments, red ambiguity and purple unassigned candidates.
+Unpainted group cells are not silently filled. The final source frame has no
+outgoing motion pair and consequently no motion overlay.
+
+Only inspectors depend on Time; the scene candidates and groups cache across
+scrubbing. Scene Range keeps its existing single-shot bounds and memory budget:
+320-pixel analysis default, at most 640 pixels on the longest side, 500 frames
+and ten million total analysis pixels. Source-backed display defaults to 960
+pixels per panel independently of analysis. The original pairwise vector prefab
+defaults to 640-pixel analysis and rounds dimensions down to even numbers;
+compare both at the same working dimensions when evaluating their motion values.
+Render workers still default to four; explicit Auto uses one for a whole-scene
+graph to avoid repeating the initial analysis across worker caches.
+
 ## Whole-scene regional analysis
 
 The **Whole-scene regional analysis** prefab is an evidence experiment, not a

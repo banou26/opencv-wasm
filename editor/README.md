@@ -1085,17 +1085,28 @@ Native four-panel sheets use `${prefix}-support-020.png` and the report uses
 `${prefix}-support-browser.json` in the existing output directory.
 Sheets and the report reuse `diagnostics/` with stable filenames.
 
-The 2026-09-24 foreground-proximity run passes both source-frame 94/103 controls:
+The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
 dominant-background display pixels respectively are unchanged; the other three
 ports are byte-identical. Moving 100/106 still separate 20/20 sampled character
 cells, while held 101/107 separate 0/20. The regenerated stable movie contains
 293 frames at 1920x1080/60fps; decoded SHA-256 is
-`7231499d89d05a9fa491338d5a43a691c6a55353d505bac8d0422233eb00db07`.
-Single-run analysis/render times were 5.06/8.80 seconds. All 191 editor unit tests,
+`135f15ac3416756e825d90f856ee7745e3eedecbf2048baca0b968217894fe1a`.
+Single-run analysis/render times were 5.18/10.57 seconds. All 198 editor unit tests,
 typechecks, lint/build and the dedicated prefab browser check pass. The broader
 `scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
 remains unresolved; that full suite was not rerun for this change.
+
+Completion off/on checks additionally decode the native PNGs at source 0/20/94/103.
+All measured pixels and IDs are preserved exactly. Source 0/20 have no remaining
+unknown cells, including winding edge pockets. Source 94/103 add 7/6 enclosed cells
+and 62 edge cells each, while keeping 144/138 ambiguous cells unknown. With both
+fill switches disabled, completed support equals measured support byte-for-byte.
+The separate source/measured/completed/provenance ports pass fullscreen checks,
+and the final movie now shows completed support and provenance below the source
+and unchanged motion vectors. Stable evidence uses
+`diagnostics/vector-market-support-{000,020,094,103}.png` and
+`diagnostics/vector-market-support-browser.json` in the adjacent Cadence repo.
 
 This is an experiment, not a replacement for Whole-scene regional analysis.
 The earlier history-filtered version assigned only 33.6% of native market cells

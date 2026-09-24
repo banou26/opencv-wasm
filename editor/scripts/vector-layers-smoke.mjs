@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { movieFile } from './generation-smoke.mjs'
 import { assertViewport } from './layout-smoke.mjs'
-import { checkCharacterGroups, checkDistantGroups } from './vector-character-check.mjs'
+import { checkCharacterGroups, checkDistantGroups, checkSupportCompletion } from './vector-character-check.mjs'
 
 const defaultClip = '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const clip = process.env.REGIONAL_CLIP ?? defaultClip
@@ -63,6 +63,11 @@ try {
   const grouping = graph.nodes.find(node => node.type === 'vectorGroups')
   assert(grouping)
   assert.deepEqual(grouping.params, { tolerance: 0.75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
+  const completion = graph.nodes.find(node => node.type === 'vectorComplete')
+  assert(completion)
+  assert.deepEqual(completion.params, { fillHoles: true, fillEdges: true, edgeReach: 8 })
+  assert(graph.nodes.some(node => node.type === 'vectorCompletionInspect'))
+  assert(graph.edges.some(edge => edge.source === 'ncompletionview' && edge.sourceHandle === 'out:frame:completed' && edge.target === 'nbottom'))
   assert(!graph.nodes.some(node => ['regionalMotion', 'regionalTracks', 'regionalHistory', 'regionalComplete'].includes(node.type)))
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click())
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'nview')
@@ -118,6 +123,35 @@ try {
     await page.getByRole('button', { name: 'Exit fullscreen preview', exact: true }).click()
     await page.waitForFunction(() => !document.fullscreenElement)
   }
+  const supportChecks = clip === defaultClip ? await checkSupportCompletion({ page, change, output, prefix,
+    cases: [0, 20, 94, 103].map(frame => ({ frame, minimumHoles: 3, minimumBorder: 20 })),
+  }) : []
+  for (const check of supportChecks.filter(record => [0, 20].includes(record.frame))) {
+    assert.equal(check.counts.unknown, 0, 'Early single-owner background must close winding edge pockets too')
+  }
+  if (await page.locator('.inspect-panel').getAttribute('data-selected') !== 'ncompletionview') {
+    await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Completion' }).click())
+  }
+  if (Number(await page.getByLabel('Source frame', { exact: true }).inputValue()) !== Math.min(20, last)) {
+    await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(Math.min(20, last))))
+  }
+  assert.deepEqual(await page.getByLabel('Output socket').locator('option').evaluateAll(options => options.map(option => option.value)),
+    ['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance', 'out:string:summary'])
+  for (const port of ['source', 'measured', 'completed', 'provenance']) {
+    await change(() => page.getByLabel('Output socket').selectOption(`out:frame:${port}`))
+    assert.equal(await page.locator('.view-options code').innerText(), '960 × 540')
+    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.getByRole('button', { name: 'Fullscreen preview', exact: true }).click()
+    await page.waitForFunction(() => document.fullscreenElement?.classList.contains('frame-preview'))
+    const png = await page.locator('.image-viewport canvas').screenshot()
+    const pixels = execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'], { input: png, maxBuffer: 32 * 1024 ** 2 })
+    let min = 255, max = 0
+    for (const byte of pixels) { min = Math.min(min, byte); max = Math.max(max, byte) }
+    assert(max - min > 50, `${port}: blank completion preview`)
+    await writeFile(resolve(output, `${prefix}-support-${port}.png`), png)
+    await page.getByRole('button', { name: 'Exit fullscreen preview', exact: true }).click()
+    await page.waitForFunction(() => !document.fullscreenElement)
+  }
   await assertViewport(page, ['.app-header', '.workspace', '.image-viewport', 'footer'])
   await page.screenshot({ path: resolve(output, `${prefix}-desktop.png`) })
   await page.setViewportSize({ width: 390, height: 844 })
@@ -142,7 +176,7 @@ try {
   assert.deepEqual([video.width, video.height, video.r_frame_rate, Number(video.nb_read_frames)], [1920, 1080, '60/1', count])
   const hash = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(output, `${prefix}-review.mp4`), '-f', 'hash', '-hash', 'sha256', '-'], { encoding: 'utf8' }).trim()
   assert.deepEqual(errors, [])
-  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, errors }, null, 2) + '\n')
+  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, supportChecks, errors }, null, 2) + '\n')
   console.log(`PASS direct prefab: desktop/mobile, 4 full-size ports, ${count} video frames; ${hash}`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])

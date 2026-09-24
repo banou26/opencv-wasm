@@ -1241,22 +1241,25 @@ group assignments corrected those reported edge cells. The current browser check
 covers source 40/46/52 alongside 16/17/19/72/100/106 and requires every uncorrected
 cell to retain its exact group ID, preserving real actor controls.
 
-The 2026-09-24 final largest-touching-group completion run passes both source-frame 94/103 proximity controls:
+The 2026-09-24 final extension-only completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
 dominant-background display pixels respectively are unchanged; the other three
 ports are byte-identical. Moving 100/106 still separate 20/20 sampled character
 cells, while held 101/107 separate 0/20. The regenerated stable movie contains
 293 frames at 1920x1080/60fps; decoded SHA-256 is
-`ec14fa8a89482c08bc53ef445a77ad57e7616b1a6ff23f22e16a0430ecd7d94f`.
-Single-run analysis/render times were 6.59/10.31 seconds. All 207 editor unit tests,
+`cb757cd3838b8609c3e2e444e8589d2fae5eced5cdec45965ebbea5d5bfef4c8`.
+Single-run analysis/render times were 5.41/11.03 seconds. All 210 editor unit tests,
 typechecks, lint/build and the dedicated prefab browser check pass. The broader
 `scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
 remains unresolved; that full suite was not rerun for this change.
 
 The current full-edge, edges-first completion check decodes native PNGs at
-source 0/20/94/103 and independently reconstructs all four original edge-owner
-vote counts to verify 75%-majority boundary fills, minority measured-cell
-preservation and conflicting-corner abstention. Unknown cells do not vote.
+source 0/20/25/26/65/94/103 and independently reconstructs all four original
+edge-owner vote counts. It preserves 75%-majority and bounded-fallback ownership
+before permitting size-ranked proposals on remaining unknown edges and corners.
+Raw measured confidence is decoded from PNG opacity, then supplied alongside
+raw labels to the SHA-pinned approved baseline from commit `043d5c2`. Every prior
+assigned cell must remain exact. Unknown cells do not vote.
 All measured pixels and IDs are preserved exactly. Source 0/20 have no remaining
 unknown cells, including winding edge pockets. Source 94/103 add 130/122 enclosed
 cells and 83/84 edge cells respectively, with zero remaining unknown cells.
@@ -1266,10 +1269,20 @@ touching IDs using original measured cell counts with lowest-ID ties. It verifie
 enclosed ownership and abstention on frame-connected voids, without treating
 previous fills or local boundary contact counts as measured size. With both
 fill switches disabled, completed support equals measured support byte-for-byte.
+Source 25 is the contested-edge control corresponding to output 65 at
+24000/1001 source fps. Its right edge has 12/4/2 contacts in IDs 0/1/2, whose
+original measured sizes are 662/67/12. Completion goes from five unknown cells
+to zero, preserving all 915 previously assigned cells and 422,208 measured
+display pixels. Final counts are 743 measured, 17 enclosed and 160 edge cells.
+Sources 26/65 are also complete, but their raw maps contain only one group, so
+they are not reproductions of the contested edge. All six other tested completed
+maps match their prior baseline exactly. The final six-scene Cadence audit also
+requires zero previous owner/provenance changes, including the battle cloak and
+long-pan tree-edge regressions found in the rejected global-override trial.
 The separate source/measured/completed/provenance ports pass fullscreen checks,
 and the final movie now shows completed support and provenance below the source
 and unchanged motion vectors. Stable evidence uses
-`diagnostics/vector-market-support-{000,020,094,103}.png` and
+`diagnostics/vector-market-support-{000,020,025,026,065,094,103}.png` and
 `diagnostics/vector-market-support-browser.json` in the adjacent Cadence repo.
 
 This is an experiment, not a replacement for Whole-scene regional analysis.

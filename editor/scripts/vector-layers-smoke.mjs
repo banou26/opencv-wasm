@@ -58,7 +58,9 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-testid=folder-state]')?.textContent.includes('Saved'))
   const graph = await page.evaluate(async () => JSON.parse(await (await (await window.vectorFolder.getFileHandle('opencv-graph.json')).getFile()).text()))
   assert(graph.nodes.some(node => node.type === 'vectorCandidates'))
-  assert(graph.nodes.some(node => node.type === 'vectorGroups'))
+  const grouping = graph.nodes.find(node => node.type === 'vectorGroups')
+  assert(grouping)
+  assert.deepEqual(grouping.params, { tolerance: 0.75 })
   assert(!graph.nodes.some(node => ['regionalMotion', 'regionalTracks', 'regionalHistory', 'regionalComplete'].includes(node.type)))
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click())
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'nview')
@@ -69,8 +71,15 @@ try {
     if (await page.getByLabel('Output socket').inputValue() !== 'out:string:summary') await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
     const summary = await page.locator('.value-preview pre').innerText()
     assert.match(summary, /No hole filling/)
-    assert.match(summary, frame === last ? /final frame, no outgoing pair/ : /Confidence cells: unknown \d+; weak assigned \d+; coherent assigned \d+; ambiguous \d+; unassigned candidate \d+/)
-    records.push({ frame, summary }); console.log(summary.split('\n').filter(line => /Confidence cells|whole-scene/.test(line)).join('; '))
+    assert.match(summary, frame === last ? /final frame, no outgoing pair/ : /Confidence cells: unknown \d+; mixed assigned \d+; coherent assigned \d+/)
+    if (frame !== last) {
+      const counts = summary.match(/Candidate cells: (\d+); grouped cells: (\d+); temporal filtering: none/)
+      assert(counts, 'First-pass candidate conservation is visible in the inspector')
+      assert.equal(counts[1], counts[2])
+      assert.match(summary, /Velocities are recomputed per pair, allowing easing and direction changes/)
+      assert.match(summary, /Group IDs and colors are frame-local, not tracked identities/)
+    }
+    records.push({ frame, summary }); console.log(summary.split('\n').filter(line => /Candidate cells|Confidence cells|frame-local motion/.test(line)).join('; '))
   }
   await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(Math.min(20, last))))
   for (const port of ['source', 'candidates', 'groups', 'confidence']) {

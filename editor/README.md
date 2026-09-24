@@ -1006,7 +1006,8 @@ exports and protection against outside edits.
 
 `node scripts/vector-layers-smoke.mjs` exercises the separate Direct motion
 layers prefab on the current market upload: independent fullscreen ports,
-desktop/mobile canvas checks, final-frame behavior, four-worker default and a
+candidate-to-group count equality, frame-local easing semantics, retired-control
+removal, desktop/mobile canvas checks, final-frame behavior, four-worker default and a
 complete 1920x1080 diagnostic MP4. It reuses the adjacent Cadence repository's
 existing `test/out/layers-market-pan/diagnostics/` directory; override the clip,
 directory or filenames with `REGIONAL_CLIP`, `VECTOR_OUTPUT` and `VECTOR_PREFIX`.

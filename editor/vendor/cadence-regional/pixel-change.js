@@ -60,7 +60,7 @@ export const INK_THERE = 4;
 export const OBSERVED = 8;
 /** Unchanged only under one of the other motions: the pixel belongs to another rigid layer. */
 export const OTHER_LAYER = 16;
-/** Changed next to another rigid layer, within its relative motion: covered or revealed by it, not redrawn. */
+/** Changed because another rigid layer covers the pixel in the other frame, not redrawn. */
 export const OCCLUDED = 32;
 function median(values, count) {
     const histogram = new Uint32Array(4097);
@@ -213,22 +213,68 @@ export function measurePairChange(a, b, d, options = {}) {
             observed++;
             raw[p] = Number(best[p] > limit);
         }
-    // Another rigid layer sweeping over this one covers and reveals a band as wide as their relative
-    // motion; those pixels have no counterpart under any motion but were not redrawn.
-    const reachOther = Math.ceil(Math.max(0, ...(options.otherMotions ?? []).map(m => Math.hypot(m.dx - d.dx, m.dy - d.dy)))) + 2;
+    // Another rigid layer sliding over this one covers pixels: then B at x shows that layer's content,
+    // which A holds at x minus the layer's step. Such a pixel has no counterpart but was not redrawn.
     let occluded;
     if (options.otherMotions?.length) {
         const env_5 = { stack: [], error: void 0, hasError: false };
         try {
-            const other = new Uint8Array(size);
+            occluded = new Uint8Array(size);
+            const sourceA = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, a.data), false);
+            for (const motion of options.otherMotions) {
+                const lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
+                for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
+                    const env_6 = { stack: [], error: void 0, hasError: false };
+                    try {
+                        if (reach === 0 && (sx || sy))
+                            continue;
+                        const transform = __addDisposableResource(env_6, matFromArray(2, 3, CV_64FC1, [1, 0, d.dx - motion.dx + sx, 0, 1, d.dy - motion.dy + sy]), false), warped = __addDisposableResource(env_6, new Mat(), false);
+                        warpAffine(sourceA, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+                        const values = warped.data32F;
+                        for (let i = 0; i < values.length; i++) {
+                            const v = values[i];
+                            if (v < lo[i])
+                                lo[i] = v;
+                            if (v > hi[i])
+                                hi[i] = v;
+                        }
+                    }
+                    catch (e_5) {
+                        env_6.error = e_5;
+                        env_6.hasError = true;
+                    }
+                    finally {
+                        __disposeResources(env_6);
+                    }
+                }
+                // Compare B at the camera-displaced position of x with A at that position minus the other step.
+                for (let y = y0; y <= y1; y++)
+                    for (let x = x0; x <= x1; x++) {
+                        const p = y * width + x;
+                        if (!raw[p])
+                            continue;
+                        const q = p * 3;
+                        let error = 0;
+                        for (let c = 0; c < 3; c++) {
+                            const v = exact[q + c], e = v < lo[q + c] ? lo[q + c] - v : v > hi[q + c] ? v - hi[q + c] : 0;
+                            if (e > error)
+                                error = e;
+                        }
+                        if (error <= base + slope * gradient[p])
+                            occluded[p] = 255;
+                    }
+            }
+            // The antialiased rim of a sliding layer mixes both layers, so neither explains it: two pixels around
+            // covered pixels and the other layer's own count as occlusion too.
             for (let p = 0; p < size; p++)
-                other[p] = flags[p] & OTHER_LAYER ? 255 : 0;
-            const source = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, other), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: reachOther * 2 + 1, height: reachOther * 2 + 1 }), false);
+                if (flags[p] & OTHER_LAYER)
+                    occluded[p] = 255;
+            const source = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, occluded), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: 5, height: 5 }), false);
             dilate(source, grown, kernel);
             occluded = grown.data.slice();
         }
-        catch (e_5) {
-            env_5.error = e_5;
+        catch (e_6) {
+            env_5.error = e_6;
             env_5.hasError = true;
         }
         finally {
@@ -256,5 +302,6 @@ export function measurePairChange(a, b, d, options = {}) {
             flags[p] |= CHANGED | (here ? INK_HERE : there ? INK_THERE : 0);
             changed++;
         }
-    return { width, height, flags, noise, changed, observed };
+    const round = (plane) => Uint8Array.from(plane, v => Math.max(0, Math.min(255, Math.round(v))));
+    return { width, height, flags, noise, changed, observed, here: round(lumaA), there: round(lumaB) };
 }

@@ -44,7 +44,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
       if (x >= 0 && y >= 0 && x < width && y < height) changes[y * width + x] = pair.flags[i]!
     }
   }
-  const ink = evidence ? drawingInk(evidence, index) : new Uint8Array(size)
+  const ink = evidence ? drawingInk(evidence, index, 'either', Number(data.pixelSilhouettes?.options.recurrence ?? 10)) : new Uint8Array(size)
   const mask = data.pixelSilhouettes ? unpackMask(data.pixelSilhouettes.frames[index]!.packed, size) : new Uint8Array(size)
   const edge = new Uint8Array(size)
   for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {

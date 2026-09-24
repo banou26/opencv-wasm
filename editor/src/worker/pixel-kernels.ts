@@ -57,7 +57,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress }) }
   } else if (type === 'pixelSilhouettes') {
     if (!data.pixelEvidence) throw new Error('Drawing Silhouettes needs Redraw Ink Evidence')
-    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), progress }) }
+    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), recurrence: Number(params.recurrence), progress }) }
   } else if (type === 'pixelPlate') {
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
     output = { ...data, stage: 'pixel-plate', pixelPlate: await buildLayerPlate(source, data.pixelCamera, data.pixelSilhouettes, { margin: Number(params.margin), floor: Number(params.floor), progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) }) }

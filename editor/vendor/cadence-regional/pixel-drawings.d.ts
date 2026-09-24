@@ -19,10 +19,14 @@ export declare const ARRIVE = 1;
 /** Ink disappears across the pair: the earlier frame is darker. */
 export declare const LEAVE = 2;
 export declare const CHANGE = 4;
+/** A change carries the luma just before and after it (bit VALUED set). */
+export declare const VALUED = 8;
 /** Sorted world-atlas indices of one pair's changes, grown to absorb integer placement. */
 export type PairEvidence = {
     indices: Uint32Array;
     flags: Uint8Array;
+    before?: Uint8Array;
+    after?: Uint8Array;
 };
 /** `others`/`othersBackward`, when present, pack per pair the pixels only another rigid layer explains (frame p, then p + 1). */
 export type DrawingEvidence = {
@@ -53,6 +57,8 @@ export type SilhouetteOptions = {
     erode?: number;
     /** 'both' requires ink to arrive at the last change and leave at the next when both exist; 'either' accepts one. */
     inkRule?: 'either' | 'both';
+    /** Drop ink whose value recurs outside the drawing's hold, within this many luma codes; 0 disables. */
+    recurrence?: number;
 };
 /**
  * Pixels of one frame that belong to a drawing held at that frame. A pixel is ink of the held drawing
@@ -73,6 +79,13 @@ export type DrawingSilhouette = {
         box: Box;
     }[];
 };
-export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both'): Uint8Array;
+/**
+ * Ink of the drawing held at `frame`. With `recurrence` > 0, ink is dropped where the pixel's current
+ * value (luma) also appears before its previous change or after its next one, within that many codes:
+ * scenery that a drawing covers and uncovers shows the same value again, a drawing's boiling line does
+ * not. Background line art about to be covered by a light drawing carries a drawing's ink signature
+ * otherwise.
+ */
+export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both', recurrence?: number): Uint8Array;
 export declare function fillEnclosed(mask: Uint8Array, width: number, height: number): Uint8Array;
 export declare function drawingSilhouette(evidence: DrawingEvidence, frame: number, options?: SilhouetteOptions): DrawingSilhouette;

@@ -80,7 +80,7 @@ export function frameLayerLabels(silhouettes, frames, frame) {
  * pan, resampling residue spreads over the whole frame and must not split a hold.
  */
 export function layerFrames(evidence, silhouettes, options = {}) {
-    const minimumChanges = options.minimumChanges ?? 60, minimumFraction = options.minimumFraction ?? .05, minimumContrast = options.minimumContrast ?? 5;
+    const minimumChanges = options.minimumChanges ?? 60, minimumFraction = options.minimumFraction ?? .06, minimumContrast = options.minimumContrast ?? 5;
     const { camera, atlas } = evidence, { width, height } = camera, size = width * height, count = silhouettes.frames.length;
     // Pass one links components of consecutive frames; only two frames of labels are ever held.
     const firstLabel = [], links = [];

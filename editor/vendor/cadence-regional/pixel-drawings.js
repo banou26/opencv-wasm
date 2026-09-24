@@ -57,6 +57,8 @@ export const ARRIVE = 1;
 /** Ink disappears across the pair: the earlier frame is darker. */
 export const LEAVE = 2;
 export const CHANGE = 4;
+/** A change carries the luma just before and after it (bit VALUED set). */
+export const VALUED = 8;
 export function cameraPath(width, height, steps) {
     const positions = [{ dx: 0, dy: 0 }];
     for (const step of steps) {
@@ -86,18 +88,23 @@ export function pairEvidence(camera, atlas, pair, forward, backward, dilation = 
     const a = frameOffset(camera, atlas, pair), b = frameOffset(camera, atlas, pair + 1);
     const left = Math.min(a.x, b.x) - dilation, top = Math.min(a.y, b.y) - dilation;
     const w = Math.max(a.x, b.x) + width + dilation - left, h = Math.max(a.y, b.y) + height + dilation - top;
-    const raw = new Uint8Array(w * h);
-    const mark = (change, offset, here, there) => {
+    const raw = new Uint8Array(w * h), rawBefore = new Uint8Array(w * h), rawAfter = new Uint8Array(w * h);
+    const mark = (change, offset, here, there, earlier) => {
         for (let y = 0; y < height; y++)
             for (let x = 0; x < width; x++) {
-                const f = change.flags[y * width + x];
+                const p = y * width + x, f = change.flags[p];
                 if (!(f & CHANGED))
                     continue;
-                raw[(y + offset.y - top) * w + x + offset.x - left] |= CHANGE | (f & INK_HERE ? here : 0) | (f & INK_THERE ? there : 0);
+                const r = (y + offset.y - top) * w + x + offset.x - left;
+                if (!(raw[r] & VALUED)) {
+                    rawBefore[r] = earlier ? change.here[p] : change.there[p];
+                    rawAfter[r] = earlier ? change.there[p] : change.here[p];
+                }
+                raw[r] |= CHANGE | VALUED | (f & INK_HERE ? here : 0) | (f & INK_THERE ? there : 0);
             }
     };
-    mark(forward, a, LEAVE, ARRIVE);
-    mark(backward, b, ARRIVE, LEAVE);
+    mark(forward, a, LEAVE, ARRIVE, true);
+    mark(backward, b, ARRIVE, LEAVE, false);
     // Only the change bit grows: it absorbs integer placement for the brackets. Ink stays where it was
     // measured, or a line leaving one pixel lends its neighbor the ink of a line arriving next to it.
     // Growth absorbs the half-pixel quantization of each frame's world placement. A pixel's own measured
@@ -113,13 +120,13 @@ export function pairEvidence(camera, atlas, pair, forward, backward, dilation = 
                 for (let yy = Math.max(0, y - reach); yy <= Math.min(h - 1, y + reach); yy++)
                     for (let xx = Math.max(0, x - reach); xx <= Math.min(w - 1, x + reach); xx++) {
                         const near = Math.max(Math.abs(yy - y), Math.abs(xx - x)), target = yy * w + xx;
-                        grown[target] |= (near <= dilation ? CHANGE : 0) | (near <= inkDilation && !(raw[target] & (ARRIVE | LEAVE)) ? f & (ARRIVE | LEAVE) : 0);
+                        grown[target] |= (near <= dilation ? CHANGE : 0) | (near <= inkDilation && !(raw[target] & (ARRIVE | LEAVE)) ? f & (ARRIVE | LEAVE) : 0) | (raw[target] & VALUED);
                     }
             }
     let count = 0;
     for (let i = 0; i < grown.length; i++)
         count += Number(grown[i] !== 0);
-    const indices = new Uint32Array(count), flags = new Uint8Array(count);
+    const indices = new Uint32Array(count), flags = new Uint8Array(count), before = new Uint8Array(count), after = new Uint8Array(count);
     let k = 0;
     for (let y = 0; y < h; y++) {
         const ay = y + top;
@@ -130,34 +137,78 @@ export function pairEvidence(camera, atlas, pair, forward, backward, dilation = 
             if (!f || ax < 0 || ax >= atlas.width)
                 continue;
             indices[k] = ay * atlas.width + ax;
+            before[k] = rawBefore[y * w + x];
+            after[k] = rawAfter[y * w + x];
             flags[k++] = f;
         }
     }
-    return { indices: indices.slice(0, k), flags: flags.slice(0, k) };
+    return { indices: indices.slice(0, k), flags: flags.slice(0, k), before: before.slice(0, k), after: after.slice(0, k) };
 }
-export function drawingInk(evidence, frame, rule = 'either') {
-    const { camera, atlas, pairs } = evidence, { width, height } = camera;
+/**
+ * Ink of the drawing held at `frame`. With `recurrence` > 0, ink is dropped where the pixel's current
+ * value (luma) also appears before its previous change or after its next one, within that many codes:
+ * scenery that a drawing covers and uncovers shows the same value again, a drawing's boiling line does
+ * not. Background line art about to be covered by a light drawing carries a drawing's ink signature
+ * otherwise.
+ */
+export function drawingInk(evidence, frame, rule = 'either', recurrence = 0) {
+    const { camera, atlas, pairs } = evidence, { width, height } = camera, size = width * height;
     if (!Number.isInteger(frame) || frame < 0 || frame > pairs.length)
         throw new RangeError('Frame is outside the evidence');
     const offset = frameOffset(camera, atlas, frame);
-    const last = new Uint8Array(width * height), next = new Uint8Array(width * height);
-    const project = (target, pair) => {
-        const { indices, flags } = pair;
+    const last = new Uint8Array(size), next = new Uint8Array(size);
+    const lastPair = new Int16Array(size).fill(-1), nextPair = new Int16Array(size).fill(-1), current = new Int16Array(size).fill(-1);
+    const visit = (pair, each) => {
+        const { indices } = pairs[pair];
         for (let i = 0; i < indices.length; i++) {
-            const index = indices[i], ay = Math.floor(index / atlas.width), ax = index - ay * atlas.width;
-            const x = ax - offset.x, y = ay - offset.y;
+            const index = indices[i], ay = Math.floor(index / atlas.width), x = index - ay * atlas.width - offset.x, y = ay - offset.y;
             if (x >= 0 && y >= 0 && x < width && y < height)
-                target[y * width + x] = flags[i];
+                each(y * width + x, i);
         }
     };
     for (let pair = 0; pair < frame; pair++)
-        project(last, pairs[pair]);
+        visit(pair, (p, i) => {
+            const f = pairs[pair].flags[i];
+            last[p] = f;
+            lastPair[p] = pair;
+            if (f & VALUED && pairs[pair].after)
+                current[p] = pairs[pair].after[i];
+        });
     for (let pair = pairs.length - 1; pair >= frame; pair--)
-        project(next, pairs[pair]);
-    const ink = new Uint8Array(width * height);
-    for (let p = 0; p < ink.length; p++) {
+        visit(pair, (p, i) => {
+            next[p] = pairs[pair].flags[i];
+            nextPair[p] = pair;
+        });
+    const ink = new Uint8Array(size);
+    for (let p = 0; p < size; p++) {
         const arrived = last[p] & ARRIVE, leaves = next[p] & LEAVE;
         ink[p] = rule === 'both' && last[p] & CHANGE && next[p] & CHANGE ? (arrived && leaves ? arrived | leaves : 0) : arrived | leaves;
+    }
+    if (recurrence > 0) {
+        // With no earlier change the current value is the one just before the next change.
+        for (let pair = frame; pair < pairs.length; pair++)
+            visit(pair, (p, i) => {
+                if (current[p] < 0 && nextPair[p] === pair && pairs[pair].flags[i] & VALUED && pairs[pair].before)
+                    current[p] = pairs[pair].before[i];
+            });
+        const recurs = new Uint8Array(size);
+        for (let pair = 0; pair < pairs.length; pair++) {
+            const { flags, before, after } = pairs[pair];
+            if (!before || !after)
+                continue;
+            visit(pair, (p, i) => {
+                if (!ink[p] || current[p] < 0 || !(flags[i] & VALUED))
+                    return;
+                const earlier = lastPair[p] >= 0 ? pair < lastPair[p] : false, later = nextPair[p] >= 0 ? pair > nextPair[p] : false;
+                if (earlier && Math.abs(before[i] - current[p]) <= recurrence)
+                    recurs[p] = 1;
+                if (later && Math.abs(after[i] - current[p]) <= recurrence)
+                    recurs[p] = 1;
+            });
+        }
+        for (let p = 0; p < size; p++)
+            if (recurs[p])
+                ink[p] = 0;
     }
     return ink;
 }
@@ -197,7 +248,7 @@ export function drawingSilhouette(evidence, frame, options = {}) {
             || !Number.isInteger(options.erode ?? 0) || (options.erode ?? 0) < 0 || (options.erode ?? 0) > 8)
             throw new RangeError('Invalid silhouette options');
         const { width, height } = evidence.camera;
-        const ink = drawingInk(evidence, frame, options.inkRule);
+        const ink = drawingInk(evidence, frame, options.inkRule, options.recurrence ?? 10);
         const binary = new Uint8Array(ink.length);
         for (let p = 0; p < ink.length; p++)
             binary[p] = ink[p] ? 255 : 0;

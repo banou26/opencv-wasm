@@ -228,8 +228,9 @@ Every stage is its own node, so each can be inspected or rewired:
    one shown now outlined in cyan with its frame range.
 
 The first evaluation decodes the whole shot at full resolution several times: 139 s for
-117 frames at 1080p in Chrome 153 (measured 2026-09-25), then 0.5 to 0.7 s per inspected
-frame. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
+117 frames at 1080p in Chrome 153 before the Scenery Median stage, 272 s with it while a
+second Cadence run shared the CPU (both measured 2026-09-25), then 0.6 to 0.8 s per
+inspected frame. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
 market-pan clip in the system Chrome inside a nested headless weston (real GPU and
 decoder, no window on the desktop) and saves every panel for frames 40, 98 and 104 as
 Cadence `diagnostics/pixel-market-browser-*`. Later frames reuse the cached stages. The

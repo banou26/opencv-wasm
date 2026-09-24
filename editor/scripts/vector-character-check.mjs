@@ -180,7 +180,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
   const controls = ['Fill enclosed holes', 'Extend to edges'].map(label => page.getByLabel(`Complete Direct Support ${label}`, { exact: true }))
   const setEnabled = async enabled => { for (const control of controls) if (await control.isChecked() !== enabled) await change(() => control.setChecked(enabled)) }
   const records = [], provenanceColors = [[150, 150, 165], [240, 178, 72], [66, 220, 183]]
-  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. Raw PNGs determine original frame-wide measured group sizes. Each actual edge and competing corner picks the largest touching group, with lowest-ID ties and no percentage threshold; only unknown cells fill. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
+  const save = status => writeFile(resolve(output, `${prefix}-support-browser.json`), `${JSON.stringify({ status, description: 'Native completion PNG exports with both fill controls disabled/enabled. Measured pixels and IDs stay fixed; each newly assigned cell must have explicit hole or edge provenance. Raw PNGs determine original frame-wide measured group sizes. Each actual edge preserves any 75% original measured-edge winner, otherwise selecting its largest touching group. Competing corners use original measured size with lowest-ID ties; only unknown cells fill. Hole components are reconstructed from raw labels plus edge inference: largest touching original measured group wins, with lowest-ID ties; open voids stay unknown.', records }, null, 2)}\n`)
   try {
     for (const sample of cases) {
       await setEnabled(false)
@@ -234,12 +234,13 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
         top: cells.slice(0, after.columns), bottom: cells.slice((rows - 1) * after.columns) }).map(([edge, selected]) => {
         const measured = selected.filter(item => item.raw >= 0), owners = [...new Set(measured.map(item => item.raw))]
         const votes = owners.map(owner => ({ owner, touchingCells: measured.filter(item => item.raw === owner).length, measuredCells: measuredSizes.get(owner) }))
-        const winner = owners.slice().sort(rankOwners)[0]
+        const majorityOwner = votes.find(vote => vote.touchingCells * 4 >= measured.length * 3)?.owner
+        const largestOwner = owners.slice().sort(rankOwners)[0], winner = majorityOwner ?? largestOwner
         if (winner !== undefined) for (const item of selected) if (item.raw < 0) {
           if (!proposals.has(item.cell)) proposals.set(item.cell, new Set())
           proposals.get(item.cell).add(winner)
         }
-        return { edge, owners, votes, measured: measured.length, largestOwner: winner ?? null, rawUnknown: selected.filter(item => item.raw < 0).map(item => item.cell) }
+        return { edge, owners, votes, measured: measured.length, majorityOwner: majorityOwner ?? null, largestOwner: largestOwner ?? null, edgeOwner: winner ?? null, rawUnknown: selected.filter(item => item.raw < 0).map(item => item.cell) }
       })
       const edgeReach = Number(await page.getByLabel('Complete Direct Support Edge reach (cells)', { exact: true }).inputValue())
       const exactEdgeCells = edgeReach > 0 ? [...proposals].map(([cell, owners]) => ({ cell, expected: [...owners].sort(rankOwners)[0], ...cells[cell] })) : []
@@ -247,7 +248,7 @@ export async function checkSupportCompletion({ page, change, output, prefix, cas
       const record = { frame: sample.frame, counts, measuredPixels, changedMeasuredPixels, additions, edges, exactEdgeCells, holeComponents, beforeSummary: before.summary, afterSummary: after.summary, image: name }
       records.push(record); await save('incomplete')
       for (const item of exactEdgeCells) {
-        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: edge and corner proposals must choose the largest original measured touching group`)
+        assert.equal(item.completed, item.expected, `Source ${sample.frame} cell ${item.cell}: preserve strong edge majorities, otherwise use the largest original touching group; corners use frozen size`)
         assert.equal(item.provenance, item.expected >= 0 ? 3 : 0, `Source ${sample.frame} cell ${item.cell}: exact edge provenance is wrong`)
       }
       if (sample.requireBottomRight) {

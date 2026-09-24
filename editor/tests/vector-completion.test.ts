@@ -30,7 +30,7 @@ const fixture = (): RegionalData => {
 test('direct completion exposes four typed panels and supplies the final comparison', () => {
   const graph = parseDocument(vectorLayersGraph()), inspector = graph.nodes.find(node => node.id === 'ncompletionview')!
   expect(defaultParams('vectorComplete')).toEqual({ fillHoles: true, fillEdges: true, edgeReach: 8 })
-  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(6)
+  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(7)
   expect(specFor(inspector, graph).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance'])
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:completed', target: 'nbottom', targetHandle: 'in:frame:a' }))
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:provenance', target: 'nbottom', targetHandle: 'in:frame:b' }))
@@ -118,7 +118,7 @@ test('a unanimous full edge closes first, then its enclosed interior records hol
   for (const cell of [6, 7, 8, 11, 12, 13, 16, 17, 18]) expect(support.frames[0]!.provenance[cell]).toBe(2)
   const data: RegionalData = { stage: 'vector-completion', scene: { asset: 'clip', first: 7, last: 8, sourceWidth: 40, sourceHeight: 40, frames: Array.from({ length: 2 }, () => ({ width: 40, height: 40, data: new Uint8Array(40 * 40 * 3).fill(30) })) }, frameVectorGroups: groups, frameVectorSupport: support }
   const rendered = renderVectorCompletionPanels(data, 7)
-  expect(rendered.summary).toContain('Completion order: resolve edges and corners by largest original measured touching group, then fill enclosed holes until stable.')
+  expect(rendered.summary).toContain('Completion order: preserve 75% measured-edge majorities; otherwise use the largest touching group.')
   for (const options of [{ fillHoles: false, edgeReach: 1 }, { fillEdges: false, edgeReach: 1 }, { edgeReach: 0 }]) {
     data.frameVectorSupport = completeFrameVectorSupport(groups, options)
     const result = renderVectorCompletionPanels(data, 7)
@@ -131,11 +131,11 @@ test('a unanimous full edge closes first, then its enclosed interior records hol
   expect(groups).toEqual(before)
 })
 
-test('edges choose the largest original frame-wide touching group without a percentage threshold', () => {
+test('edges preserve a 75 percent local winner and use original frame-wide size only without one', () => {
   const original = fixture().frameVectorGroups!
-  for (const extras of [0, 2, 3]) {
+  for (const local of [2, 3]) for (const extras of [0, 1, 3]) {
     const labels = new Int32Array(45).fill(-1)
-    for (const cell of [1, 3, 5]) labels[cell] = 0
+    for (const cell of [1, 3, 5].slice(0, local)) labels[cell] = 0
     labels[7] = 4
     for (let index = 0; index < extras; index++) labels[20 + index] = 4
     const observations = [4, 0].map(id => {
@@ -144,13 +144,13 @@ test('edges choose the largest original frame-wide touching group without a perc
     })
     const groups = { ...original, width: 72, height: 40, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations }] }
     const before = structuredClone(groups), support = completeFrameVectorSupport(groups, { fillHoles: false, edgeReach: 1 }), completed = support.frames[0]!
-    expect(completed.counts.border).toBe(5)
+    expect(completed.counts.border).toBe(8 - local)
     for (let cell = 0; cell < labels.length; cell++) {
       if (labels[cell]! >= 0) {
         expect(completed.labels[cell]).toBe(labels[cell])
         expect(completed.provenance[cell]).toBe(1)
       } else if (cell < 9) {
-        expect(completed.labels[cell]).toBe(extras > 2 ? 4 : 0)
+        expect(completed.labels[cell]).toBe(local < 3 && extras + 1 > local ? 4 : 0)
         expect(completed.provenance[cell]).toBe(3)
       } else expect(completed.labels[cell]).toBe(-1)
     }

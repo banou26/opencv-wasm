@@ -77,15 +77,19 @@ function completeFrame(frame, columns, rows, options) {
                     : (rows - step - 1) * columns + line;
             // Only groups with original measured cells touching this edge compete.
             // New corner fills must not establish ownership of an adjacent empty edge.
-            const touching = new Set();
+            const touching = new Map();
+            let measured = 0;
             for (let line = 0; line < lineCount; line++) {
                 const owner = raw[at(line, 0)];
                 if (owner < 0)
                     continue;
-                touching.add(owner);
+                touching.set(owner, (touching.get(owner) ?? 0) + 1);
+                measured++;
             }
             if (touching.size) {
-                const owner = largestMeasured(touching);
+                // Keep an established edge owner. Size resolves only the competition
+                // that previously blocked closure, not a strong local majority.
+                const owner = [...touching].find(([, count]) => count * 4 >= measured * 3)?.[0] ?? largestMeasured(touching.keys());
                 for (let line = 0; line < lineCount; line++) {
                     const index = at(line, 0);
                     if (raw[index] >= 0)

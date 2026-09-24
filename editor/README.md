@@ -322,11 +322,14 @@ The final source frame has no outgoing motion pair and consequently no motion ov
 
 **Complete Direct Support** is a separate stage after grouping, with edge filling
 first and enclosed-hole filling second. **Extend to edges** checks measured cells
-on each actual frame edge. Among the groups touching that edge, the largest by
-original measured cell count across the entire frame fills its unknown cells.
-There is no percentage threshold or minimum fraction of occupied edge cells.
-Equal sizes choose the lowest group ID, and different corner proposals use that
-same frozen size/ID ranking. All measured cells keep their own groups unchanged.
+on each actual frame edge. A group owning at least 75% of that edge's original
+measured cells keeps precedence. Only when no such majority exists does the edge
+choose its largest touching group by original measured count across the entire
+frame. This prevents a small contact from a globally large background from
+overriding an edge dominated by foreground. Unknown cells do not vote, and only
+unknown cells are filled. Equal sizes choose the lowest group ID, and different
+corner proposals use that same frozen size/ID ranking. All measured cells keep
+their own groups unchanged.
 An edge without measured cells gets no full-edge proposal, and filled corners
 cannot establish ownership of another edge. These exact-edge proposals take
 priority over inward fallback; additions never increase a group's size.
@@ -1135,8 +1138,9 @@ compares both fill controls disabled/enabled. It requires identical source and
 measured panels, unchanged measured pixels and IDs, and explicit hole/edge
 provenance for every addition. Raw PNG labels independently determine original
 frame-wide group sizes and the IDs touching each edge: every proposed unknown
-edge cell must receive the largest touching group, and competing corner owners
-use the same size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
+edge cell must preserve an existing 75% measured-edge winner or use the largest
+touching group when no majority qualifies. Competing corner owners use the
+frozen size/ID ranking. Cases may add `minimumHoles`, `minimumBorder` or
 `requireBottomRight` controls. The market smoke checks source 25, 26 and 65
 explicitly for the reported corner gap. Output frame 65 at 60fps maps to source
 25 at the clip's 24000/1001fps, not 26 from a rounded 24fps rate. It restores both

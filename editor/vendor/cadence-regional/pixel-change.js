@@ -62,6 +62,8 @@ export const OBSERVED = 8;
 export const OTHER_LAYER = 16;
 /** Changed because another rigid layer covers the pixel in the other frame, not redrawn. */
 export const OCCLUDED = 32;
+/** Changed, yet its structured 5x5 neighborhood reappears within 2 px: a line that boiled in place, not new content. */
+export const NEAR = 64;
 function median(values, count) {
     const histogram = new Uint32Array(4097);
     for (let i = 0; i < count; i++)
@@ -281,6 +283,35 @@ export function measurePairChange(a, b, d, options = {}) {
             __disposeResources(env_5);
         }
     }
+    // A line that boiled is the same structure within two pixels: a 5x5 luma patch of A found in B at a
+    // small offset. Flat patches match anything, so they never count as boiled.
+    const boilTolerance = Math.max(3, 1.5 * (Number.isFinite(noise) ? noise : 1));
+    const boiled = (x, y) => {
+        if (x < 4 || y < 4 || x >= width - 4 || y >= height - 4)
+            return false;
+        let mean = 0, square = 0;
+        for (let dy = -2; dy <= 2; dy++)
+            for (let dx = -2; dx <= 2; dx++) {
+                const v = lumaA[(y + dy) * width + x + dx];
+                mean += v;
+                square += v * v;
+            }
+        mean /= 25;
+        if (square / 25 - mean * mean < 100)
+            return false;
+        for (let oy = -2; oy <= 2; oy++)
+            for (let ox = -2; ox <= 2; ox++) {
+                if (!ox && !oy)
+                    continue;
+                let error = 0;
+                for (let dy = -2; dy <= 2 && error <= boilTolerance * 25; dy++)
+                    for (let dx = -2; dx <= 2; dx++)
+                        error += Math.abs(lumaA[(y + dy) * width + x + dx] - lumaB[(y + dy + oy) * width + x + dx + ox]);
+                if (error <= boilTolerance * 25)
+                    return true;
+            }
+        return false;
+    };
     let changed = 0;
     for (let y = y0; y <= y1; y++)
         for (let x = x0; x <= x1; x++) {
@@ -291,6 +322,8 @@ export function measurePairChange(a, b, d, options = {}) {
                 flags[p] |= OCCLUDED;
                 continue;
             }
+            if (boiled(x, y))
+                flags[p] |= NEAR;
             let neighbors = 0;
             for (let yy = Math.max(0, y - 1); yy <= Math.min(height - 1, y + 1); yy++)
                 for (let xx = Math.max(0, x - 1); xx <= Math.min(width - 1, x + 1); xx++)

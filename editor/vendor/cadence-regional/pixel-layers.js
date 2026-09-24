@@ -1,7 +1,60 @@
+var __addDisposableResource = (this && this.__addDisposableResource) || function (env, value, async) {
+    if (value !== null && value !== void 0) {
+        if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+        var dispose, inner;
+        if (async) {
+            if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+            dispose = value[Symbol.asyncDispose];
+        }
+        if (dispose === void 0) {
+            if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+            dispose = value[Symbol.dispose];
+            if (async) inner = dispose;
+        }
+        if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+        if (inner) dispose = function() { try { inner.call(this); } catch (e) { return Promise.reject(e); } };
+        env.stack.push({ value: value, dispose: dispose, async: async });
+    }
+    else if (async) {
+        env.stack.push({ async: true });
+    }
+    return value;
+};
+var __disposeResources = (this && this.__disposeResources) || (function (SuppressedError) {
+    return function (env) {
+        function fail(e) {
+            env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+            env.hasError = true;
+        }
+        var r, s = 0;
+        function next() {
+            while (r = env.stack.pop()) {
+                try {
+                    if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+                    if (r.dispose) {
+                        var result = r.dispose.call(r.value);
+                        if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) { fail(e); return next(); });
+                    }
+                    else s |= 1;
+                }
+                catch (e) {
+                    fail(e);
+                }
+            }
+            if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+            if (env.hasError) throw env.error;
+        }
+        return next();
+    };
+})(typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
 import { OTHER_LAYER, measurePairChange } from "./pixel-change.js";
 import { candidateMotions, coarseTranslation, refineTranslation } from "./pixel-camera.js";
-import { cameraPath, drawingSilhouette, frameOffset, pairEvidence, worldAtlas } from "./pixel-drawings.js";
+import { AFTER_SCENERY, BEFORE_SCENERY, VALUED, cameraPath, drawingSilhouette, frameOffset, pairEvidence, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
+import { BORDER_REPLICATE, CV_32FC1, CV_64FC1, INTER_CUBIC, Mat, WARP_INVERSE_MAP, matFromArray, warpAffine } from '@banou/opencv-wasm';
 import { addPlateSamples, finishPlate, plateReference, plateStatistics } from "./pixel-plate.js";
 /**
  * Candidate motions linked across pairs: each continues the track whose latest candidate, at most
@@ -156,7 +209,7 @@ export async function measureCameraPath(source, options = {}) {
 }
 const otherLayer = (change) => packMask(change.flags.map(f => f & OTHER_LAYER ? 1 : 0));
 export async function measureDrawingEvidence(source, camera, options = {}) {
-    const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 1;
+    const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 0;
     const { progress, dilation: _, inkDilation: __, ...changeOptions } = options;
     const pairs = [], summaries = [], others = [], othersBackward = [];
     let previous = await source.frame(0);
@@ -175,6 +228,79 @@ export async function measureDrawingEvidence(source, camera, options = {}) {
         previous = next;
     }
     return { camera, atlas, dilation, inkDilation, pairs, summaries, options: changeOptions, others, othersBackward };
+}
+/**
+ * Mark every change event whose value before or after it is the pixel's scenery: its median luma over the
+ * whole shot, within `tolerance` codes, from at least `minimumSamples` observations. A drawing passing
+ * over a pixel is a minority of its history unless the drawing stood there, and standing drawings boil in
+ * place, which the silhouette stage checks first.
+ */
+export async function annotateScenery(source, evidence, options = {}) {
+    const tolerance = options.tolerance ?? 10, minimumSamples = options.minimumSamples ?? 8;
+    const { camera, atlas, pairs } = evidence, { width, height } = source, slot = new Int32Array(atlas.width * atlas.height).fill(-1);
+    let slots = 0;
+    for (const pair of pairs)
+        for (let i = 0; i < pair.indices.length; i++)
+            if (pair.flags[i] & VALUED && slot[pair.indices[i]] < 0)
+                slot[pair.indices[i]] = slots++;
+    const frames = source.count, samples = new Uint8Array(slots * frames), seen = new Uint8Array(slots);
+    for (let frame = 0; frame < frames; frame++) {
+        const env_1 = { stack: [], error: void 0, hasError: false };
+        try {
+            await options.progress?.(frame, frames);
+            const position = camera.positions[frame], offset = frameOffset(camera, atlas, frame);
+            const luma = __addDisposableResource(env_1, matFromArray(height, width, CV_32FC1, pixelLuma(await source.frame(frame))), false), warped = __addDisposableResource(env_1, new Mat(), false);
+            const transform = __addDisposableResource(env_1, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
+            warpAffine(luma, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+            const w = warped.data32F;
+            for (let y = 2; y < height - 2; y++)
+                for (let x = 2; x < width - 2; x++) {
+                    const k = slot[(y + offset.y) * atlas.width + x + offset.x];
+                    if (k < 0 || seen[k] === 255)
+                        continue;
+                    samples[k * frames + seen[k]++] = Math.max(0, Math.min(255, Math.round(w[y * width + x])));
+                }
+        }
+        catch (e_1) {
+            env_1.error = e_1;
+            env_1.hasError = true;
+        }
+        finally {
+            __disposeResources(env_1);
+        }
+    }
+    const median = new Int16Array(slots).fill(-1), histogram = new Uint16Array(256);
+    for (let k = 0; k < slots; k++) {
+        if (seen[k] < minimumSamples)
+            continue;
+        histogram.fill(0);
+        for (let j = 0; j < seen[k]; j++)
+            histogram[samples[k * frames + j]]++;
+        let cumulative = 0, v = 0;
+        for (; v < 256; v++) {
+            cumulative += histogram[v];
+            if (cumulative * 2 >= seen[k])
+                break;
+        }
+        median[k] = v;
+    }
+    const annotated = pairs.map(pair => {
+        const flags = pair.flags.slice();
+        if (pair.before && pair.after)
+            for (let i = 0; i < flags.length; i++) {
+                if (!(flags[i] & VALUED))
+                    continue;
+                const m = median[slot[pair.indices[i]]];
+                if (m < 0)
+                    continue;
+                if (Math.abs(pair.after[i] - m) <= tolerance)
+                    flags[i] |= AFTER_SCENERY;
+                if (Math.abs(pair.before[i] - m) <= tolerance)
+                    flags[i] |= BEFORE_SCENERY;
+            }
+        return { ...pair, flags };
+    });
+    return { ...evidence, pairs: annotated };
 }
 /** One bit per pixel, row-major, most significant bit first. */
 export const packMask = (mask) => {

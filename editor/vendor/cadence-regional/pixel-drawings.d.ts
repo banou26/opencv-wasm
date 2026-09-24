@@ -21,6 +21,12 @@ export declare const LEAVE = 2;
 export declare const CHANGE = 4;
 /** A change carries the luma just before and after it (bit VALUED set). */
 export declare const VALUED = 8;
+/** The change only boiled: a counterpart lies within 1.5 px. */
+export declare const BOILED = 16;
+/** The value after the change is the pixel's scenery (its median over the shot). */
+export declare const AFTER_SCENERY = 32;
+/** The value before the change is the pixel's scenery. */
+export declare const BEFORE_SCENERY = 64;
 /** Sorted world-atlas indices of one pair's changes, grown to absorb integer placement. */
 export type PairEvidence = {
     indices: Uint32Array;
@@ -59,6 +65,19 @@ export type SilhouetteOptions = {
     inkRule?: 'either' | 'both';
     /** Drop ink whose value recurs outside the drawing's hold, within this many luma codes; 0 disables. */
     recurrence?: number;
+    /** Drop ink whose bracket is a local minority (see `drawingInk`); radius 0 disables. */
+    consistency?: BracketConsistency;
+    /** Ink components under this many pixels are dropped before closing. */
+    minimumInk?: number;
+    /** Surviving ink spreads this many pixels to absorb half-pixel placement quantization. */
+    spread?: number;
+    /**
+     * Leaving ink whose value is the scenery: 'never' (default) keeps it, 'recurring' rejects it when the value
+     * also recurs across a different stretch of time, 'always' whenever it did not boil. A drawing that stood
+     * still from the first frame is its own median, so both rejections can cost its outline; on market-pan
+     * 'recurring' removes scenery about to be covered but splits a mostly static character off its group.
+     */
+    sceneryLeaves?: 'never' | 'recurring' | 'always';
 };
 /**
  * Pixels of one frame that belong to a drawing held at that frame. A pixel is ink of the held drawing
@@ -86,6 +105,15 @@ export type DrawingSilhouette = {
  * not. Background line art about to be covered by a light drawing carries a drawing's ink signature
  * otherwise.
  */
-export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both', recurrence?: number): Uint8Array;
+export type BracketConsistency = {
+    radius: number;
+    fraction: number;
+};
+/**
+ * `consistency` keeps an ink pixel only where its bracket (last change, next change) holds at least
+ * `fraction` of the ink of the dominant bracket within `radius`: every line of one drawing changes at the
+ * same redraws, while scenery revealed or about to be covered next to it has a bracket of its own.
+ */
+export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both', recurrence?: number, consistency?: BracketConsistency, spread?: number, sceneryLeaves?: 'never' | 'recurring' | 'always'): Uint8Array;
 export declare function fillEnclosed(mask: Uint8Array, width: number, height: number): Uint8Array;
 export declare function drawingSilhouette(evidence: DrawingEvidence, frame: number, options?: SilhouetteOptions): DrawingSilhouette;

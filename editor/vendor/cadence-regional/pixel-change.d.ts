@@ -9,6 +9,8 @@ export declare const OBSERVED = 8;
 export declare const OTHER_LAYER = 16;
 /** Changed because another rigid layer covers the pixel in the other frame, not redrawn. */
 export declare const OCCLUDED = 32;
+/** Changed, yet its structured 5x5 neighborhood reappears within 2 px: a line that boiled in place, not new content. */
+export declare const NEAR = 64;
 export type PairChangeOptions = {
     /** Half-pixel search that absorbs the source's own resampling of every edge. */
     reach?: number;

@@ -8,7 +8,7 @@ export type NodeType = 'source' | 'grayscale' | 'blur' | 'delta' | 'motion' | 't
   | 'farneback' | 'offsetFlow' | 'flowConsistency' | 'cornerStrength' | 'flowGrid' | 'drawFlow' | 'coordinates' | 'noise' | 'pixelMath'
   | 'sceneRange' | 'regionalMotion' | 'regionalPool' | 'regionalTracks' | 'regionalHistory' | 'regionalTiming' | 'regionalComplete' | 'regionalInspect' | 'regionalCompletionInspect'
   | 'vectorCandidates' | 'vectorGroups' | 'vectorInspect' | 'vectorTrack' | 'vectorComplete' | 'vectorFragments' | 'vectorCompletionInspect' | 'vectorIdentityInspect'
-  | 'pixelCamera' | 'pixelEvidence' | 'pixelSilhouettes' | 'pixelPlate' | 'pixelRefine' | 'pixelFrames' | 'pixelInspect'
+  | 'pixelCamera' | 'pixelEvidence' | 'pixelScenery' | 'pixelSilhouettes' | 'pixelPlate' | 'pixelRefine' | 'pixelFrames' | 'pixelInspect'
 /** Serializable parameters; finite numbers only. */
 export type Params = Record<string, string | number | boolean>
 /** A typed socket; frameParam pins upstream time, while offsetParam shifts it. */

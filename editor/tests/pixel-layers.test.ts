@@ -50,7 +50,7 @@ test('pixel prefab chains every full-resolution stage into one inspected 2 x 2 o
   expect(explicitGraph('pixelLayers')).toEqual(pixelLayersGraph())
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   const steps = planGraph(doc, 'n5', null, 3, 'clip', COUNT).steps.map(s => s.node.type)
-  for (const type of ['sceneRange', 'pixelCamera', 'pixelEvidence', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
+  for (const type of ['sceneRange', 'pixelCamera', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
   expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:drawings', 'out:string:summary'])
 })
 
@@ -60,7 +60,8 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   const evidence = regions((await run('pixelEvidence', camera)).outputs)
   const redraws = evidence.pixelEvidence!.summaries.flatMap((summary, pair) => summary.forward > 100 ? [pair] : [])
   expect(redraws).toEqual([2, 5, 8])
-  const silhouettes = regions((await run('pixelSilhouettes', evidence, { minimumArea: 200 })).outputs)
+  const annotated = regions((await run('pixelScenery', evidence)).outputs)
+  const silhouettes = regions((await run('pixelSilhouettes', annotated, { minimumArea: 200 })).outputs)
   const frame = 4, mask = unpackMask(silhouettes.pixelSilhouettes!.frames[frame]!.packed, W * H), d = character(frame)
   let inside = 0, covered = 0, onProp = 0
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {

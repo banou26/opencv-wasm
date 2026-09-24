@@ -77,6 +77,17 @@ export declare function measureDrawingEvidence(source: PixelFrameSource, camera:
     inkDilation?: number;
     progress?: StageProgress;
 }): Promise<MeasuredEvidence>;
+/**
+ * Mark every change event whose value before or after it is the pixel's scenery: its median luma over the
+ * whole shot, within `tolerance` codes, from at least `minimumSamples` observations. A drawing passing
+ * over a pixel is a minority of its history unless the drawing stood there, and standing drawings boil in
+ * place, which the silhouette stage checks first.
+ */
+export declare function annotateScenery<E extends DrawingEvidence>(source: PixelFrameSource, evidence: E, options?: {
+    tolerance?: number;
+    minimumSamples?: number;
+    progress?: StageProgress;
+}): Promise<E>;
 /** One bit per pixel, row-major, most significant bit first. */
 export declare const packMask: (mask: Uint8Array) => Uint8Array;
 export declare const unpackMask: (packed: Uint8Array, length: number) => Uint8Array;

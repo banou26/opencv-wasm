@@ -292,6 +292,11 @@ least three winning anchors must be coherent. Competing measured groups block
 nearby extensions, and conflicting proposals from different edges stay unknown.
 More than 10% competing anchor votes disables that entire edge's extension.
 Reach zero disables edge filling. Filled cells never become votes or donors.
+Winding edge-connected pockets that lack a straight ray may fill as a whole only
+when their entire original boundary belongs to one group, they touch an edge
+independently qualified for that group, and every cell meets the original-support
+reach and competing-group clearance checks. They remain edge inference, not
+enclosed-hole evidence, even if earlier edge additions make them look enclosed.
 
 Completion returns a separate label raster and explicit provenance: measured,
 enclosed-hole inference, edge inference, or unknown. It never modifies the raw

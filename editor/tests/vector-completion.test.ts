@@ -30,6 +30,7 @@ const fixture = (): RegionalData => {
 test('direct completion exposes four typed panels and supplies the final comparison', () => {
   const graph = parseDocument(vectorLayersGraph()), inspector = graph.nodes.find(node => node.id === 'ncompletionview')!
   expect(defaultParams('vectorComplete')).toEqual({ fillHoles: true, fillEdges: true, edgeReach: 8 })
+  expect(specFor(graph.nodes.find(node => node.id === 'ncomplete')!, graph).version).toBe(2)
   expect(specFor(inspector, graph).outputs.filter(port => port.type === 'frame').map(port => port.id)).toEqual(['out:frame:source', 'out:frame:measured', 'out:frame:completed', 'out:frame:provenance'])
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:completed', target: 'nbottom', targetHandle: 'in:frame:a' }))
   expect(graph.edges).toContainEqual(expect.objectContaining({ source: 'ncompletionview', sourceHandle: 'out:frame:provenance', target: 'nbottom', targetHandle: 'in:frame:b' }))
@@ -84,6 +85,25 @@ test('disabled completion retains raw measured support and never invents a last-
   expect(() => renderVectorCompletionPanels({ ...data, stage: 'vector-groups' }, 7)).toThrow(/requires completed/)
   data.frameVectorSupport.frames[0]!.labels[1] = 99
   expect(() => renderVectorCompletionPanels(data, 7)).toThrow(/preserve measured/)
+})
+
+test('winding diagonal edge pocket retains edge provenance without using inferred boundary cells', () => {
+  const original = fixture().frameVectorGroups!, missing = new Set([0, 6, 12])
+  const labels = Int32Array.from({ length: 25 }, (_, cell) => missing.has(cell) ? -1 : 0)
+  const measured = [...labels.keys()].filter(cell => !missing.has(cell))
+  const groups = { ...original, width: 40, height: 40, frames: [{ frame: 0, labels, confidence: Uint8Array.from(labels, label => label >= 0 ? 2 : 0), observations: [{ id: 0, motionId: 0, cells: measured, dx: 0, dy: 0, strongCells: measured.length }] }] }
+  const before = structuredClone(groups), support = completeFrameVectorSupport(groups, { fillHoles: false })
+  expect(support.frames[0]!.counts).toEqual({ measured: 22, holes: 0, border: 3, unknown: 0 })
+  for (const cell of missing) expect(support.frames[0]!.provenance[cell]).toBe(3)
+  expect(groups).toEqual(before)
+  const data: RegionalData = { stage: 'vector-completion', scene: { asset: 'clip', first: 7, last: 8, sourceWidth: 40, sourceHeight: 40, frames: Array.from({ length: 2 }, () => ({ width: 40, height: 40, data: new Uint8Array(40 * 40 * 3).fill(30) })) }, frameVectorGroups: groups, frameVectorSupport: support }
+  const rendered = renderVectorCompletionPanels(data, 7)
+  expect(rendered.summary).toContain('inferred holes 0; inferred edge 3; unknown 0')
+  expect(rendered.panels.completed).not.toEqual(rendered.panels.measured)
+  data.frameVectorSupport = completeFrameVectorSupport(groups, { fillEdges: false })
+  expect(data.frameVectorSupport.frames[0]!.counts).toEqual({ measured: 22, holes: 0, border: 0, unknown: 3 })
+  const disabled = renderVectorCompletionPanels(data, 7)
+  expect(disabled.panels.completed).toEqual(disabled.panels.measured)
 })
 
 test('direct completion kernel uses shared core while preserving the original grouped data', async () => {

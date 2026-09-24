@@ -33,16 +33,24 @@ function completeFrame(frame, columns, rows, options) {
     const byId = new Map(observations.map(group => [group.id, group]));
     const counts = { measured: raw.filter(label => label >= 0).length, holes: 0, border: 0, unknown: 0 };
     const visited = new Uint8Array(raw.length);
-    if (options.fillHoles)
+    const edgePockets = [];
+    if (options.fillHoles || options.fillEdges)
         for (let seed = 0; seed < raw.length; seed++) {
             if (raw[seed] >= 0 || visited[seed])
                 continue;
             const component = [seed], boundary = new Set();
-            let edge = false;
+            let edges = 0;
             visited[seed] = 1;
             for (let cursor = 0; cursor < component.length; cursor++) {
                 const index = component[cursor], x = index % columns, y = Math.floor(index / columns);
-                edge ||= x === 0 || y === 0 || x === columns - 1 || y === rows - 1;
+                if (x === 0)
+                    edges |= 1;
+                if (x === columns - 1)
+                    edges |= 2;
+                if (y === 0)
+                    edges |= 4;
+                if (y === rows - 1)
+                    edges |= 8;
                 neighbors(index, columns, rows, next => {
                     if (raw[next] >= 0)
                         boundary.add(raw[next]);
@@ -52,9 +60,15 @@ function completeFrame(frame, columns, rows, options) {
                     }
                 });
             }
-            if (edge || boundary.size !== 1)
+            if (boundary.size !== 1)
                 continue;
             const owner = boundary.values().next().value;
+            if (edges) {
+                edgePockets.push({ cells: component, owner, edges });
+                continue;
+            }
+            if (!options.fillHoles)
+                continue;
             for (const index of component) {
                 labels[index] = owner;
                 provenance[index] = 2;
@@ -64,6 +78,7 @@ function completeFrame(frame, columns, rows, options) {
         }
     if (options.fillEdges && options.edgeReach > 0) {
         const proposals = new Int32Array(raw.length).fill(-1), margins = new Map();
+        const qualified = new Map();
         for (let edge = 0; edge < 4; edge++) {
             const vertical = edge < 2, lineCount = vertical ? rows : columns, depth = vertical ? columns : rows;
             const at = (line, step) => edge === 0 ? line * columns + step
@@ -87,6 +102,7 @@ function completeFrame(frame, columns, rows, options) {
             if (!winner || rays.length * 2 < lineCount || winner[1] * 10 < rays.length * 9 || (coherent.get(winner[0]) ?? 0) < 3)
                 continue;
             const owner = winner[0];
+            qualified.set(owner, (qualified.get(owner) ?? 0) | (1 << edge));
             if (!margins.has(owner))
                 margins.set(owner, {
                     own: distances(raw, columns, rows, label => label === owner),
@@ -105,6 +121,22 @@ function completeFrame(frame, columns, rows, options) {
                     else if (proposals[index] !== owner)
                         proposals[index] = -2;
                 }
+            }
+        }
+        // Winding edge pockets can lack a straight ray. Their entire ORIGINAL
+        // boundary must agree, every cell must fit the reach, and an edge must have
+        // qualified independently. This is not closing over previously inferred cells.
+        for (const pocket of edgePockets) {
+            if (!((qualified.get(pocket.owner) ?? 0) & pocket.edges))
+                continue;
+            const { own, other } = margins.get(pocket.owner);
+            if (pocket.cells.some(index => own[index] > options.edgeReach || other[index] <= own[index] + 1))
+                continue;
+            for (const index of pocket.cells) {
+                if (proposals[index] === -1)
+                    proposals[index] = pocket.owner;
+                else if (proposals[index] !== pocket.owner)
+                    proposals[index] = -2;
             }
         }
         // Resolve all edge proposals together. Fills never vote or seed another pass.

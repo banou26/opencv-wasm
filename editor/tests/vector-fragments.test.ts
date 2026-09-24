@@ -193,3 +193,19 @@ test('birth-mode presentation accepts two distinct future witnesses without inve
   merge.temporal[0]!.mode = 'bracketed'
   expect(() => renderVectorCompletionPanels(completed, 0, undefined, identities, fragments)).toThrow(/witness frames/)
 })
+
+test('temporal display rejects witness records that omit part of the measured fragment', () => {
+  const data = fixture(), groups = data.frameVectorGroups!, frame = groups.frames[1]!
+  frame.labels[23] = 2
+  frame.observations = frame.observations.map(group => {
+    const cells = [...frame.labels.keys()].filter(cell => frame.labels[cell] === group.id)
+    return { ...group, cells, strongCells: cells.filter(cell => frame.confidence[cell] === 2).length }
+  })
+  const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+  const fragments = mergeFrameVectorFragments(groups, support, identities), merge = fragments.frames[1]!.merges[0]!
+  expect(merge.measuredCells).toEqual([23, 24])
+  merge.reason = 'temporal'
+  merge.temporal = [{ cells: [24], mode: 'bracketed', witnesses: [{ frame: 0, cells: [24] }, { frame: 2, cells: [24] }], commonCells: [24] }]
+  const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+  expect(() => renderVectorCompletionPanels(completed, 1, undefined, identities, fragments)).toThrow(/cover every measured fragment cell/)
+})

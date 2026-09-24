@@ -16,6 +16,7 @@ const validateTemporalEvidence = (merge: FrameVectorFragments['frames'][number][
     const common = new Set(component.commonCells), intersection = [...sets[0]!].filter(cell => sets[1]!.has(cell))
     if (common.size !== component.commonCells.length || common.size !== intersection.length || intersection.some(cell => !common.has(cell)) || common.size < cells.size * .75) throw new Error('Temporal common support must match both original witnesses')
   }
+  if (merge.reason === 'temporal' && covered.size !== measured.size) throw new Error('Temporal evidence must cover every measured fragment cell')
 }
 
 /** Validate derived membership independently before it can replace any display label. */

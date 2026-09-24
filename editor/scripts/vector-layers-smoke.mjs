@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { movieFile } from './generation-smoke.mjs'
 import { assertViewport } from './layout-smoke.mjs'
-import { checkCharacterGroups } from './vector-character-check.mjs'
+import { checkCharacterGroups, checkDistantGroups } from './vector-character-check.mjs'
 
 const defaultClip = '/home/banou/dev/cadence/test/media/5dcf6038-bf63-488a-9ded-3b50893bcd10-market-pan.mp4'
 const clip = process.env.REGIONAL_CLIP ?? defaultClip
@@ -62,7 +62,7 @@ try {
   assert(graph.nodes.some(node => node.type === 'vectorCandidates'))
   const grouping = graph.nodes.find(node => node.type === 'vectorGroups')
   assert(grouping)
-  assert.deepEqual(grouping.params, { tolerance: 0.75, splitSubtleMotion: true })
+  assert.deepEqual(grouping.params, { tolerance: 0.75, splitSubtleMotion: true, splitDistantRegions: true, proximityGap: 4 })
   assert(!graph.nodes.some(node => ['regionalMotion', 'regionalTracks', 'regionalHistory', 'regionalComplete'].includes(node.type)))
   await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Direct Motion' }).last().click())
   assert.equal(await page.locator('.inspect-panel').getAttribute('data-selected'), 'nview')
@@ -91,6 +91,14 @@ try {
     cases: [100, 101, 106, 107].map(frame => ({ frame, expect: frame === 100 || frame === 106 ? 'moving' : 'held',
       minimumSeparate: 10, maximumSeparate: 0,
       backgroundCells: [90, 95, 100, 170, 175, 180, 250, 255, 260],
+      characterCells: [427, 428, 429, 430, 467, 468, 469, 470, 507, 508, 509, 510, 547, 548, 549, 550, 587, 588, 589, 590],
+    })),
+  }) : []
+  const proximityChecks = clip === defaultClip ? await checkDistantGroups({ page, change, output, prefix,
+    cases: [
+      { frame: 94, actorCells: [486, 487, 488, 526, 527, 528, 529, 565, 566, 567, 568, 569, 571, 605, 606, 607, 608, 609, 610, 611, 645, 646, 647, 648, 649, 650, 651, 685, 686, 687, 688, 689, 690, 691, 725, 726, 727, 728, 729, 730, 731, 765, 766, 767, 768, 769, 770, 771, 805, 806, 807, 808, 809, 810, 811] },
+      { frame: 103, actorCells: [525, 526, 527, 565, 566, 567, 568, 569, 605, 606, 607, 608, 609, 645, 646, 647, 648, 649, 685, 686, 687, 688, 689, 725, 726, 727, 728, 729, 765, 766, 767, 768, 769, 805, 806, 807, 808, 809] },
+    ].map(sample => ({ ...sample, minimumActorCells: 20, minimumCharacterCells: 15,
       characterCells: [427, 428, 429, 430, 467, 468, 469, 470, 507, 508, 509, 510, 547, 548, 549, 550, 587, 588, 589, 590],
     })),
   }) : []
@@ -134,7 +142,7 @@ try {
   assert.deepEqual([video.width, video.height, video.r_frame_rate, Number(video.nb_read_frames)], [1920, 1080, '60/1', count])
   const hash = execFileSync('ffmpeg', ['-v', 'error', '-i', resolve(output, `${prefix}-review.mp4`), '-f', 'hash', '-hash', 'sha256', '-'], { encoding: 'utf8' }).trim()
   assert.deepEqual(errors, [])
-  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, errors }, null, 2) + '\n')
+  await writeFile(resolve(output, `${prefix}-browser.json`), JSON.stringify({ status: 'passed', clip, analysisMs, renderMs, defaultWorkers: 4, video, hash, records, characterChecks, proximityChecks, errors }, null, 2) + '\n')
   console.log(`PASS direct prefab: desktop/mobile, 4 full-size ports, ${count} video frames; ${hash}`)
 } finally {
   await Promise.race([page?.close().catch(() => {}), pause(2000)])

@@ -1048,6 +1048,18 @@ dominant-background pixel exactly. Source, candidate and confidence panels must
 also remain byte-identical across that toggle.
 Sheets and the report reuse `diagnostics/` with stable filenames.
 
+The 2026-09-24 foreground-proximity run passes both source-frame 94/103 controls:
+left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
+dominant-background display pixels respectively are unchanged; the other three
+ports are byte-identical. Moving 100/106 still separate 20/20 sampled character
+cells, while held 101/107 separate 0/20. The regenerated stable movie contains
+293 frames at 1920x1080/60fps; decoded SHA-256 is
+`7231499d89d05a9fa491338d5a43a691c6a55353d505bac8d0422233eb00db07`.
+Single-run analysis/render times were 5.06/8.80 seconds. All 191 editor unit tests,
+typechecks, lint/build and the dedicated prefab browser check pass. The broader
+`scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
+remains unresolved; that full suite was not rerun for this change.
+
 This is an experiment, not a replacement for Whole-scene regional analysis.
 The earlier history-filtered version assigned only 33.6% of native market cells
 despite 80.1% raw candidate coverage. Those historical numbers describe the

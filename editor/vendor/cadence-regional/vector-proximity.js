@@ -44,7 +44,7 @@ export function spatialIslands(cells, grid, gap) {
             for (let j = Math.max(0, y - range); j <= Math.min(grid.rows - 1, y + range); j++) {
                 for (let i = Math.max(0, x - range); i <= Math.min(grid.columns - 1, x + range); i++) {
                     const next = j * grid.columns + i, other = owners[next];
-                    if (other <= id || root(id) === root(other) || distanceSquared(grid.cells[index], grid.cells[next]) > limit)
+                    if (other <= id || root(id) === root(other) || distanceSquared(grid.cells[index], grid.cells[next]) > limit + 1e-9)
                         continue;
                     roots[root(other)] = root(id);
                 }
@@ -59,7 +59,8 @@ export function spatialIslands(cells, grid, gap) {
     }
     if (merged.size < 2)
         return [cells];
-    const islands = [...merged.values()].sort((a, b) => Math.min(...a) - Math.min(...b));
+    const first = (cells) => cells.reduce((lowest, index) => Math.min(lowest, index), Infinity);
+    const islands = [...merged.values()].sort((a, b) => first(a) - first(b));
     const frozen = islands.map(island => [...island]);
     // Attach weak/tiny fragments to frozen support, never to another attachment.
     // This preserves candidates without a trail of noise joining distant actors.

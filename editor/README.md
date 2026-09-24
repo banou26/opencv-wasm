@@ -1146,6 +1146,20 @@ the supplied genuine foreground controls. It restores verification enabled
 and the raw inspector selected. Stable `${prefix}-border-016-{off,on}.png` sheets
 and `${prefix}-border-browser.json` preserve the comparison and per-cell
 correction summaries with original/replacement velocities and observed errors.
+Both native PNG sheets and summaries are saved before the ownership assertions;
+failed cases retain their evidence with `status: failed` and an error message.
+The failure still stops the full smoke run before movie publication.
+
+For exact browser/native decoder comparisons, run
+`SNAPSHOT_VECTOR_PAIRS=52 WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland node scripts/regional-browser-snapshot.mjs`.
+This test-only path uses the same full-scene decode and direct-motion kernels,
+then exports the selected pairs' raw/verified grids, grouping, corrections,
+settings and source/runtime hashes to `diagnostics/vector-edge-browser.json`.
+Exact 320x180 BGR8 analysis pixels are separate reusable
+`vector-edge-browser-052.bgr`/`vector-edge-browser-053.bgr` files, each with a
+SHA-256 recorded in the report. `SNAPSHOT_VECTOR_PAIRS` accepts comma-separated
+pair indices; `SNAPSHOT_OUTPUT` changes the report and binary filename prefix.
+The existing regional snapshot mode remains unchanged when this option is absent.
 
 Historical audit of the reported output-frame 101/117/131 flashes (source
 40/46/52 at 60fps): the approved pre-completion editor `8c439ab` and first

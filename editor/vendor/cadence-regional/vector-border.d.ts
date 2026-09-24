@@ -25,9 +25,13 @@ export type VectorBorderCorrection = {
     };
     footprint: VectorBorderScore;
     context: VectorBorderScore;
+    /** Observed-only low-pass evidence, used only after raw relative/context gates pass. */
+    filterRadius?: 2;
+    rawFootprint?: VectorBorderScore;
+    rawContext?: VectorBorderScore;
 };
 /**
- * Check border-only velocity modes against a well-supported interior motion.
+ * Check border-only components against a well-supported interior motion.
  * Only genuinely observed pixels may overturn a candidate. Raw flow, the input
  * grid and coverage/confidence stay intact; explicit corrections describe the
  * derived grid. This is motion refinement, not a layer-ownership measurement.

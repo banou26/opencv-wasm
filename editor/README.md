@@ -222,13 +222,24 @@ and backward Farneback flow, a fixed relative corner-strength threshold and a
 round-trip check, followed by cell medians. It retains mixed-cell candidates
 instead of rejecting their medians. It does not add the older whole-scene
 pipeline's grain-dependent texture threshold or border exclusion margin.
-**Verify border vectors**, enabled by default, then compares border-only motion
-proposals against the dominant interior-supported translation using genuinely
+**Verify border vectors**, enabled by default, then compares disconnected
+eight-connected border components of each motion mode against the dominant
+interior-supported translation using genuinely
 observed pixels in both the cell footprint and a larger context. A replacement
 needs substantial error improvement in both, cannot discard pixels that the
-original candidate could see, and never changes an interior cell or a mode
-with even one coherent interior witness. Raw dense flow remains retained; explicit
+original candidate could see, and never changes an interior cell or a component
+with even one coherent interior witness. A distant actor sharing the same
+velocity does not validate an unrelated edge patch. Raw dense flow remains retained; explicit
 per-pair corrections record original/replacement vectors and both scores.
+A sharp clipped outline can pass the raw relative-improvement and context
+checks but exceed the raw footprint's absolute error cap. Only then may a fixed
+float 5x5 binomial descriptor supply additional evidence. All filter taps must
+be genuinely observed, with no reflected padding; the raw visibility guard
+still applies before this fallback. The inspector names the descriptor and
+reports both raw and filtered errors and comparison counts, including their
+different observation support. This filters analysis evidence only, never the
+source/display pixels. It cannot override raw evidence favoring the original
+candidate and does not change the filling algorithm.
 The proposed batch must preserve every uncorrected cell's group partition under
 both coarse grouping and the approved default full grouping, allowing foreground
 IDs to renumber but keeping dominant background ID zero. If either check fails,
@@ -241,6 +252,11 @@ filter, silhouette measurement or guarantee of ownership. Default cells are
 8 analysis pixels; their size, texture cutoff, flow settings and grouping
 tolerance remain editable. Existing saved candidate nodes gain the enabled
 default; explicit disabled values and parameter wires remain intact.
+Verification is upstream of grouping. **Fill enclosed holes** and **Extend to
+edges** operate only afterward on missing-vector cells: switching either off
+does not bypass border verification, change the raw groups, or invalidate the
+cached candidate/group stages. To inspect original unverified vectors, use the
+separate **Verify border vectors** switch.
 
 Frame Velocity Groups clusters every available candidate by its measured dx/dy
 within each frame. **Maximum velocity radius** defaults to 0.75 analysis pixels

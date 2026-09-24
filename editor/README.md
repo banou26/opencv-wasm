@@ -1184,7 +1184,7 @@ node defaults, source decoding/resizing and evaluation timing. The raw renderer
 only exported its existing color helper; the final prefab changed its lower
 panels from raw groups/confidence to completed support/provenance. These facts
 come from the actual revision diff, not solely a current immutability test.
-The current browser probe reproduces the left-edge colored cells in raw groups
+That historical browser probe reproduced the left-edge colored cells in raw groups
 at all three source frames, with zero border-vector corrections. Completion
 adds no non-background cells at 40/52 and one at 46 (cell 787); all measured
 pixels and labels match exactly. The six immediate neighboring source frames
@@ -1192,25 +1192,30 @@ are single-background results. See `diagnostics/vector-edge-flash-browser.json`
 and the native raw/completed sheets for frames 039-041, 045-047 and 051-053.
 This establishes where the flashes enter the inspected default pipeline; it
 does not establish that arbitrary saved graphs or overwritten older movie files
-had identical settings. These reported artifacts remain an open defect.
+had identical settings. The subsequent component-local border verifier and frozen
+group assignments corrected those reported edge cells. The current browser check
+covers source 40/46/52 alongside 16/17/19/72/100/106 and requires every uncorrected
+cell to retain its exact group ID, preserving real actor controls.
 
-The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:
+The 2026-09-24 final edges-first completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
 dominant-background display pixels respectively are unchanged; the other three
 ports are byte-identical. Moving 100/106 still separate 20/20 sampled character
 cells, while held 101/107 separate 0/20. The regenerated stable movie contains
 293 frames at 1920x1080/60fps; decoded SHA-256 is
-`135f15ac3416756e825d90f856ee7745e3eedecbf2048baca0b968217894fe1a`.
-Single-run analysis/render times were 5.18/10.57 seconds. All 198 editor unit tests,
+`be94acbe9307105fc294873b56fb02e95977072f4b6a688002b55f89cee8b759`.
+Single-run analysis/render times were 5.15/10.39 seconds. All 205 editor unit tests,
 typechecks, lint/build and the dedicated prefab browser check pass. The broader
 `scripts/smoke.mjs` output-player backward-drag timeout from the preceding run
 remains unresolved; that full suite was not rerun for this change.
 
-The earlier bounded-edge completion check decoded native PNGs at source 0/20/94/103
-(before the full-edge, edges-first rule above).
+The current full-edge, edges-first completion check decodes native PNGs at
+source 0/20/94/103 and independently reconstructs all four original edge-owner
+sets to verify unanimous boundary fills and conflicting-corner abstention.
 All measured pixels and IDs are preserved exactly. Source 0/20 have no remaining
-unknown cells, including winding edge pockets. Source 94/103 add 7/6 enclosed cells
-and 62 edge cells each, while keeping 144/138 ambiguous cells unknown. With both
+unknown cells, including winding edge pockets. Source 94/103 add 19/8 enclosed cells
+and 83/63 edge cells respectively, while keeping 111/135 ambiguous cells unknown.
+The preceding rule left 144/138 unknown on those same inputs. With both
 fill switches disabled, completed support equals measured support byte-for-byte.
 The separate source/measured/completed/provenance ports pass fullscreen checks,
 and the final movie now shows completed support and provenance below the source

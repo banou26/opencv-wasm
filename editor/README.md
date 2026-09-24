@@ -998,6 +998,23 @@ exports and protection against outside edits.
 
 ## Code layout
 
+`node scripts/vector-layers-smoke.mjs` exercises the separate Direct motion
+layers prefab on the current market upload: independent fullscreen ports,
+desktop/mobile canvas checks, final-frame behavior, four-worker default and a
+complete 1920x1080 diagnostic MP4. It reuses the adjacent Cadence repository's
+existing `test/out/layers-market-pan/diagnostics/` directory; override the clip,
+directory or filenames with `REGIONAL_CLIP`, `VECTOR_OUTPUT` and `VECTOR_PREFIX`.
+On this workstation run browser tests under the Wayland graphics session
+(`WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland`).
+
+This is an experiment, not a replacement for Whole-scene regional analysis.
+The six-shot Cadence audit finds more raw candidate vectors, but the subsequent
+scene grouping still fragments motion and leaves many candidates ambiguous.
+The native market shot has 80.1% candidate-cell coverage but only 33.6% assigned
+cells, versus 39.8% assigned by the strict path before completion. The browser's
+market upload is a different encode, so its counts differ. Colored cells remain
+motion hypotheses, not extracted layers. Existing prefabs and previews are kept.
+
 - `src/engine/`: browser-independent graph validation, typed definitions, custom
   node expansion, time demands, search, scheduling and owned LRU results.
 - `src/video/`: indexed MP4/WebCodecs input and incremental H.264/MP4 output.

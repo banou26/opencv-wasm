@@ -341,7 +341,8 @@ matching score and dormant IDs. Raw **Inspect Direct Motion** and **Inspect Dire
 Completion** views remain available and do not apply identity colors.
 
 Reopen the **Direct motion layers** prefab to get the new tracking nodes; existing
-saved graphs are not silently rewired. Validation on 2026-09-25 passes 215 unit
+saved graphs are not silently rewired. Identity-only validation on 2026-09-25,
+before fragment refinement, passed 215 unit
 tests, typecheck, lint, build and the dedicated desktop/mobile browser smoke.
 Seven source pairs (94/100/101/103/106/107/109) retain the lone actor's track 5 and
 the left group's track 2 through local-ID changes and held gaps. Every measured
@@ -350,9 +351,11 @@ source, provenance and background stay byte-identical. The same run retains all
 existing grouping, border-refinement and support-completion browser controls.
 
 The stable `diagnostics/vector-market-review.mp4` in the adjacent Cadence repo
-now displays tracked completed colors in its lower-left panel (293 frames,
+displayed tracked completed colors in its lower-left panel (293 frames,
 1920x1080/60fps). It is a diagnostic movie, not an interpolated source result.
 Decoded SHA-256: `084e7a0e8ad3869136981f8d8d44aa5d6cf9f2b59e2b99fe5e99f23d81844eb5`.
+This is the historical identity-only hash; the reusable movie path is overwritten
+by the latest verified pipeline, including fragment refinement below.
 Details are in `vector-market-browser.json`, `vector-market-identity-browser.json`
 and the paired `vector-market-identity-*-{raw,tracked}.png` sheets. Separate raw
 motion fragments can still receive separate tracks; this does not recover held
@@ -1218,6 +1221,13 @@ with a four-times-area cap and no merge chains. These are conservative membershi
 hypotheses, not proof that a small independently animated object is noise and not
 pixel-accurate silhouettes.
 
+The initial partial-enclosure rule was rejected after visual review of the
+long-pan test scene: nine raw foreground-labeled cells beside a tree actually
+fit background motion better. Its 9:7 and 9:5 host-to-dominant boundary ratios
+now fail the 2:1 guard. The Cadence six-scene audit explicitly protects those
+cells while retaining the requested market-pan merges. Original group-zero
+preservation alone is not a semantic background-ownership guarantee.
+
 `checkFragmentMerges({ page, change, output, prefix, cases })` toggles this stage
 off/on in the same browser session. Cases take `{ frame, minimumMerged?,
 maximumMerged?, protectedCells?, expected?: [{ cells, parentCell }] }`. Native PNGs
@@ -1227,6 +1237,21 @@ record and pink provenance; fixed fragment controls must adopt the independently
 sampled parent. The helper writes `${prefix}-fragment-{frame}-{original,merged}.png`
 and `${prefix}-fragment-browser.json` in the existing diagnostics directory,
 preserves failing captures, and restores the enabled tracked view.
+
+Verified on 2026-09-25 local: 220 tests, typecheck, lint, build and the complete
+dedicated desktop/mobile browser smoke pass. Source pairs 85/115 merge 16/1
+cells into the enclosing pink/purple character groups; independent/held
+controls 109/101 merge zero. Each checks 518,400 completed-support pixels,
+unchanged source/measurement bytes and all unlisted memberships. The usual
+grouping, character, border, completion and identity controls also pass.
+The refreshed `diagnostics/vector-market-review.mp4` in the adjacent Cadence
+repo has 293 frames at 1920x1080/60fps. Its lower-left panel uses the derived
+memberships; the decoded SHA-256 is
+`0b4f9224a8176fe978eb8b12950ede753233bffb5bbd647de9ca60ef0a978a01`.
+The movie remains a source-clock diagnostic, not an interpolated anime result.
+Decoded checks at output frames 213/236/273/288 are saved in
+`diagnostics/vector-fragment-video-sheet.png`. Reopen **Direct motion layers**
+to include **Merge Transient Fragments** in an existing editor session.
 
 The exported `checkSupportCompletion({ page, change, output, prefix, cases })`
 helper takes cases such as `{ frame: 20 }`, selects the completion inspector and

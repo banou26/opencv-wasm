@@ -360,6 +360,20 @@ test('direct analysis caches across scrub order and display edits; velocity edit
     } finally { completion.release() }
     expect(calls.get('vectorComplete')).toBe(2)
     for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
+    const beforeEdges = await evaluate('nview', 2, 'out:frame:groups')
+    let measuredPixels: Float32Array
+    try { measuredPixels = image(beforeEdges.value).mat.data32F.slice() } finally { beforeEdges.release() }
+    doc.nodes.find(node => node.id === 'ncomplete')!.params.fillEdges = false
+    doc.nodes.find(node => node.id === 'ncomplete')!.params.edgeReach = 0
+    const edgeCompletion = await evaluate('ncompletionview', 2, 'out:string:summary')
+    try {
+      expect(edgeCompletion.value.kind).toBe('string')
+      if (edgeCompletion.value.kind === 'string') expect(edgeCompletion.value.value).toContain('edge extension: disabled; edge reach 0 cells')
+    } finally { edgeCompletion.release() }
+    const afterEdges = await evaluate('nview', 2, 'out:frame:groups')
+    try { expect(image(afterEdges.value).mat.data32F).toEqual(measuredPixels) } finally { afterEdges.release() }
+    expect(calls.get('vectorComplete')).toBe(3)
+    for (const type of ['sceneRange', 'vectorCandidates', 'vectorGroups']) expect(calls.get(type)).toBe(1)
     doc.nodes.find(node => node.id === 'nview')!.params.gain = 5
     const display = await evaluate('nview', 2, 'out:frame:candidates'); display.release()
     expect(calls.get('vectorCandidates')).toBe(1); expect(calls.get('vectorGroups')).toBe(1)

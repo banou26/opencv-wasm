@@ -1131,6 +1131,23 @@ and the raw inspector selected. Stable `${prefix}-border-016-{off,on}.png` sheet
 and `${prefix}-border-browser.json` preserve the comparison and per-cell
 correction summaries with original/replacement velocities and observed errors.
 
+Historical audit of the reported output-frame 101/117/131 flashes (source
+40/46/52 at 60fps): the approved pre-completion editor `8c439ab` and first
+completion commit `bc7b3f9` use identical estimator/grouping modules, existing
+node defaults, source decoding/resizing and evaluation timing. The raw renderer
+only exported its existing color helper; the final prefab changed its lower
+panels from raw groups/confidence to completed support/provenance. These facts
+come from the actual revision diff, not solely a current immutability test.
+The current browser probe reproduces the left-edge colored cells in raw groups
+at all three source frames, with zero border-vector corrections. Completion
+adds no non-background cells at 40/52 and one at 46 (cell 787); all measured
+pixels and labels match exactly. The six immediate neighboring source frames
+are single-background results. See `diagnostics/vector-edge-flash-browser.json`
+and the native raw/completed sheets for frames 039-041, 045-047 and 051-053.
+This establishes where the flashes enter the inspected default pipeline; it
+does not establish that arbitrary saved graphs or overwritten older movie files
+had identical settings. These reported artifacts remain an open defect.
+
 The 2026-09-24 final support-completion run passes both source-frame 94/103 proximity controls:
 left actors receive ID 1 and the lone character ID 2. All 339,552 and 354,816
 dominant-background display pixels respectively are unchanged; the other three

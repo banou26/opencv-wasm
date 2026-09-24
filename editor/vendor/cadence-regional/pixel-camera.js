@@ -114,13 +114,15 @@ function robustScale(values, count) {
  * Inverse-compositional Gauss-Newton on one level. Pixels far from the fitted motion get zero weight,
  * so a second layer lowers the sample count rather than pulling the estimate toward itself.
  */
-function refineLevel(a, b, start, maxIterations, maxSamples) {
+function refineLevel(a, b, start, maxIterations, maxSamples, mask) {
     const { width, height } = a, margin = 3;
     const stride = Math.max(1, Math.floor(Math.sqrt(width * height / maxSamples)));
     const points = [];
     for (let y = margin; y < height - margin; y += stride)
         for (let x = margin; x < width - margin; x += stride) {
             const p = y * width + x;
+            if (mask && mask.data[p] < .5)
+                continue;
             const gx = (a.data[p + 1] - a.data[p - 1]) / 2, gy = (a.data[p + width] - a.data[p - width]) / 2;
             if (gx * gx + gy * gy > 1e-6)
                 points.push(x, y);
@@ -181,21 +183,107 @@ export function refineTranslation(a, b, width, height, start, options = {}) {
     const maxIterations = options.maxIterations ?? 30, maxSamples = options.maxSamples ?? 300_000, coarseSide = options.coarseSide ?? 240;
     const levels = [];
     let w = width, h = height;
-    levels.push([downsample({ width, height, data: a }, w, h, .8), downsample({ width, height, data: b }, w, h, .8)]);
+    const fullMask = options.mask ? { width, height, data: Float32Array.from(options.mask, v => v ? 1 : 0) } : undefined;
+    levels.push([downsample({ width, height, data: a }, w, h, .8), downsample({ width, height, data: b }, w, h, .8), fullMask]);
     while (Math.max(w, h) / 2 >= coarseSide) {
         w = Math.round(w / 2);
         h = Math.round(h / 2);
-        const [pa, pb] = levels[levels.length - 1];
-        levels.push([downsample(pa, w, h, .8), downsample(pb, w, h, .8)]);
+        const [pa, pb, pm] = levels[levels.length - 1];
+        levels.push([downsample(pa, w, h, .8), downsample(pb, w, h, .8), pm && downsample(pm, w, h, 0)]);
     }
     let fit = { dx: start.dx * levels[levels.length - 1][0].width / width, dy: start.dy * levels[levels.length - 1][0].height / height, residual: NaN, samples: 0, iterations: 0 };
     for (let level = levels.length - 1; level >= 0; level--) {
-        const [pa, pb] = levels[level];
+        const [pa, pb, pm] = levels[level];
         if (level < levels.length - 1) {
             const [previous] = levels[level + 1];
             fit = { ...fit, dx: fit.dx * pa.width / previous.width, dy: fit.dy * pa.height / previous.height };
         }
-        fit = refineLevel(pa, pb, fit, maxIterations, maxSamples);
+        fit = refineLevel(pa, pb, fit, maxIterations, maxSamples, pm);
     }
     return fit;
+}
+/**
+ * Distinct rigid motions of one pair, largest block support first. Phase correlation runs per
+ * overlapping block of a reduced copy; blocks within `radius` reduced pixels of a cluster median join
+ * it, and each cluster with `minimumBlocks` is refined at full resolution on its own blocks only, so a
+ * sliding background layer and a static one are fitted separately instead of averaged.
+ */
+export function candidateMotions(a, b, width, height, options = {}) {
+    const env_3 = { stack: [], error: void 0, hasError: false };
+    try {
+        const maxSide = options.maxSide ?? 640, radius = options.radius ?? .75, minimumBlocks = options.minimumBlocks ?? 3;
+        const scale = Math.min(1, maxSide / Math.max(width, height));
+        const w = Math.max(16, Math.round(width * scale)), h = Math.max(16, Math.round(height * scale));
+        const block = Math.max(8, Math.min(options.block ?? 64, Math.floor(Math.min(w, h) / 4)));
+        const sa = downsample({ width, height, data: a }, w, h, 0), sb = downsample({ width, height, data: b }, w, h, 0);
+        const size = block * 2, found = [];
+        const hann = __addDisposableResource(env_3, new Mat(), false);
+        createHanningWindow(hann, { width: size, height: size }, CV_32F);
+        const patch = (plane, x0, y0) => {
+            const out = new Float32Array(size * size);
+            for (let y = 0; y < size; y++)
+                out.set(plane.data.subarray((y0 + y) * w + x0, (y0 + y) * w + x0 + size), y * size);
+            return out;
+        };
+        for (let y0 = 0; y0 + size <= h; y0 += block)
+            for (let x0 = 0; x0 + size <= w; x0 += block) {
+                const env_4 = { stack: [], error: void 0, hasError: false };
+                try {
+                    const pa = patch(sa, x0, y0);
+                    let mean = 0, square = 0;
+                    for (const v of pa) {
+                        mean += v;
+                        square += v * v;
+                    }
+                    mean /= pa.length;
+                    if (square / pa.length - mean * mean < 9)
+                        continue;
+                    const ma = __addDisposableResource(env_4, matFromArray(size, size, CV_32FC1, pa), false), mb = __addDisposableResource(env_4, matFromArray(size, size, CV_32FC1, patch(sb, x0, y0)), false);
+                    const phase = phaseCorrelate(ma, mb, hann);
+                    if (!(phase.response >= .2) || Math.abs(phase.value.x) > block * .45 || Math.abs(phase.value.y) > block * .45)
+                        continue;
+                    found.push({ x: x0, y: y0, dx: phase.value.x, dy: phase.value.y });
+                }
+                catch (e_3) {
+                    env_4.error = e_3;
+                    env_4.hasError = true;
+                }
+                finally {
+                    __disposeResources(env_4);
+                }
+            }
+        const clusters = [];
+        const middle = (values) => { const v = [...values].sort((p, q) => p - q); return v[v.length >> 1]; };
+        for (const entry of found) {
+            const home = clusters.find(c => Math.hypot(c.dx - entry.dx, c.dy - entry.dy) <= radius);
+            if (home) {
+                home.members.push(entry);
+                home.dx = middle(home.members.map(m => m.dx));
+                home.dy = middle(home.members.map(m => m.dy));
+            }
+            else
+                clusters.push({ members: [entry], dx: entry.dx, dy: entry.dy });
+        }
+        const out = [];
+        for (const cluster of clusters.filter(c => c.members.length >= minimumBlocks).sort((p, q) => q.members.length - p.members.length)) {
+            const mask = new Uint8Array(width * height);
+            for (const m of cluster.members) {
+                const x0 = Math.floor(m.x / scale), y0 = Math.floor(m.y / scale), x1 = Math.min(width, Math.ceil((m.x + size) / scale)), y1 = Math.min(height, Math.ceil((m.y + size) / scale));
+                for (let y = y0; y < y1; y++)
+                    mask.fill(1, y * width + x0, y * width + x1);
+            }
+            const fit = refineTranslation(a, b, width, height, { dx: cluster.dx / scale, dy: cluster.dy / scale }, { mask });
+            if (out.some(o => Math.hypot(o.dx - fit.dx, o.dy - fit.dy) < .15))
+                continue;
+            out.push({ ...fit, blocks: cluster.members.length });
+        }
+        return out;
+    }
+    catch (e_4) {
+        env_3.error = e_4;
+        env_3.hasError = true;
+    }
+    finally {
+        __disposeResources(env_3);
+    }
 }

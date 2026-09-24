@@ -58,6 +58,8 @@ export const INK_HERE = 2;
 /** The counterpart is darker: ink is present in the other frame. */
 export const INK_THERE = 4;
 export const OBSERVED = 8;
+/** Unchanged only under one of the other motions: the pixel belongs to another rigid layer. */
+export const OTHER_LAYER = 16;
 function median(values, count) {
     const histogram = new Uint32Array(4097);
     for (let i = 0; i < count; i++)
@@ -122,37 +124,58 @@ export function measurePairChange(a, b, d, options = {}) {
         || !Number.isInteger(minimumNeighbors) || minimumNeighbors < 1 || minimumNeighbors > 9)
         throw new RangeError('Invalid pair change options');
     const { width, height } = a, size = width * height;
-    const lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
+    const x0 = Math.max(0, Math.ceil(1 - d.dx + reach)), x1 = Math.min(width - 1, Math.floor(width - 3 - d.dx - reach));
+    const y0 = Math.max(0, Math.ceil(1 - d.dy + reach)), y1 = Math.min(height - 1, Math.floor(height - 3 - d.dy - reach));
+    const best = new Float32Array(size).fill(Infinity), camera = new Float32Array(size).fill(Infinity);
     let exact;
     {
         const env_3 = { stack: [], error: void 0, hasError: false };
         try {
             const source = __addDisposableResource(env_3, matFromArray(height, width, CV_32FC3, b.data), false);
-            for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
-                const env_4 = { stack: [], error: void 0, hasError: false };
-                try {
-                    if (reach === 0 && (sx || sy))
-                        continue;
-                    const transform = __addDisposableResource(env_4, matFromArray(2, 3, CV_64FC1, [1, 0, d.dx + sx, 0, 1, d.dy + sy]), false), warped = __addDisposableResource(env_4, new Mat(), false);
-                    warpAffine(source, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
-                    const values = warped.data32F;
-                    if (!exact)
-                        exact = values.slice();
-                    for (let i = 0; i < values.length; i++) {
-                        const v = values[i];
-                        if (v < lo[i])
-                            lo[i] = v;
-                        if (v > hi[i])
-                            hi[i] = v;
+            for (const [k, motion] of [d, ...(options.otherMotions ?? [])].entries()) {
+                const lo = new Float32Array(size * 3).fill(Infinity), hi = new Float32Array(size * 3).fill(-Infinity);
+                for (const [sx, sy] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]]) {
+                    const env_4 = { stack: [], error: void 0, hasError: false };
+                    try {
+                        if (reach === 0 && (sx || sy))
+                            continue;
+                        const transform = __addDisposableResource(env_4, matFromArray(2, 3, CV_64FC1, [1, 0, motion.dx + sx, 0, 1, motion.dy + sy]), false), warped = __addDisposableResource(env_4, new Mat(), false);
+                        warpAffine(source, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
+                        const values = warped.data32F;
+                        if (k === 0 && !exact)
+                            exact = values.slice();
+                        for (let i = 0; i < values.length; i++) {
+                            const v = values[i];
+                            if (v < lo[i])
+                                lo[i] = v;
+                            if (v > hi[i])
+                                hi[i] = v;
+                        }
+                    }
+                    catch (e_3) {
+                        env_4.error = e_3;
+                        env_4.hasError = true;
+                    }
+                    finally {
+                        __disposeResources(env_4);
                     }
                 }
-                catch (e_3) {
-                    env_4.error = e_3;
-                    env_4.hasError = true;
-                }
-                finally {
-                    __disposeResources(env_4);
-                }
+                const mx0 = Math.ceil(1 - motion.dx + reach), mx1 = Math.floor(width - 3 - motion.dx - reach);
+                const my0 = Math.ceil(1 - motion.dy + reach), my1 = Math.floor(height - 3 - motion.dy - reach);
+                for (let y = Math.max(y0, my0); y <= Math.min(y1, my1); y++)
+                    for (let x = Math.max(x0, mx0); x <= Math.min(x1, mx1); x++) {
+                        const p = y * width + x, q = p * 3;
+                        let error = 0;
+                        for (let c = 0; c < 3; c++) {
+                            const v = a.data[q + c], e = v < lo[q + c] ? lo[q + c] - v : v > hi[q + c] ? v - hi[q + c] : 0;
+                            if (e > error)
+                                error = e;
+                        }
+                        if (error < best[p])
+                            best[p] = error;
+                        if (k === 0)
+                            camera[p] = error;
+                    }
             }
         }
         catch (e_4) {
@@ -163,8 +186,6 @@ export function measurePairChange(a, b, d, options = {}) {
             __disposeResources(env_3);
         }
     }
-    const x0 = Math.max(0, Math.ceil(1 - d.dx + reach)), x1 = Math.min(width - 1, Math.floor(width - 3 - d.dx - reach));
-    const y0 = Math.max(0, Math.ceil(1 - d.dy + reach)), y1 = Math.min(height - 1, Math.floor(height - 3 - d.dy - reach));
     const lumaA = pixelLuma(a), gradient = gradientMagnitude(lumaA, width, height);
     const lumaB = pixelLuma({ width, height, data: exact });
     const meanA = boxMean(lumaA, width, height), meanB = boxMean(lumaB, width, height);
@@ -184,16 +205,11 @@ export function measurePairChange(a, b, d, options = {}) {
     let observed = 0;
     for (let y = y0; y <= y1; y++)
         for (let x = x0; x <= x1; x++) {
-            const p = y * width + x, q = p * 3;
-            flags[p] = OBSERVED;
+            const p = y * width + x;
+            const limit = base + slope * gradient[p];
+            flags[p] = OBSERVED | (camera[p] > limit && best[p] <= limit ? OTHER_LAYER : 0);
             observed++;
-            let error = 0;
-            for (let c = 0; c < 3; c++) {
-                const v = a.data[q + c], e = v < lo[q + c] ? lo[q + c] - v : v > hi[q + c] ? v - hi[q + c] : 0;
-                if (e > error)
-                    error = e;
-            }
-            raw[p] = Number(error > base + slope * gradient[p]);
+            raw[p] = Number(best[p] > limit);
         }
     let changed = 0;
     for (let y = y0; y <= y1; y++)

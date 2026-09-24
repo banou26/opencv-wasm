@@ -43,9 +43,13 @@ export declare function frameOffset(camera: CameraPath, atlas: WorldAtlas, frame
  * frame, `backward` the next frame against `pair`; each keeps its own frame's pixel grid.
  */
 export declare function pairEvidence(camera: CameraPath, atlas: WorldAtlas, pair: number, forward: PairChange, backward: PairChange, dilation?: number, inkDilation?: number): PairEvidence;
+/** `erode` trims the filled outline; 0 keeps every antialiased edge pixel, which the carve can then trim against the plate. */
 export type SilhouetteOptions = {
     closeRadius?: number;
     minimumArea?: number;
+    erode?: number;
+    /** 'both' requires ink to arrive at the last change and leave at the next when both exist; 'either' accepts one. */
+    inkRule?: 'either' | 'both';
 };
 /**
  * Pixels of one frame that belong to a drawing held at that frame. A pixel is ink of the held drawing
@@ -66,6 +70,6 @@ export type DrawingSilhouette = {
         box: Box;
     }[];
 };
-export declare function drawingInk(evidence: DrawingEvidence, frame: number): Uint8Array;
+export declare function drawingInk(evidence: DrawingEvidence, frame: number, rule?: 'either' | 'both'): Uint8Array;
 export declare function fillEnclosed(mask: Uint8Array, width: number, height: number): Uint8Array;
 export declare function drawingSilhouette(evidence: DrawingEvidence, frame: number, options?: SilhouetteOptions): DrawingSilhouette;

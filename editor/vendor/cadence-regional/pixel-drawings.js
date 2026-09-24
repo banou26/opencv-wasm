@@ -135,7 +135,7 @@ export function pairEvidence(camera, atlas, pair, forward, backward, dilation = 
     }
     return { indices: indices.slice(0, k), flags: flags.slice(0, k) };
 }
-export function drawingInk(evidence, frame) {
+export function drawingInk(evidence, frame, rule = 'either') {
     const { camera, atlas, pairs } = evidence, { width, height } = camera;
     if (!Number.isInteger(frame) || frame < 0 || frame > pairs.length)
         throw new RangeError('Frame is outside the evidence');
@@ -155,8 +155,10 @@ export function drawingInk(evidence, frame) {
     for (let pair = pairs.length - 1; pair >= frame; pair--)
         project(next, pairs[pair]);
     const ink = new Uint8Array(width * height);
-    for (let p = 0; p < ink.length; p++)
-        ink[p] = (last[p] & ARRIVE) | (next[p] & LEAVE);
+    for (let p = 0; p < ink.length; p++) {
+        const arrived = last[p] & ARRIVE, leaves = next[p] & LEAVE;
+        ink[p] = rule === 'both' && last[p] & CHANGE && next[p] & CHANGE ? (arrived && leaves ? arrived | leaves : 0) : arrived | leaves;
+    }
     return ink;
 }
 export function fillEnclosed(mask, width, height) {
@@ -191,10 +193,11 @@ export function drawingSilhouette(evidence, frame, options = {}) {
     const env_2 = { stack: [], error: void 0, hasError: false };
     try {
         const closeRadius = options.closeRadius ?? 6, minimumArea = options.minimumArea ?? 800;
-        if (!Number.isInteger(closeRadius) || closeRadius < 0 || closeRadius > 32 || !Number.isInteger(minimumArea) || minimumArea < 1)
+        if (!Number.isInteger(closeRadius) || closeRadius < 0 || closeRadius > 32 || !Number.isInteger(minimumArea) || minimumArea < 1
+            || !Number.isInteger(options.erode ?? 0) || (options.erode ?? 0) < 0 || (options.erode ?? 0) > 8)
             throw new RangeError('Invalid silhouette options');
         const { width, height } = evidence.camera;
-        const ink = drawingInk(evidence, frame);
+        const ink = drawingInk(evidence, frame, options.inkRule);
         const binary = new Uint8Array(ink.length);
         for (let p = 0; p < ink.length; p++)
             binary[p] = ink[p] ? 255 : 0;
@@ -216,14 +219,12 @@ export function drawingSilhouette(evidence, frame, options = {}) {
         else
             source.copyTo(closed);
         const filled = fillEnclosed(closed.data.map(v => Number(v !== 0)), width, height);
-        const solid = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, filled), false), labels = __addDisposableResource(env_2, new Mat(), false), stats = __addDisposableResource(env_2, new Mat(), false), centroids = __addDisposableResource(env_2, new Mat()
-        // Lent ink widened every line outward by the ink dilation; take it back from the filled outline.
-        , false);
-        // Lent ink widened every line outward by the ink dilation; take it back from the filled outline.
-        if (evidence.inkDilation > 0) {
+        const solid = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, filled), false), labels = __addDisposableResource(env_2, new Mat(), false), stats = __addDisposableResource(env_2, new Mat(), false), centroids = __addDisposableResource(env_2, new Mat(), false);
+        const shrink = options.erode ?? 0;
+        if (shrink > 0) {
             const env_4 = { stack: [], error: void 0, hasError: false };
             try {
-                const kernel = __addDisposableResource(env_4, getStructuringElement(MORPH_ELLIPSE, { width: evidence.inkDilation * 2 + 1, height: evidence.inkDilation * 2 + 1 }), false);
+                const kernel = __addDisposableResource(env_4, getStructuringElement(MORPH_ELLIPSE, { width: shrink * 2 + 1, height: shrink * 2 + 1 }), false);
                 erode(solid, solid, kernel);
             }
             catch (e_3) {

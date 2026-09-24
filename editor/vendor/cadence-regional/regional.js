@@ -20,3 +20,4 @@ export * from "./pixel-drawings.js";
 export * from "./pixel-plate.js";
 export * from "./pixel-layers.js";
 export * from "./pixel-frames.js";
+export * from "./pixel-refine.js";

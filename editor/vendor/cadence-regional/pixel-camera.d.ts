@@ -17,4 +17,20 @@ export declare function refineTranslation(a: Float32Array, b: Float32Array, widt
     maxIterations?: number;
     maxSamples?: number;
     coarseSide?: number;
+    mask?: Uint8Array;
 }): TranslationFit;
+export type CandidateMotion = TranslationFit & {
+    blocks: number;
+};
+/**
+ * Distinct rigid motions of one pair, largest block support first. Phase correlation runs per
+ * overlapping block of a reduced copy; blocks within `radius` reduced pixels of a cluster median join
+ * it, and each cluster with `minimumBlocks` is refined at full resolution on its own blocks only, so a
+ * sliding background layer and a static one are fitted separately instead of averaged.
+ */
+export declare function candidateMotions(a: Float32Array, b: Float32Array, width: number, height: number, options?: {
+    maxSide?: number;
+    block?: number;
+    radius?: number;
+    minimumBlocks?: number;
+}): CandidateMotion[];

@@ -211,13 +211,16 @@ Full-resolution layer and layer-frame extraction from Cadence `src/pixel-*.ts`. 
 Every stage is its own node, so each can be inspected or rewired:
 
 1. **Scene Range** selects the shot (its analysis frames are unused here).
-2. **Pixel Camera Path**: sub-pixel camera between every pair, at full resolution.
-3. **Redraw Ink Evidence**: every pixel tested against the other frame, displaced by the
-   camera, within half a pixel. Changes are kept in world coordinates with an ink sign.
+2. **Pixel Camera Path**: every rigid motion of each pair (a panning background, a sliding tree
+   layer, a static scene), linked into tracks; the camera is the track the redraws hold still in.
+3. **Redraw Ink Evidence**: every pixel tested against the other frame, displaced by each
+   rigid motion, within half a pixel. Changes are kept in world coordinates with an ink sign.
 4. **Drawing Silhouettes**: per frame, the ink of the drawing held there, closed and filled.
 5. **Background Plate**: trimmed mean of every frame outside its silhouettes.
-6. **Layer Frames**: silhouettes linked into layers and split into held drawings.
-7. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
+6. **Refine Silhouettes**: carve silhouette pixels the plate explains, from the outside in,
+   then a second **Background Plate** rebuilds the plate from the refined silhouettes.
+7. **Layer Frames**: silhouettes linked into layers and split into held drawings.
+8. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
    changes to the next frame (green ink arriving, magenta leaving, yellow other) and the
    held ink with its silhouette in cyan; the layer over a checkerboard and the plate at
    this camera position (purple unknown, orange and red where the frame disagrees with

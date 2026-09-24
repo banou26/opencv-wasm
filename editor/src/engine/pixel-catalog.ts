@@ -13,10 +13,13 @@ export const PIXEL_CATALOG: NodeSpec[] = [
     number('inkDelta', 'Ink contrast · codes', 8, 0, 128, 1), number('lineDelta', 'Line darkness · codes', 4, 0, 64, 1), number('dilation', 'Change dilation · px', 1, 0, 4, 1),
   ]),
   stage('pixelSilhouettes', 'Drawing Silhouettes', 'For every frame, take the ink of the drawing held at that frame: ink that arrived at each pixel’s last change before it, or leaves at its next change after it. Close the ink, fill enclosed holes and drop small components. Artwork that never changes stays in the scenery; background a drawing vacates or is about to cover carries the opposite ink sign.', 'pixel-evidence', 'pixel-silhouettes', [
-    number('closeRadius', 'Close radius · px', 6, 0, 32, 1), number('minimumArea', 'Minimum area · px', 800, 1, 1000000, 1),
+    number('closeRadius', 'Close radius · px', 6, 0, 32, 1), number('minimumArea', 'Minimum area · px', 800, 1, 1000000, 1), number('erode', 'Erode · px', 0, 0, 8, 1),
   ]),
-  stage('pixelPlate', 'Background Plate', 'Accumulate every frame outside its silhouettes, grown by Margin, into a world atlas. A plain mean first, then the mean of samples within three spreads of it (never under Floor codes). Pixels never seen outside a drawing stay unknown.', 'pixel-silhouettes', 'pixel-plate', [
+  stage('pixelPlate', 'Background Plate', 'Accumulate every frame outside its silhouettes, grown by Margin, into a world atlas. Pixels only another rigid layer explains (a sliding background) stay out. A plain mean first, then the mean of samples within three spreads of it (never under Floor codes). Pixels never seen outside a drawing stay unknown.', 'pixel-silhouettes', 'pixel-plate', [
     number('margin', 'Margin · px', 3, 0, 16, 1), number('floor', 'Floor · codes', 4, 0, 64, .5),
+  ]),
+  stage('pixelRefine', 'Refine Silhouettes', 'Carve silhouette pixels the plate explains, from the outside in: within Band pixels of the edge, a pixel matching a plate observed at least Minimum count times (every channel within Tolerance codes, plus a gradient allowance) is background when it connects to the exterior through such pixels. The outline, which does not match the scenery, stops the carve, and interior fills that happen to match it are never reached. Rebuild the plate afterwards with a second Background Plate.', 'pixel-plate', 'pixel-silhouettes', [
+    number('band', 'Band · px', 8, 0, 64, 1), number('tolerance', 'Tolerance · codes', 6, 0, 64, .5), number('minimumCount', 'Minimum count', 3, 1, 1000, 1),
   ]),
   stage('pixelFrames', 'Layer Frames', 'Link silhouette components through time by their overlap in world coordinates; everything that ever touches becomes one layer. Split each layer into held drawings at every pair whose changes inside it reach Minimum changes and Minimum fraction of its area. Each drawing keeps a thumbnail cut from its first frame.', 'pixel-plate', 'pixel-frames', [
     number('minimumChanges', 'Minimum changes · px', 60, 1, 1000000, 1), number('minimumFraction', 'Minimum fraction of layer', .004, 0, 1, .001),

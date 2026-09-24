@@ -5,6 +5,8 @@ export declare const INK_HERE = 2;
 /** The counterpart is darker: ink is present in the other frame. */
 export declare const INK_THERE = 4;
 export declare const OBSERVED = 8;
+/** Unchanged only under one of the other motions: the pixel belongs to another rigid layer. */
+export declare const OTHER_LAYER = 16;
 export type PairChangeOptions = {
     /** Half-pixel search that absorbs the source's own resampling of every edge. */
     reach?: number;
@@ -17,6 +19,8 @@ export type PairChangeOptions = {
     lineDelta?: number;
     /** Changed pixels need this many changed pixels in their 3x3 neighborhood, themselves included. */
     minimumNeighbors?: number;
+    /** Other rigid layers of the pair, such as a sliding background; a pixel any of them explains is unchanged. */
+    otherMotions?: Translation[];
 };
 /**
  * Flags for every pixel of A. OBSERVED marks pixels whose counterpart and search stay inside B; the

@@ -1,5 +1,5 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
-import { buildLayerPlate, frameLayerLabels, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence, pixelFrameFromRgba, sceneSilhouettes, type PixelFrame, type PixelFrameSource } from 'cadence/regional'
+import { buildLayerPlate, frameLayerLabels, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence, pixelFrameFromRgba, sceneSilhouettes, type PixelFrame, type PixelFrameSource } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
 import type { VideoSource } from '../video/source'
@@ -7,7 +7,7 @@ import { payloadBundle, type Payload } from './payload'
 import type { RegionalData } from './regional-data'
 import { renderPixelPanels } from './pixel-render'
 
-const PIXEL_TYPES = new Set(['pixelCamera', 'pixelEvidence', 'pixelSilhouettes', 'pixelPlate', 'pixelFrames', 'pixelInspect'])
+const PIXEL_TYPES = new Set(['pixelCamera', 'pixelEvidence', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelFrames', 'pixelInspect'])
 const THUMBNAIL = { width: 150, height: 200 }
 
 const decode = async (video: VideoSource, index: number, cancelled: () => boolean): Promise<PixelFrame> => {
@@ -57,10 +57,15 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress }) }
   } else if (type === 'pixelSilhouettes') {
     if (!data.pixelEvidence) throw new Error('Drawing Silhouettes needs Redraw Ink Evidence')
-    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), progress }) }
+    output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), progress }) }
   } else if (type === 'pixelPlate') {
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
-    output = { ...data, stage: 'pixel-plate', pixelPlate: await buildLayerPlate(source, data.pixelCamera, data.pixelSilhouettes, { margin: Number(params.margin), floor: Number(params.floor), progress }) }
+    output = { ...data, stage: 'pixel-plate', pixelPlate: await buildLayerPlate(source, data.pixelCamera, data.pixelSilhouettes, { margin: Number(params.margin), floor: Number(params.floor), progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) }) }
+  } else if (type === 'pixelRefine') {
+    if (!data.pixelCamera || !data.pixelSilhouettes || !data.pixelPlate) throw new Error('Refine Silhouettes needs Background Plate')
+    const refined = await refineSilhouettes(source, data.pixelCamera, data.pixelSilhouettes, data.pixelPlate, { band: Number(params.band), tolerance: Number(params.tolerance), minimumCount: Number(params.minimumCount), progress })
+    const { carved, ...silhouettes } = refined
+    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelCarved: carved }
   } else if (type === 'pixelFrames') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Layer Frames needs Drawing Silhouettes')
     const frames = layerFrames(data.pixelEvidence, data.pixelSilhouettes, { minimumChanges: Number(params.minimumChanges), minimumFraction: Number(params.minimumFraction) })

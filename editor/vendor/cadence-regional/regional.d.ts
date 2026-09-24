@@ -19,5 +19,6 @@ export * from './pixel-drawings.ts';
 export * from './pixel-plate.ts';
 export * from './pixel-layers.ts';
 export * from './pixel-frames.ts';
+export * from './pixel-refine.ts';
 export type * from './regional-types.ts';
 export type { AnalysisFrame } from './types.ts';

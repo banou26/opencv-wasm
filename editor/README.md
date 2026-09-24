@@ -1215,7 +1215,10 @@ measured area and appear in at least two scene pairs. Partial enclosure needs
 measured host-or-dominant support on at least half the unique boundary, twice as
 many host boundary cells as dominant-background boundary cells, and two cardinal
 directions. Unknown boundary cells abstain instead of voting against the host;
-they cannot satisfy the minimum measured coverage. Strict enclosure
+they cannot satisfy the minimum measured coverage. If the host alone covers less
+than half the boundary, a separate motion guard rejects attachment to a host
+moving beyond the grouping tolerance from the dominant group when the fragment
+is more than twice as close to dominant motion as to host motion. Strict enclosure
 needs all four directions, 75% of the unique boundary, 90% of cardinal contacts,
 and no other measured boundary owner. Unknown and dominant-group cells are never
 merged. Inferred attachments follow only unanimous original measured anchors,

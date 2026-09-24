@@ -30,6 +30,8 @@ function validate(groups, support, identities) {
     if (![width, height, frameCount, cellSize].every(Number.isSafeInteger) || Math.min(width, height, cellSize) < 1 || frameCount < 2) {
         throw new RangeError('Invalid fragment geometry');
     }
+    if (!Number.isFinite(groups.options?.tolerance) || groups.options.tolerance <= 0)
+        throw new RangeError('Invalid fragment motion tolerance');
     const columns = Math.ceil(width / cellSize), rows = Math.ceil(height / cellSize), count = columns * rows;
     if (support.columns !== columns || support.rows !== rows)
         throw new RangeError('Invalid completed fragment grid');
@@ -46,7 +48,8 @@ function validate(groups, support, identities) {
             throw new RangeError('Incomplete fragment maps');
         const known = new Map(), seen = new Uint8Array(count), mapping = new Map(), assigned = new Set();
         for (const group of frame.observations) {
-            if (!Number.isSafeInteger(group.id) || group.id < 0 || known.has(group.id) || !group.cells.length)
+            if (!Number.isSafeInteger(group.id) || group.id < 0 || known.has(group.id) || !group.cells.length
+                || !Number.isFinite(group.dx) || !Number.isFinite(group.dy))
                 throw new RangeError('Invalid fragment group');
             known.set(group.id, group.cells.length);
             for (const cell of group.cells) {
@@ -148,6 +151,17 @@ export function mergeFrameVectorFragments(groups, support, identities, options =
                 && count >= background * 2 && [1, 2, 4, 8].filter(side => sides & side).length >= 2;
             if (!fully && !partial)
                 continue;
+            if (count < boundary.size * .5) {
+                const dominant = frame.observations.find(group => group.id === 0);
+                const child = frame.observations.find(group => group.id === component.id);
+                const parent = frame.observations.find(group => group.id === owner);
+                // Missing boundary evidence cannot justify pulling a background-moving
+                // fragment into a distinctly moving neighbor (e.g. another actor).
+                if (dominant && Math.hypot(parent.dx - dominant.dx, parent.dy - dominant.dy) > groups.options.tolerance
+                    && Math.hypot(child.dx - dominant.dx, child.dy - dominant.dy) * 2
+                        < Math.hypot(child.dx - parent.dx, child.dy - parent.dy))
+                    continue;
+            }
             const proposal = { id: component.id, owner, cells: component.cells, reason: fully ? 'enclosed' : 'partial', runLength };
             for (const cell of component.cells)
                 proposals.set(cell, proposal);

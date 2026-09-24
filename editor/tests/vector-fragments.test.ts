@@ -137,3 +137,25 @@ test('fragment kernel retains original evidence by reference and stable-colors o
   expect(data).toEqual(before)
   await expect(regionalKernel(step('vectorFragments'), input({ ...data, frameVectorIdentities: undefined }), () => undefined, () => false)).rejects.toThrow(/tracked identities/)
 })
+
+test('weak enclosure preserves dominant-moving fragments but permits motion closer to the host', () => {
+  for (const childDx of [0, 1.5]) {
+    const data = fixture(), groups = data.frameVectorGroups!, frame = groups.frames[1]!
+    for (const cell of [17, 18, 23, 30]) { frame.labels[cell] = -1; frame.confidence[cell] = 0 }
+    frame.labels[16] = 0
+    for (const pair of groups.frames) pair.observations = pair.observations.map(group => {
+      const cells = [...pair.labels.keys()].filter(cell => pair.labels[cell] === group.id)
+      return { ...group, cells, dx: group.id === 1 ? 2 : group.id === 2 ? childDx : 0, strongCells: cells.filter(cell => pair.confidence[cell] === 2).length }
+    })
+    const support = completeFrameVectorSupport(groups), identities = trackFrameVectorIdentities(groups)
+    const before = structuredClone({ groups, support, identities })
+    const fragments = mergeFrameVectorFragments(groups, support, identities)
+    expect(fragments.frames[1]!.merges.map(merge => merge.cells)).toEqual(childDx === 0 ? [] : [[24]])
+    expect({ groups, support, identities }).toEqual(before)
+    const completed = { ...data, frameVectorSupport: support, frameVectorIdentities: identities }
+    const original = renderVectorCompletionPanels(completed, 1, undefined, identities)
+    const result = renderVectorCompletionPanels(completed, 1, undefined, identities, fragments)
+    if (childDx === 0) expect(result.panels).toEqual(original.panels)
+    else for (const port of ['source', 'measured'] as const) expect(result.panels[port]).toEqual(original.panels[port])
+  }
+})

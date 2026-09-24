@@ -99,6 +99,15 @@ test('last frame has no fabricated motion and all four panel buffers are indepen
   expect(() => renderVectorPanels(data, 7, undefined, Infinity)).toThrow(/display gain/)
 })
 
+test('motion group colors do not repeat every six IDs', () => {
+  const data = groupedFixture(), frame = data.vectorGroups!.frames[0]!
+  frame.labels[1] = 0; frame.labels[2] = 6
+  frame.confidence[1] = 2; frame.confidence[2] = 2
+  const { panels } = renderVectorPanels(data, 7)
+  const color = (x: number) => panels.groups.slice((4 * 40 + x) * 4, (4 * 40 + x) * 4 + 3)
+  expect(color(12)).not.toEqual(color(20))
+})
+
 test('four direct-motion outputs share one original decode at independent display resolution', async () => {
   const data = groupedFixture(), rgba = new Uint8Array(80 * 16 * 4)
   for (let i = 0; i < 80 * 16; i++) rgba.set([i % 2 ? 200 : 10, 80, 25, 255], i * 4)

@@ -2,7 +2,11 @@ import type { AnalysisFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 import { regionalCanvas } from './regional-render'
 
-const COLORS = [[57, 113, 231], [226, 176, 57], [213, 83, 152], [67, 194, 143], [150, 106, 220], [229, 113, 71]] as const
+const groupColor = (id: number): [number, number, number] => {
+  const hue = (.61 + id * .61803398875) % 1, sector = hue * 6, fraction = sector - Math.floor(sector)
+  const low = 45, high = 231, falling = Math.round(high - (high - low) * fraction), rising = Math.round(low + (high - low) * fraction)
+  return [[high, rising, low], [falling, high, low], [low, high, rising], [low, falling, high], [rising, low, high], [high, low, falling]][Math.floor(sector)]! as [number, number, number]
+}
 const CONFIDENCE = [[102, 106, 113], [238, 177, 65], [63, 216, 180], [237, 90, 115], [160, 124, 221]] as const
 
 /** Motion proposals stay distinct from observed pixels and from ownership/silhouette claims. */
@@ -35,7 +39,7 @@ export const renderVectorPanels = (data: RegionalData, sourceFrame: number, disp
     counts[confidence]!++
     paintRect(panels.confidence, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, CONFIDENCE[confidence]!, .6)
     const label = grouped?.labels[id] ?? -1
-    if (label >= 0) paintRect(panels.groups, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, COLORS[label % COLORS.length]!, confidence === 1 ? .38 : .6)
+    if (label >= 0) paintRect(panels.groups, cell.x, cell.y, cell.x + cell.width, cell.y + cell.height, groupColor(label), confidence === 1 ? .38 : .6)
     if (!valid) continue
     candidates++; mixed += Number(!cell.coherent)
     const rgb = cell.coherent ? CONFIDENCE[2] : CONFIDENCE[1]

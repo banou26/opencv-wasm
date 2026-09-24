@@ -42,7 +42,8 @@ function trajectories(grids, width, height) {
         for (const [cellIndex, cell] of grid.cells.entries()) {
             if (cell.dx === null || cell.dy === null)
                 continue;
-            const inherited = previous.get(cellIndex);
+            const arrival = previous.get(cellIndex);
+            const inherited = arrival?.track.samples.at(-1)?.coherent === cell.coherent ? arrival : undefined;
             const track = inherited?.track ?? { id: tracks.length, group: null, samples: [] };
             if (!inherited)
                 tracks.push(track);
@@ -98,12 +99,21 @@ export function groupVectorCandidates(sequence, options = {}) {
             overlap++;
             // Bounding corners conservatively prevent a chain of near-matches from
             // accumulating into a group containing contradictory reliable velocities.
-            const dx = Math.max(Math.abs(sample.dx - bounds.minX), Math.abs(sample.dx - bounds.maxX));
-            const dy = Math.max(Math.abs(sample.dy - bounds.minY), Math.abs(sample.dy - bounds.maxY));
+            const dx = Math.max(sample.dx, bounds.maxX) - Math.min(sample.dx, bounds.minX);
+            const dy = Math.max(sample.dy, bounds.maxY) - Math.min(sample.dy, bounds.minY);
             if (Math.hypot(dx, dy) > tolerance + 1e-9)
                 return false;
         }
         return overlap >= minimum;
+    };
+    const bestMatches = (samples, minimum) => {
+        const matches = proposals(samples, minimum).filter(id => fits(samples, profiles[id], minimum));
+        // A tiny profile observed only during a shared hold cannot outweigh a
+        // compatible profile explaining the entire trajectory. Equal support is
+        // genuinely ambiguous; there is no nearest-position or nearest-speed tie.
+        const overlap = matches.map(id => samples.reduce((sum, sample) => sum + Number(profiles[id].has(sample.frame)), 0));
+        const maximum = Math.max(0, ...overlap);
+        return matches.filter((_, i) => overlap[i] === maximum);
     };
     const extend = (id, samples) => {
         const profile = profiles[id];
@@ -128,7 +138,7 @@ export function groupVectorCandidates(sequence, options = {}) {
         .sort((a, b) => strong[b.id].length - strong[a.id].length || a.id - b.id);
     for (const track of ordered) {
         const samples = strong[track.id];
-        const matches = proposals(samples, minimumOverlap).filter(id => fits(samples, profiles[id], minimumOverlap));
+        const matches = bestMatches(samples, minimumOverlap);
         if (matches.length > 1)
             continue;
         const id = matches[0] ?? profiles.length;
@@ -144,7 +154,7 @@ export function groupVectorCandidates(sequence, options = {}) {
     for (const track of tracks) {
         const reliable = strong[track.id], samples = reliable.length ? reliable : track.samples;
         const required = Math.min(minimumOverlap, samples.length);
-        const matches = proposals(samples, required).filter(id => fits(samples, profiles[id], required));
+        const matches = bestMatches(samples, required);
         const id = matches.length === 1 ? matches[0] : null;
         track.group = id;
         if (id !== null)

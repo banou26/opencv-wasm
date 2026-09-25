@@ -213,24 +213,36 @@ Every stage is its own node, so each can be inspected or rewired:
 1. **Scene Range** selects the shot (its analysis frames are unused here).
 2. **Pixel Camera Path**: every rigid motion of each pair (a panning background, a sliding tree
    layer, a static scene), linked into tracks; the camera is the track the redraws hold still in.
-3. **Redraw Ink Evidence**: every pixel tested against the other frame, displaced by each
-   rigid motion, within half a pixel. Changes are kept in world coordinates with an ink sign.
-4. **Drawing Silhouettes**: per frame, the ink of the drawing held there, closed and filled.
-5. **Background Plate**: trimmed mean of every frame outside its silhouettes.
-6. **Refine Silhouettes**: carve silhouette pixels the plate explains, from the outside in,
-   then a second **Background Plate** rebuilds the plate from the refined silhouettes.
-7. **Layer Frames**: silhouettes linked into layers and split into held drawings.
-8. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
+3. **Sliding Layers**: every other motion measured on at least half the pairs is a held painting
+   sliding over the camera's plate (street-busy's forest). Its cover comes from frames 12, 48 and
+   192 px of relative motion apart. Passes through when there is none (market-pan).
+4. **Redraw Ink Evidence**: every pixel tested against the other frame, displaced by each
+   rigid motion, within half a pixel. Changes are kept in world coordinates with an ink sign;
+   changes on a sliding layer's rim are occlusion.
+5. **Scenery Median**, then **Drawing Silhouettes**: per frame, the ink of the drawing held
+   there, closed and filled. With a Hold tolerance (default 12) held ink must still show the
+   value its bracket measured; the Scenery about to be covered select picks how leaving ink on
+   the scenery is treated.
+6. **Background Plate**: trimmed mean of every frame outside its silhouettes and the sliding
+   layers, plus a per-frame drift for changing light. Each sliding layer gets its own plate and
+   a rim matte.
+7. **Refine Silhouettes**: carve silhouette pixels the scene explains, from the outside in.
+   **Sliding Layers, Second Pass** then measures each cover again without the drawings, drops
+   what the camera plate explains, and carves again. A second **Background Plate** rebuilds
+   every plate from the refined silhouettes.
+8. **Layer Frames**: silhouettes linked into layers and split into held drawings.
+9. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
    changes to the next frame (green ink arriving, magenta leaving, yellow other) and the
-   held ink with its silhouette in cyan; the layer over a checkerboard and the plate at
-   this camera position (purple unknown, orange and red where the frame disagrees with
-   the plate outside the silhouettes); then every drawing of the layers on screen, the
-   one shown now outlined in cyan with its frame range.
+   held ink with its silhouette in cyan; the layer over a checkerboard and the scene at
+   this camera position (plate and sliding layers, their covers outlined in green, purple
+   unknown, orange and red where the frame disagrees with it outside the silhouettes); then
+   every drawing of the layers on screen, the one shown now outlined in cyan with its frame
+   range.
 
 The first evaluation decodes the whole shot at full resolution several times: 139 s for
-117 frames at 1080p in Chrome 153 before the Scenery Median stage, 272 s with it while a
-second Cadence run shared the CPU (both measured 2026-09-25), then 0.6 to 0.8 s per
-inspected frame. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
+117 frames at 1080p in Chrome 153 before the Scenery Median stage, 272 s with it, and 330 s
+with the sliding stages, the hold check and plate drift, the last two while a Cadence run
+shared the CPU (all measured 2026-09-25), then about 1 s per inspected frame. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
 market-pan clip in the system Chrome inside a nested headless weston (real GPU and
 decoder, no window on the desktop) and saves every panel for frames 40, 98 and 104 as
 Cadence `diagnostics/pixel-market-browser-*`. Later frames reuse the cached stages. The

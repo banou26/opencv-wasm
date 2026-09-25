@@ -23,7 +23,7 @@ export type RegionalData = {
   pixelCamera?: MeasuredCamera
   /** Sliding layers found besides the camera, back to front; their plates once Background Plate built them. */
   pixelRigid?: RigidLayer[]
-  /** Cover pixels the camera plate explained, per sliding layer, in the second pass. */
+  /** Cover pixels what lies behind explained, per sliding layer, in the second pass: the camera plate, or the farther planes. */
   pixelRigidDropped?: number[]
   pixelEvidence?: MeasuredEvidence
   pixelSilhouettes?: SceneSilhouettes
@@ -70,7 +70,8 @@ export const regionalSummary = (data: RegionalData): string => {
     if (!data.pixelRigid.length) lines.push('Sliding layers: none; every other motion is too sparse to be a rigid layer')
     for (const [k, layer] of data.pixelRigid.entries()) {
       const last = layer.path.positions[layer.path.positions.length - 1]!, cover = layer.cover.reduce((s, v) => s + v, 0), undecided = layer.decided.reduce((s, v) => s + 1 - v, 0)
-      lines.push(`Sliding layer ${k}: total ${last.dx.toFixed(2)}, ${last.dy.toFixed(2)} px over ${layer.measured} measured pairs; baselines ${layer.baselines.join(', ')} frames; cover ${(100 * cover / layer.cover.length).toFixed(1)}% of a ${layer.atlas.width} x ${layer.atlas.height} atlas, undecided ${(100 * undecided / layer.cover.length).toFixed(1)}%${data.pixelRigidDropped ? `; ${data.pixelRigidDropped[k]} pixels dropped by the camera plate` : ''}${layer.plate ? '; plate built' : ''}${layer.matte ? `; rim matte ${layer.matte.solved} of ${layer.matte.alpha.length} alphas measured` : ''}`)
+      const kind = layer.backdrop ? ' (backdrop, never measured)' : layer.camera ? ' (the camera\'s own plane)' : ''
+      lines.push(`Sliding layer ${k}${kind}: speed ${layer.depth.toFixed(2)} px per frame, total ${last.dx.toFixed(2)}, ${last.dy.toFixed(2)} px over ${layer.measured} measured pairs; baselines ${layer.baselines.join(', ')} frames; cover ${(100 * cover / layer.cover.length).toFixed(1)}% of a ${layer.atlas.width} x ${layer.atlas.height} atlas, undecided ${(100 * undecided / layer.cover.length).toFixed(1)}%${data.pixelRigidDropped ? `; ${data.pixelRigidDropped[k]} pixels dropped by what lies behind` : ''}${layer.plate ? '; plate built' : ''}${layer.matte ? `; rim matte ${layer.matte.solved} of ${layer.matte.alpha.length} alphas measured` : ''}`)
     }
   }
   if (data.pixelEvidence) {

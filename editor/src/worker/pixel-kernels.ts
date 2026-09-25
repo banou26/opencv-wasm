@@ -1,7 +1,7 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
-  annotateScenery, assembleCel, buildLayerPlate, buildRigidPlate, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
-  matteRigidLayer, measureRigidCover, pixelFrameFromRgba, renderCover, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
+  annotateScenery, assembleCel, buildScenePlates, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
+  measureScenePlanes, orderPlanes, pixelFrameFromRgba, rigidPaths, sceneSilhouettes, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
@@ -57,8 +57,8 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelRigid') {
     if (!data.pixelCamera) throw new Error('Sliding Layers needs Pixel Camera Path')
     const options = { minimumOwn: Number(params.minimumOwn), ownFraction: Number(params.ownFraction), occlusion: Number(params.occlusion), closing: Number(params.closing), maximumHole: Number(params.maximumHole), minimumArea: Number(params.minimumArea), progress }
-    const layers: RigidLayer[] = []
-    for (const path of rigidPaths(data.pixelCamera)) layers.push(await measureRigidCover(source, data.pixelCamera, path, options))
+    // Back to front: planes behind the camera's own put it among them, with the farthest as the backdrop.
+    const layers: RigidLayer[] = await measureScenePlanes(source, data.pixelCamera, orderPlanes(data.pixelCamera, rigidPaths(data.pixelCamera)), options)
     output = { ...data, pixelRigid: layers }
   } else if (type === 'pixelEvidence') {
     if (!data.pixelCamera) throw new Error('Redraw Ink Evidence needs Pixel Camera Path')
@@ -72,15 +72,11 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), recurrence: Number(params.recurrence), sceneryLeaves: String(params.sceneryLeaves) as 'never' | 'recurring' | 'known' | 'always', leaveHorizon: Number(params.leaveHorizon), holdTolerance: Number(params.holdTolerance), progress, ...(Number(params.holdTolerance) > 0 ? { source } : {}) }) }
   } else if (type === 'pixelPlate') {
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
-    const silhouettes = data.pixelSilhouettes, size = source.width * source.height, drawn = (frame: number) => unpackMask(silhouettes.frames[frame]!.packed, size)
-    const layers = data.pixelRigid ?? [], covers = (frame: number) => layers.map(layer => renderCover(layer, frame, true))
-    const pixelPlate = await buildLayerPlate(source, data.pixelCamera, silhouettes, { margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), progress, covers, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}) })
-    // Each sliding layer's own plate, outside the drawings in front of it, and its rim matted over the camera plate.
-    const pixelRigid: RigidLayer[] = []
-    for (const layer of layers) {
-      const plate = await buildRigidPlate(source, layer, drawn, { progress })
-      pixelRigid.push({ ...layer, plate, matte: await matteRigidLayer(source, data.pixelCamera, pixelPlate, { ...layer, plate }, { exclude: drawn, progress }) })
-    }
+    // The camera plate, then each plane's own plate outside the drawings and planes in front of it, its rim
+    // matted over what lies behind it.
+    const { plate: pixelPlate, layers: pixelRigid } = await buildScenePlates(source, data.pixelCamera, data.pixelSilhouettes, data.pixelRigid ?? [], {
+      margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}),
+    })
     output = { ...data, stage: 'pixel-plate', pixelPlate, ...(data.pixelRigid ? { pixelRigid } : {}) }
   } else if (type === 'pixelRefine') {
     if (!data.pixelCamera || !data.pixelSilhouettes || !data.pixelPlate) throw new Error('Refine Silhouettes needs Background Plate')

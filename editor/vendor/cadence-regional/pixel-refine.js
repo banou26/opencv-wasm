@@ -54,8 +54,8 @@ import { BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_T
 import { fillEnclosed, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
 import { buildLayerPlate, packMask, unpackMask } from "./pixel-layers.js";
-import { renderPlate } from "./pixel-plate.js";
-import { buildRigidPlate, matteRigidLayer, measureRigidCover, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
+import { finishPlate, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { buildRigidPlate, hiddenBy, matteRigidLayer, measureScenePlanes, planeShown, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
 /**
  * Remove silhouette pixels the plate explains, from the outside in. A pixel within `band` of the edge
  * whose value matches a well-observed plate is background only when it connects to the exterior through
@@ -292,7 +292,7 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
     const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
     const minimumArea = area ?? silhouettes.options.minimumArea ?? 800;
     const trust = (p) => ({ ...p, count: p.count.map(n => n >= minimumCount ? n : 0) });
-    const trusted = trust(plate), layers = rigid.map(layer => ({ ...layer, plate: layer.plate && trust(layer.plate) }));
+    const trusted = trust(plate), layers = rigid.map(layer => ({ ...layer, plate: layer.plate && trust(layer.plate) })), own = layers.findIndex(layer => layer.camera);
     // Where the plate is not trusted, the band median may stand in, if enough frames observed it.
     const band = options.medianFallback === false ? undefined : await bandMedianPlate(source, camera, silhouettes, carve.band ?? 8);
     const median = band && { ...band, count: band.count.map((n, a) => n >= 10 && !trusted.count[a] ? n : 0) };
@@ -302,13 +302,20 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
         try {
             await progress?.(frame, silhouettes.frames.length);
             const before = silhouettes.frames[frame], rendered = renderScene(trusted, camera, layers, frame);
-            // The band median is taken in the camera's coordinates and says nothing where a rigid layer paints.
+            // Another plane's paint can fill a silhouette to any depth, the camera's own scenery only near its edge,
+            // and the band median, taken in the camera's coordinates, says nothing where another plane paints.
             const covered = new Uint8Array(size);
-            for (const layer of layers) {
-                const cover = renderCover(layer, frame, true);
+            if (own >= 0) {
+                const shown = planeShown(layers, own, frame);
                 for (let p = 0; p < size; p++)
-                    covered[p] |= cover[p];
+                    covered[p] = 1 - shown[p];
             }
+            else
+                for (const layer of layers) {
+                    const cover = renderCover(layer, frame, true);
+                    for (let p = 0; p < size; p++)
+                        covered[p] |= cover[p];
+                }
             const fallback = median && renderPlate(median, camera, frame);
             if (fallback)
                 for (let p = 0; p < size; p++)
@@ -342,32 +349,61 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
     return { ...silhouettes, frames, carved };
 }
 /**
- * The second pass over rigid layers, once the drawings are known: each cover is measured again without
- * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt, each rim is
- * matted and the silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
- * rebuild it from the returned silhouettes. With no rigid layers the input comes back unchanged.
+ * Plates for planes in back-to-front order. The camera plate comes from the frames outside every plane,
+ * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
+ * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
+ * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
+ * Returns copies of the layers.
+ */
+export async function buildScenePlates(source, camera, silhouettes, layers, options = {}) {
+    const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size), { evidence, drift, margin, floor, progress } = options;
+    const plate = layers.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
+        : await buildLayerPlate(source, camera, silhouettes, {
+            covers: frame => layers.map(layer => renderCover(layer, frame, true)), progress, ...(evidence ? { evidence } : {}), ...(drift === undefined ? {} : { drift }),
+            ...(margin === undefined ? {} : { margin }), ...(floor === undefined ? {} : { floor }),
+        });
+    const out = layers.map(layer => ({ ...layer }));
+    for (const [k, layer] of out.entries()) {
+        const hidden = hiddenBy(out, k, drawn);
+        layer.plate = await buildRigidPlate(source, layer, hidden, { progress });
+        if (layer.backdrop || options.mattes === false)
+            continue;
+        const behind = k > 0 ? { behind: (frame) => renderScene(plate, camera, out.slice(0, k), frame) } : {};
+        layer.matte = await matteRigidLayer(source, camera, plate, layer, { exclude: hidden, progress, ...behind });
+    }
+    return { plate, layers: out };
+}
+/**
+ * The second pass over the scene's planes, in back-to-front order, once the drawings are known: each
+ * plane but the backdrop is measured again without the drawings, front to back; cover what lies behind a
+ * plane explains is dropped; the plates and rims are rebuilt back to front, and the silhouettes carved
+ * again against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
+ * returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export async function refineRigidScene(source, camera, silhouettes, layers, options = {}) {
     if (!layers.length)
         return { layers, silhouettes, dropped: [] };
-    const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size);
-    let next = [];
-    for (const layer of layers)
-        next.push(await measureRigidCover(source, camera, layer, { exclude: drawn, progress: options.progress }));
-    const covers = (frame) => next.map(layer => renderCover(layer, frame, true)), evidence = options.evidence;
-    const scene = await buildLayerPlate(source, camera, silhouettes, { covers, progress: options.progress, ...(evidence ? { evidence } : {}) });
+    const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size), { evidence, progress } = options;
+    const next = await measureScenePlanes(source, camera, layers, { exclude: drawn, progress });
+    // What lies behind each plane, from the new covers: the camera plate, and the farther planes' plates.
+    const scene = next.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
+        : await buildLayerPlate(source, camera, silhouettes, { covers: frame => next.map(layer => renderCover(layer, frame, true)), progress, ...(evidence ? { evidence } : {}) });
+    const withPlates = [];
+    for (const [k, layer] of next.entries())
+        withPlates.push(k < next.length - 1 ? { ...layer, plate: await buildRigidPlate(source, layer, hiddenBy(next, k, drawn), { progress }) } : layer);
     const dropped = [], refined = [];
-    for (const layer of next) {
-        const { dropped: count, ...kept } = await refineRigidCover(source, camera, scene, layer, { exclude: drawn, progress: options.progress });
+    for (const [k, layer] of next.entries()) {
+        if (layer.backdrop) {
+            refined.push(layer);
+            dropped.push(0);
+            continue;
+        }
+        const behind = k > 0 ? { behind: (frame) => renderScene(scene, camera, withPlates.slice(0, k), frame) } : {};
+        const { dropped: count, ...kept } = await refineRigidCover(source, camera, scene, layer, { exclude: hiddenBy(next, k, drawn), progress, ...behind });
         refined.push(kept);
         dropped.push(count);
     }
-    next = refined;
-    const plate = await buildLayerPlate(source, camera, silhouettes, { covers, progress: options.progress, ...(evidence ? { evidence } : {}) });
-    for (const layer of next) {
-        layer.plate = await buildRigidPlate(source, layer, drawn, { progress: options.progress });
-        layer.matte = await matteRigidLayer(source, camera, plate, layer, { exclude: drawn, progress: options.progress });
-    }
-    const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: next, progress: options.progress });
-    return { layers: next, silhouettes: carved, plate, dropped };
+    const { plate, layers: out } = await buildScenePlates(source, camera, silhouettes, refined, { progress, ...(evidence ? { evidence } : {}) });
+    const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: out, progress });
+    return { layers: out, silhouettes: carved, plate, dropped };
 }

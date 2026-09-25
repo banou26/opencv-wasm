@@ -80,10 +80,29 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
     carved: number[];
 }>;
 /**
- * The second pass over rigid layers, once the drawings are known: each cover is measured again without
- * the drawings, cover the camera plate explains is dropped, both kinds of plate are rebuilt, each rim is
- * matted and the silhouettes carved again against the new scene. The returned plate is the camera plate the carve used;
- * rebuild it from the returned silhouettes. With no rigid layers the input comes back unchanged.
+ * Plates for planes in back-to-front order. The camera plate comes from the frames outside every plane,
+ * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
+ * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
+ * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
+ * Returns copies of the layers.
+ */
+export declare function buildScenePlates(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
+    evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
+    drift?: number;
+    margin?: number;
+    floor?: number;
+    mattes?: boolean;
+    progress?: StageProgress;
+}): Promise<{
+    plate: LayerPlate;
+    layers: RigidLayer[];
+}>;
+/**
+ * The second pass over the scene's planes, in back-to-front order, once the drawings are known: each
+ * plane but the backdrop is measured again without the drawings, front to back; cover what lies behind a
+ * plane explains is dropped; the plates and rims are rebuilt back to front, and the silhouettes carved
+ * again against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
+ * returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export declare function refineRigidScene(source: PixelFrameSource, camera: MeasuredCamera, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;

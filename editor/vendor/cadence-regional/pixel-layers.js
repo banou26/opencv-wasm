@@ -208,12 +208,16 @@ export async function measureCameraPath(source, options = {}) {
     }
     return { ...cameraPath(source.width, source.height, fits), fits, coarse, motions };
 }
-/** Pixels within `width` of a boundary of any rigid layer's cover at the frame. */
+/**
+ * Pixels within `width` of a boundary of any rigid layer's cover at the frame. The camera's own plane and
+ * the backdrop are left out: the camera plane's first-pass cover holds every held drawing, so its edge
+ * would mark drawing outlines as occlusion, and the backdrop covers everything.
+ */
 export function rigidRim(layers, frame, width) {
     const env_1 = { stack: [], error: void 0, hasError: false };
     try {
-        const first = renderCover(layers[0], frame), { width: w, height: h } = layers[0].path, edge = new Uint8Array(w * h);
-        const covers = [first, ...layers.slice(1).map(layer => renderCover(layer, frame))];
+        const { width: w, height: h } = layers[0].path, edge = new Uint8Array(w * h);
+        const covers = layers.filter(layer => !layer.camera && !layer.backdrop).map(layer => renderCover(layer, frame));
         for (const cover of covers)
             for (let y = 0; y < h; y++)
                 for (let x = 0; x < w; x++) {

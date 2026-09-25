@@ -102,6 +102,41 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   view.dispose()
 })
 
+test('a pan whose backdrop is slower than the camera\'s own plane orders the planes back to front', async () => {
+  const w = 256, h = 160, count = 16, near = 6, far = 2, bark = (u: number, v: number) => 70 + 30 * Math.sin(u / 2.3) * Math.cos(v / 3.1)
+  const trunk = (u: number) => ((u % 60) + 60) % 60 < 22
+  const frames = Array.from({ length: count }, (_, t) => {
+    const out = new Uint8Array(w * h * 4)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let value = 0
+      for (const [sx, sy] of [[.25, .25], [.75, .25], [.25, .75], [.75, .75]] as const) {
+        const u = x + sx + near * t
+        value += (trunk(u) ? bark(u, y + sy) : texture(x + sx + far * t, y + sy)) / 4
+      }
+      out.fill(Math.round(value), (y * w + x) * 4, (y * w + x) * 4 + 3); out[(y * w + x) * 4 + 3] = 255
+    }
+    return out
+  })
+  const video = { info: { id: 'pan', width: w, height: h, frameCount: count }, frameAt: async (index: number) => ({ displayWidth: w, displayHeight: h, visibleRect: null, copyTo: async (out: Uint8Array) => { out.set(frames[index]!) }, close: () => {} }) } as unknown as VideoSource
+  const start: RegionalData = { stage: 'scene', scene: { asset: 'pan', first: 0, last: count - 1, sourceWidth: w, sourceHeight: h, frames: [] } }
+  const kernel = async (type: NodeType, data: RegionalData, params: Params = {}) => regions((await pixelKernel(step(type, params), { 'in:regions:data': { kind: 'regions', data } }, () => video, () => false))!.outputs)
+  const still = { dx: 0, dy: 0, residual: 0, samples: 0, iterations: 0 }
+  const measured: RegionalData = { ...start, stage: 'pixel-camera', pixelCamera: {
+    width: w, height: h, positions: frames.map((_, t) => ({ dx: -near * t, dy: 0 })), fits: frames.slice(1).map(() => ({ ...still, dx: -near })), coarse: [],
+    motions: frames.slice(1).map(() => [{ ...still, dx: -near, blocks: 10 }, { ...still, dx: -far, blocks: 8 }]),
+  } }
+  const layered = await kernel('pixelRigid', measured, { minimumArea: 64 })
+  expect(layered.pixelRigid!.map(l => l.backdrop ? 'backdrop' : l.camera ? 'camera' : 'plane')).toEqual(['backdrop', 'camera'])
+  const silhouettes = await kernel('pixelSilhouettes', await kernel('pixelScenery', await kernel('pixelEvidence', layered)), { minimumArea: 200 })
+  const plated = await kernel('pixelPlate', silhouettes)
+  expect(plated.pixelRigid!.every(l => l.plate)).toBe(true)
+  expect(plated.pixelPlate!.count.every(n => n === 0)).toBe(true)
+  const view = await pixelKernel(step('pixelInspect', { frame: 8, displayMaxSide: 0 }), { 'in:regions:data': { kind: 'regions', data: plated } }, () => video, () => false)
+  const summary = view!.outputs['out:string:summary']
+  expect(summary?.kind === 'string' && summary.value).toMatch(/Sliding layers back to front: 2, painting the backdrop behind them, \d+ px \(the camera's own plane\)/)
+  view!.dispose()
+})
+
 test('a forest sliding over a still sky becomes a sliding layer whose plate the inspected scene uses', async () => {
   const w = 384, h = 256, count = 16, slide = 3.4, grain = (u: number, v: number) => 60 + 40 * Math.sin(u / 3.1) * Math.cos(v / 2.3) + 25 * Math.sin((u - v) / 1.7)
   const tree = (u: number, v: number) => { const c = Math.round(u / 64) * 64; return v > 110 + Math.abs(u - c) * 2.4 }
@@ -145,7 +180,7 @@ test('a forest sliding over a still sky becomes a sliding layer whose plate the 
   expect(plated.pixelRigid![0]!.matte!.solved).toBeGreaterThan(100)
   const view = await pixelKernel(step('pixelInspect', { frame: 8, displayMaxSide: 0 }), { 'in:regions:data': { kind: 'regions', data: plated } }, () => forest, () => false)
   const summary = view!.outputs['out:string:summary']
-  expect(summary?.kind === 'string' && summary.value).toMatch(/Sliding layers: 1, painting \d+ px/)
+  expect(summary?.kind === 'string' && summary.value).toMatch(/Sliding layers back to front: 1, painting \d+ px of this frame/)
   expect(summary?.kind === 'string' && summary.value).toMatch(/Scene \(camera plate and sliding layers\)/)
   view!.dispose()
 })

@@ -56,11 +56,16 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
   // With sliding layers the scene behind the drawings is the camera plate with each layer over it.
   const rigid = data.pixelRigid ?? [], built = rigid.filter(layer => layer.plate)
   const plate = data.pixelPlate ? built.length ? renderScene(data.pixelPlate, camera, built, index) : renderPlate(data.pixelPlate, camera, index) : undefined
-  const cover = new Uint8Array(size), coverEdge = new Uint8Array(size)
-  for (const layer of rigid) { const own = renderCover(layer, index); for (let p = 0; p < size; p++) cover[p] = cover[p]! | own[p]! }
-  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
-    const p = y * width + x
-    coverEdge[p] = Number(cover[p] === 1 && (!cover[p - 1] || !cover[p + 1] || !cover[p - width] || !cover[p + width]))
+  // Each plane's own edge, so planes that touch keep their boundary; the backdrop covers everything and has none.
+  const coverEdge = new Uint8Array(size), painted: string[] = []
+  for (const layer of rigid) {
+    if (layer.backdrop) { painted.push('the backdrop behind them'); continue }
+    const cover = renderCover(layer, index)
+    painted.push(`${cover.reduce((s, v) => s + v, 0)} px${layer.camera ? ' (the camera\'s own plane)' : ''}`)
+    for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+      const p = y * width + x
+      if (cover[p] === 1 && (!cover[p - 1] || !cover[p + 1] || !cover[p - width] || !cover[p + width])) coverEdge[p] = 1
+    }
   }
   let unknown = 0, over12 = 0, over20 = 0, outside = 0
   const residual = new Float32Array(size)
@@ -125,7 +130,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     evidence && index < pairs ? `Pair change: forward ${evidence.summaries[index]!.forward}, backward ${evidence.summaries[index]!.backward} pixels; noise ${evidence.summaries[index]!.noise.toFixed(3)} codes` : evidence ? 'Final frame: no outgoing pair' : 'Connect Redraw Ink Evidence for change and ink panels',
     data.pixelSilhouettes ? `Silhouettes: ${components.length} components, ${components.reduce((s, c) => s + c.area, 0)} px${components.length ? `; ${components.map(c => `${c.area} px at ${c.box.join(',')}`).join('; ')}` : ''}` : 'Connect Drawing Silhouettes for layer panels',
     plate ? `${built.length ? 'Scene (camera plate and sliding layers)' : 'Plate'} outside silhouettes: ${outside} px; unknown ${unknown}; over 12 codes ${over12}; over 20 codes ${over20}` : 'Connect Background Plate for the plate panel',
-    ...(rigid.length ? [`Sliding layers: ${rigid.length}, painting ${cover.reduce((s, v) => s + v, 0)} px of this frame (green outline in the plate panel)`] : []),
+    ...(rigid.length ? [`Sliding layers back to front: ${rigid.length}, painting ${painted.join(', ')} of this frame (green outlines in the plate panel)`] : []),
     matte ? `Edge matte: ${matte.unmixed} pixels unmixed against the plate; layer panel shows straight alpha over a checkerboard` : 'Layer panel: binary silhouette (no plate for an edge matte)',
     ...(data.pixelFrames ? data.pixelFrames.frames[index]!.map(([layer, drawing]) => { const d = data.pixelFrames!.layers[layer]!.drawings[drawing]!; return `Layer ${layer}: drawing ${drawing} of ${data.pixelFrames!.layers[layer]!.drawings.length}, frames ${d.first + data.scene.first} to ${d.last + data.scene.first}` }) : ['Connect Layer Frames for the drawing sheet']),
     rebuilt ? `Rebuilt from ${cels!.length} held drawing${cels!.length === 1 ? '' : 's'}, each assembled over its hold: ${layered} drawing pixels, ${(100 * within6 / Math.max(1, layered)).toFixed(1)}% within 6 codes, ${(100 * within12 / Math.max(1, layered)).toFixed(1)}% within 12` : 'Connect Layer Frames for the rebuilt panels',

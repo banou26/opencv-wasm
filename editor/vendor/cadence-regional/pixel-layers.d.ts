@@ -60,7 +60,11 @@ export type PairSummary = {
     noise: number;
     evidence: number;
 };
-/** Pixels within `width` of a boundary of any rigid layer's cover at the frame. */
+/**
+ * Pixels within `width` of a boundary of any rigid layer's cover at the frame. The camera's own plane and
+ * the backdrop are left out: the camera plane's first-pass cover holds every held drawing, so its edge
+ * would mark drawing outlines as occlusion, and the backdrop covers everything.
+ */
 export declare function rigidRim(layers: RigidLayer[], frame: number, width: number): Uint8Array;
 /**
  * `others[p]` packs, per pixel of frame p, whether only a non-camera motion explains it against frame

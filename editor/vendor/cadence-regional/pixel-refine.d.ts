@@ -3,6 +3,7 @@ import { type LayerFrames } from './pixel-frames.ts';
 import { type PixelFrame } from './pixel-frame.ts';
 import { type MeasuredCamera, type MeasuredEvidence, type PixelFrameSource, type SceneSilhouettes, type StageProgress } from './pixel-layers.ts';
 import { type LayerPlate } from './pixel-plate.ts';
+import type { FramePool } from './pixel-share.ts';
 import { type RigidLayer } from './pixel-rigid.ts';
 export type CarveOptions = {
     /** Only pixels this close to the silhouette edge can be carved. */
@@ -47,6 +48,15 @@ export type GrowOptions = {
  * others, matches neither. Growth floods from the silhouette's edge through such pixels, within `band`
  * of it and inside its concavities (its closing by `bay`).
  */
+/**
+ * A binary mask closed by a disc of `radius` pixels (and a half, which is closest to OpenCV's ellipse):
+ * dilated where the exact distance to the mask is within it, then eroded where the distance to what the
+ * dilation left out exceeds it; outside the frame counts as neither mask nor gap. Linear in the frame,
+ * where a 97 x 97 structuring element visited seven thousand cells a pixel (15 s over 30 frames of
+ * market-pan, 2026-09-26). OpenCV's ellipse rounds each row on its own, so it is no disc and the two
+ * differ by a pixel along some edges.
+ */
+export declare function closeByDisc(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array;
 export declare function growSilhouette(mask: Uint8Array, pixels: PixelFrame, scene: {
     data: Float32Array;
     known: Uint8Array;
@@ -54,10 +64,11 @@ export declare function growSilhouette(mask: Uint8Array, pixels: PixelFrame, sce
     mask: Uint8Array;
     grown: number;
 };
-/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes. */
+/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second. */
 export declare function growSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: GrowOptions & {
     layers?: RigidLayer[];
     progress?: StageProgress;
+    frames?: [number, number];
 }): Promise<SceneSilhouettes & {
     grown: number[];
 }>;
@@ -108,13 +119,16 @@ export declare function releaseHeldScenery(source: PixelFrameSource, evidence: D
 }>;
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
- * are built) over it; the plates should be rebuilt afterwards.
+ * are built) over it; the plates should be rebuilt afterwards. `bandMedian` hands in the fallback plate
+ * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second.
  */
 export declare function refineSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: CarveOptions & {
     minimumArea?: number;
     medianFallback?: boolean;
     progress?: StageProgress;
     layers?: RigidLayer[];
+    bandMedian?: LayerPlate;
+    frames?: [number, number];
 }): Promise<SceneSilhouettes & {
     carved: number[];
 }>;
@@ -128,7 +142,7 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
  * shot's drawings sweep over all of it, and those the silhouettes miss stay out. `band` is how
  * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
- * rim. Returns copies of the layers.
+ * rim. With `pool`, the camera plate is sampled on its threads (`buildLayerPlate`). Returns copies of the layers.
  */
 export declare function buildScenePlates(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
@@ -141,6 +155,7 @@ export declare function buildScenePlates(source: PixelFrameSource, camera: Camer
     band?: number;
     peel?: number;
     progress?: StageProgress;
+    pool?: FramePool;
 }): Promise<{
     plate: LayerPlate;
     layers: RigidLayer[];

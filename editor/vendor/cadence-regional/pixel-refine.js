@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, DIST_L2, INTER_CUBIC, MORPH_BLACKHAT, MORPH_CLOSE, MORPH_ELLIPSE, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, distanceTransform, erode, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
+import { BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, DIST_L2, DIST_MASK_PRECISE, INTER_CUBIC, MORPH_BLACKHAT, MORPH_ELLIPSE, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, distanceTransform, erode, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
 import { fillEnclosed, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { frameLayerLabels } from "./pixel-frames.js";
 import { pixelLuma } from "./pixel-frame.js";
@@ -126,18 +126,53 @@ export function carveSilhouette(mask, pixels, plate, options = {}, fallback, dee
  * others, matches neither. Growth floods from the silhouette's edge through such pixels, within `band`
  * of it and inside its concavities (its closing by `bay`).
  */
-export function growSilhouette(mask, pixels, scene, options = {}) {
+/**
+ * A binary mask closed by a disc of `radius` pixels (and a half, which is closest to OpenCV's ellipse):
+ * dilated where the exact distance to the mask is within it, then eroded where the distance to what the
+ * dilation left out exceeds it; outside the frame counts as neither mask nor gap. Linear in the frame,
+ * where a 97 x 97 structuring element visited seven thousand cells a pixel (15 s over 30 frames of
+ * market-pan, 2026-09-26). OpenCV's ellipse rounds each row on its own, so it is no disc and the two
+ * differ by a pixel along some edges.
+ */
+export function closeByDisc(mask, width, height, radius) {
     const env_2 = { stack: [], error: void 0, hasError: false };
+    try {
+        const reach = radius + .5, out = new Uint8Array(mask.length);
+        if (!mask.some(Boolean))
+            return out;
+        const gaps = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 0 : 255)), false), toMask = __addDisposableResource(env_2, new Mat(), false);
+        distanceTransform(gaps, toMask, DIST_L2, DIST_MASK_PRECISE, CV_32F);
+        const near = toMask.data32F, dilated = new Uint8Array(mask.length);
+        for (let p = 0; p < mask.length; p++)
+            dilated[p] = near[p] <= reach ? 255 : 0;
+        if (dilated.every(Boolean))
+            return out.fill(1);
+        const kept = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, dilated), false), toGap = __addDisposableResource(env_2, new Mat(), false);
+        distanceTransform(kept, toGap, DIST_L2, DIST_MASK_PRECISE, CV_32F);
+        const deep = toGap.data32F;
+        for (let p = 0; p < mask.length; p++)
+            out[p] = Number(deep[p] > reach);
+        return out;
+    }
+    catch (e_2) {
+        env_2.error = e_2;
+        env_2.hasError = true;
+    }
+    finally {
+        __disposeResources(env_2);
+    }
+}
+export function growSilhouette(mask, pixels, scene, options = {}) {
+    const env_3 = { stack: [], error: void 0, hasError: false };
     try {
         const band = options.band ?? 24, bayRadius = options.bay ?? 48, tolerance = options.tolerance ?? 16, slope = options.gradientSlope ?? .2;
         const { width, height } = pixels, size = width * height, v = pixels.data, b = scene.data;
-        // Only the silhouette's concavities: its closing by `band`. Scenery beside a drawing that will stand
+        // Only the silhouette's concavities: its closing by `bay`. Scenery beside a drawing that will stand
         // there later disagrees with a plate that remembers it too, and growth must not flood into it.
-        const inside = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 255 : 0)), false), closed = __addDisposableResource(env_2, new Mat(), false), round = __addDisposableResource(env_2, getStructuringElement(MORPH_ELLIPSE, { width: 2 * bayRadius + 1, height: 2 * bayRadius + 1 }), false);
-        morphologyEx(inside, closed, MORPH_CLOSE, round);
-        const outside = __addDisposableResource(env_2, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 0 : 255)), false), distance = __addDisposableResource(env_2, new Mat(), false);
+        const bay = closeByDisc(mask, width, height, bayRadius);
+        const outside = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 0 : 255)), false), distance = __addDisposableResource(env_3, new Mat(), false);
         distanceTransform(outside, distance, DIST_L2, 3, CV_32F);
-        const bay = closed.data, far = distance.data32F, candidate = new Uint8Array(size);
+        const far = distance.data32F, candidate = new Uint8Array(size);
         const sceneLuma = (i) => .0722 * b[i * 3] + .7152 * b[i * 3 + 1] + .2126 * b[i * 3 + 2];
         for (let y = 1; y < height - 1; y++)
             for (let x = 1; x < width - 1; x++) {
@@ -171,18 +206,19 @@ export function growSilhouette(mask, pixels, scene, options = {}) {
         }
         return { mask: out, grown: tail };
     }
-    catch (e_2) {
-        env_2.error = e_2;
-        env_2.hasError = true;
+    catch (e_3) {
+        env_3.error = e_3;
+        env_3.hasError = true;
     }
     finally {
-        __disposeResources(env_2);
+        __disposeResources(env_3);
     }
 }
-/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes. */
+/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second. */
 export async function growSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { layers = [], progress, ...grow } = options, size = source.width * source.height, frames = [], grown = [];
-    for (let frame = 0; frame < silhouettes.frames.length; frame++) {
+    const { layers = [], progress, frames: range, ...grow } = options, size = source.width * source.height, frames = [], grown = [];
+    const [first, end] = range ?? [0, silhouettes.frames.length];
+    for (let frame = first; frame < end; frame++) {
         await progress?.(frame, silhouettes.frames.length);
         const before = silhouettes.frames[frame], scene = layers.length ? renderScene(plate, camera, layers, frame) : renderPlate(plate, camera, frame);
         const result = growSilhouette(unpackMask(before.packed, size), await source.frame(frame), scene, grow);
@@ -201,10 +237,10 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
     const atlas = worldAtlas(camera), { width, height } = source, size = width * height, index = new Int32Array(atlas.width * atlas.height).fill(-1);
     let count = 0;
     for (let frame = 0; frame < silhouettes.frames.length; frame++) {
-        const env_3 = { stack: [], error: void 0, hasError: false };
+        const env_4 = { stack: [], error: void 0, hasError: false };
         try {
             const mask = unpackMask(silhouettes.frames[frame].packed, size), offset = frameOffset(camera, atlas, frame);
-            const inside = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 255 : 0)), false), outside = __addDisposableResource(env_3, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 0 : 255)), false), din = __addDisposableResource(env_3, new Mat(), false), dout = __addDisposableResource(env_3, new Mat(), false);
+            const inside = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 255 : 0)), false), outside = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, mask.map(m => m ? 0 : 255)), false), din = __addDisposableResource(env_4, new Mat(), false), dout = __addDisposableResource(env_4, new Mat(), false);
             distanceTransform(inside, din, DIST_L2, 3, CV_32F);
             distanceTransform(outside, dout, DIST_L2, 3, CV_32F);
             const a = din.data32F, b = dout.data32F;
@@ -218,22 +254,22 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
                         index[at] = count++;
                 }
         }
-        catch (e_3) {
-            env_3.error = e_3;
-            env_3.hasError = true;
+        catch (e_4) {
+            env_4.error = e_4;
+            env_4.hasError = true;
         }
         finally {
-            __disposeResources(env_3);
+            __disposeResources(env_4);
         }
     }
     const frames = silhouettes.frames.length, samples = new Uint8Array(count * frames * 3), seen = new Uint8Array(count);
     for (let frame = 0; frame < frames; frame++) {
-        const env_4 = { stack: [], error: void 0, hasError: false };
+        const env_5 = { stack: [], error: void 0, hasError: false };
         try {
             await progress?.(frame, frames);
             const pixels = await source.frame(frame), position = camera.positions[frame], offset = frameOffset(camera, atlas, frame);
-            const image = __addDisposableResource(env_4, matFromArray(height, width, CV_32FC3, pixels.data), false), warped = __addDisposableResource(env_4, new Mat(), false);
-            const transform = __addDisposableResource(env_4, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
+            const image = __addDisposableResource(env_5, matFromArray(height, width, CV_32FC3, pixels.data), false), warped = __addDisposableResource(env_5, new Mat(), false);
+            const transform = __addDisposableResource(env_5, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
             warpAffine(image, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
             const w = warped.data32F;
             for (let y = 3; y < height - 3; y++)
@@ -247,12 +283,12 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
                     seen[i]++;
                 }
         }
-        catch (e_4) {
-            env_4.error = e_4;
-            env_4.hasError = true;
+        catch (e_5) {
+            env_5.error = e_5;
+            env_5.hasError = true;
         }
         finally {
-            __disposeResources(env_4);
+            __disposeResources(env_5);
         }
     }
     const data = new Float32Array(atlas.width * atlas.height * 3), counts = new Uint16Array(atlas.width * atlas.height), values = new Uint8Array(frames);
@@ -272,20 +308,20 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
 }
 /** One frame of silhouettes from its mask: the packed mask, its area and its components. */
 function silhouetteFrame(mask, width, height) {
-    const env_5 = { stack: [], error: void 0, hasError: false };
+    const env_6 = { stack: [], error: void 0, hasError: false };
     try {
-        const solid = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_5, new Mat(), false), stats = __addDisposableResource(env_5, new Mat(), false), centroids = __addDisposableResource(env_5, new Mat(), false);
+        const solid = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_6, new Mat(), false), stats = __addDisposableResource(env_6, new Mat(), false), centroids = __addDisposableResource(env_6, new Mat(), false);
         const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), s = stats.data32S, columns = stats.cols, components = [];
         for (let label = 1; label < count; label++)
             components.push({ area: s[label * columns + CC_STAT_AREA], box: [s[label * columns + CC_STAT_LEFT], s[label * columns + CC_STAT_TOP], s[label * columns + CC_STAT_WIDTH], s[label * columns + CC_STAT_HEIGHT]] });
         return { packed: packMask(mask), area: mask.reduce((sum, m) => sum + m, 0), components };
     }
-    catch (e_5) {
-        env_5.error = e_5;
-        env_5.hasError = true;
+    catch (e_6) {
+        env_6.error = e_6;
+        env_6.hasError = true;
     }
     finally {
-        __disposeResources(env_5);
+        __disposeResources(env_6);
     }
 }
 const REVEALED = .25;
@@ -323,7 +359,7 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
         }
     const holds = frames.layers.flatMap(layer => layer.drawings.map(drawing => ({ layer: layer.id, drawing })));
     for (const [done, { layer, drawing }] of holds.entries()) {
-        const env_6 = { stack: [], error: void 0, hasError: false };
+        const env_7 = { stack: [], error: void 0, hasError: false };
         try {
             await options.progress?.(done, holds.length);
             const bounding = [drawing.first - 1, drawing.last].filter(pair => pair >= 0 && pair < pairs.length);
@@ -342,7 +378,7 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             for (let p = 0; p < size; p++)
                 held[p] = own[p] === layer + 1 && !changed[p] ? 255 : 0;
             const luma = pixelLuma(await source.frame(first));
-            const heldMat = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, held), false), labels = __addDisposableResource(env_6, new Mat(), false), stats = __addDisposableResource(env_6, new Mat(), false), centroids = __addDisposableResource(env_6, new Mat(), false);
+            const heldMat = __addDisposableResource(env_7, matFromArray(height, width, CV_8UC1, held), false), labels = __addDisposableResource(env_7, new Mat(), false), stats = __addDisposableResource(env_7, new Mat(), false), centroids = __addDisposableResource(env_7, new Mat(), false);
             const count = connectedComponentsWithStats(heldMat, labels, stats, centroids, 4), l = labels.data32S, rough = new Uint32Array(count), area = new Uint32Array(count);
             // Border per region: neighbors outside it, those outside the layer, and those that moved at the redraw.
             const border = new Uint32Array(count), open = new Uint32Array(count), moving = new Uint32Array(count), shown = new Uint32Array(count), differ = new Uint32Array(count);
@@ -381,7 +417,7 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             const chosen = new Uint8Array(size);
             for (let p = 0; p < size; p++)
                 chosen[p] = release[l[p]] ? 255 : 0;
-            const chosenMat = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, chosen), false), inner = __addDisposableResource(env_6, new Mat(), false), shrink = __addDisposableResource(env_6, getStructuringElement(MORPH_ELLIPSE, { width: 2 * margin + 1, height: 2 * margin + 1 }), false);
+            const chosenMat = __addDisposableResource(env_7, matFromArray(height, width, CV_8UC1, chosen), false), inner = __addDisposableResource(env_7, new Mat(), false), shrink = __addDisposableResource(env_7, getStructuringElement(MORPH_ELLIPSE, { width: 2 * margin + 1, height: 2 * margin + 1 }), false);
             erode(chosenMat, inner, shrink);
             const out = inner.data;
             // The hold's drawing stays put in the world, so every frame of it loses the same world pixels.
@@ -400,12 +436,12 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                     }
             }
         }
-        catch (e_6) {
-            env_6.error = e_6;
-            env_6.hasError = true;
+        catch (e_7) {
+            env_7.error = e_7;
+            env_7.hasError = true;
         }
         finally {
-            __disposeResources(env_6);
+            __disposeResources(env_7);
         }
     }
     // What a release cuts off a silhouette goes the way of any small component.
@@ -413,37 +449,38 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
 }
 /** The mask without its 8-connected components under `minimum` pixels. */
 function dropSmall(mask, width, height, minimum) {
-    const env_7 = { stack: [], error: void 0, hasError: false };
+    const env_8 = { stack: [], error: void 0, hasError: false };
     try {
-        const solid = __addDisposableResource(env_7, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_7, new Mat(), false), stats = __addDisposableResource(env_7, new Mat(), false), centroids = __addDisposableResource(env_7, new Mat(), false);
+        const solid = __addDisposableResource(env_8, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_8, new Mat(), false), stats = __addDisposableResource(env_8, new Mat(), false), centroids = __addDisposableResource(env_8, new Mat(), false);
         const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count);
         for (let k = 1; k < count; k++)
             keep[k] = Number(stats.data32S[k * stats.cols + CC_STAT_AREA] >= minimum);
         return mask.map((m, p) => m && keep[l[p]] ? 1 : 0);
     }
-    catch (e_7) {
-        env_7.error = e_7;
-        env_7.hasError = true;
+    catch (e_8) {
+        env_8.error = e_8;
+        env_8.hasError = true;
     }
     finally {
-        __disposeResources(env_7);
+        __disposeResources(env_8);
     }
 }
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
- * are built) over it; the plates should be rebuilt afterwards.
+ * are built) over it; the plates should be rebuilt afterwards. `bandMedian` hands in the fallback plate
+ * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second.
  */
 export async function refineSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
+    const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], bandMedian, frames: range, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
     const minimumArea = area ?? silhouettes.options.minimumArea ?? 800;
     const trust = (p) => ({ ...p, count: p.count.map(n => n >= minimumCount ? n : 0) });
     const trusted = trust(plate), layers = rigid.map(layer => ({ ...layer, plate: layer.plate && trust(layer.plate) })), own = layers.findIndex(layer => layer.camera);
     // Where the plate is not trusted, the band median may stand in, if enough frames observed it.
-    const band = options.medianFallback === false ? undefined : await bandMedianPlate(source, camera, silhouettes, carve.band ?? 8);
+    const band = options.medianFallback === false ? undefined : bandMedian ?? await bandMedianPlate(source, camera, silhouettes, carve.band ?? 8);
     const median = band && { ...band, count: band.count.map((n, a) => n >= 10 && !trusted.count[a] ? n : 0) };
-    const frames = [], carved = [];
-    for (let frame = 0; frame < silhouettes.frames.length; frame++) {
-        const env_8 = { stack: [], error: void 0, hasError: false };
+    const frames = [], carved = [], [first, end] = range ?? [0, silhouettes.frames.length];
+    for (let frame = first; frame < end; frame++) {
+        const env_9 = { stack: [], error: void 0, hasError: false };
         try {
             await progress?.(frame, silhouettes.frames.length);
             const before = silhouettes.frames[frame], rendered = renderScene(trusted, camera, layers, frame);
@@ -468,7 +505,7 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
                         fallback.known[p] = 0;
             const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve, fallback, layers.length ? covered : undefined);
             // Carving can cut splinters off a silhouette; they go the way of any small component.
-            const solid = __addDisposableResource(env_8, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_8, new Mat(), false), stats = __addDisposableResource(env_8, new Mat(), false), centroids = __addDisposableResource(env_8, new Mat(), false);
+            const solid = __addDisposableResource(env_9, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_9, new Mat(), false), stats = __addDisposableResource(env_9, new Mat(), false), centroids = __addDisposableResource(env_9, new Mat(), false);
             const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count), s = stats.data32S, columns = stats.cols;
             const components = [];
             for (let label = 1; label < count; label++) {
@@ -483,12 +520,12 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
             frames.push({ packed: packMask(result.mask), area, components });
             carved.push(result.carved);
         }
-        catch (e_8) {
-            env_8.error = e_8;
-            env_8.hasError = true;
+        catch (e_9) {
+            env_9.error = e_9;
+            env_9.hasError = true;
         }
         finally {
-            __disposeResources(env_8);
+            __disposeResources(env_9);
         }
     }
     return { ...silhouettes, frames, carved };
@@ -503,14 +540,14 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
  * shot's drawings sweep over all of it, and those the silhouettes miss stay out. `band` is how
  * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
- * rim. Returns copies of the layers.
+ * rim. With `pool`, the camera plate is sampled on its threads (`buildLayerPlate`). Returns copies of the layers.
  */
 export async function buildScenePlates(source, camera, silhouettes, layers, options = {}) {
     const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size), { evidence, drift, margin, floor, progress } = options;
     const band = options.band === undefined ? {} : { band: options.band };
     const plate = layers.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
         : await buildLayerPlate(source, camera, silhouettes, {
-            covers: frame => layers.map(layer => renderCover(layer, frame, true)), progress, ...(evidence ? { evidence } : {}), ...(drift === undefined ? {} : { drift }),
+            layers, progress, ...(evidence ? { evidence } : {}), ...(drift === undefined ? {} : { drift }), ...(options.pool ? { pool: options.pool } : {}),
             ...(margin === undefined ? {} : { margin }), ...(floor === undefined ? {} : { floor }),
         });
     const out = layers.map(layer => ({ ...layer }));
@@ -555,7 +592,7 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
     const next = await measureScenePlanes(source, camera, layers, { exclude: drawn, progress });
     // What lies behind each plane, from the new covers: the camera plate, and the farther planes' plates.
     const scene = next.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
-        : await buildLayerPlate(source, camera, silhouettes, { covers: frame => next.map(layer => renderCover(layer, frame, true)), progress, ...(evidence ? { evidence } : {}) });
+        : await buildLayerPlate(source, camera, silhouettes, { layers: next, progress, ...(evidence ? { evidence } : {}) });
     const withPlates = [];
     for (const [k, layer] of next.entries())
         withPlates.push(k < next.length - 1 ? { ...layer, plate: await buildRigidPlate(source, layer, hiddenBy(next, k, drawn), { progress }) } : layer);

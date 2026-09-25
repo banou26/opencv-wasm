@@ -181,6 +181,16 @@ export function medianReference(samples, floor = 4) {
     }
     return { luma, tolerance };
 }
+/** Adds `other`'s sums and counts into `statistics`, both on the same atlas. */
+export function mergePlateStatistics(statistics, other) {
+    const { sum, square, count } = statistics;
+    for (let i = 0; i < sum.length; i++) {
+        sum[i] += other.sum[i];
+        square[i] += other.square[i];
+    }
+    for (let a = 0; a < count.length; a++)
+        count[a] = Math.min(65535, count[a] + other.count[a]);
+}
 export function finishPlate(statistics) {
     const { atlas, sum, count } = statistics, data = new Float32Array(sum.length);
     for (let a = 0; a < count.length; a++)
@@ -204,13 +214,21 @@ export function addDrift(data, width, height, drift, frame) {
     const { cell, columns, rows } = drift, grid = drift.frames[frame];
     if (!grid)
         return;
+    // A closure per pixel and channel made this 1.3 s a 1080p frame; the columns' weights repeat on every row.
+    const left = new Int32Array(width), right = new Int32Array(width), weight = new Float64Array(width);
+    for (let x = 0; x < width; x++) {
+        const gx = Math.min(columns - 1, Math.max(0, (x + .5) / cell - .5)), x0 = Math.floor(gx);
+        left[x] = x0 * 3;
+        right[x] = Math.min(columns - 1, x0 + 1) * 3;
+        weight[x] = gx - x0;
+    }
     for (let y = 0; y < height; y++) {
         const gy = Math.min(rows - 1, Math.max(0, (y + .5) / cell - .5)), y0 = Math.floor(gy), y1 = Math.min(rows - 1, y0 + 1), fy = gy - y0;
+        const top = y0 * columns * 3, bottom = y1 * columns * 3;
         for (let x = 0; x < width; x++) {
-            const gx = Math.min(columns - 1, Math.max(0, (x + .5) / cell - .5)), x0 = Math.floor(gx), x1 = Math.min(columns - 1, x0 + 1), fx = gx - x0, q = (y * width + x) * 3;
+            const fx = weight[x], a = left[x], b = right[x], q = (y * width + x) * 3;
             for (let c = 0; c < 3; c++) {
-                const at = (cx, cy) => grid[(cy * columns + cx) * 3 + c];
-                data[q + c] += (at(x0, y0) * (1 - fx) + at(x1, y0) * fx) * (1 - fy) + (at(x0, y1) * (1 - fx) + at(x1, y1) * fx) * fy;
+                data[q + c] += (grid[top + a + c] * (1 - fx) + grid[top + b + c] * fx) * (1 - fy) + (grid[bottom + a + c] * (1 - fx) + grid[bottom + b + c] * fx) * fy;
             }
         }
     }
@@ -284,14 +302,23 @@ function renderPaint(plate, camera, frame) {
     const env_3 = { stack: [], error: void 0, hasError: false };
     try {
         const { width, height } = camera, { atlas } = plate, position = camera.positions[frame];
-        const source = __addDisposableResource(env_3, matFromArray(atlas.height, atlas.width, CV_32FC3, plate.data), false), warped = __addDisposableResource(env_3, new Mat(), false);
-        const transform = __addDisposableResource(env_3, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
+        // Only the window the frame samples goes to OpenCV: cubic taps and the unseen mask's dilation both reach two
+        // atlas pixels, so four around it change nothing, and an integer crop keeps every sub-pixel phase.
+        const ox = -(position.dx + atlas.x), oy = -(position.dy + atlas.y);
+        const x0 = Math.max(0, Math.floor(ox) - 4), y0 = Math.max(0, Math.floor(oy) - 4);
+        const x1 = Math.min(atlas.width, Math.ceil(ox + width) + 4), y1 = Math.min(atlas.height, Math.ceil(oy + height) + 4), w = x1 - x0, h = y1 - y0;
+        const window = new Float32Array(w * h * 3), unseen = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) {
+            const row = (y + y0) * atlas.width + x0;
+            window.set(plate.data.subarray(row * 3, (row + w) * 3), y * w * 3);
+            for (let x = 0; x < w; x++)
+                unseen[y * w + x] = plate.count[row + x] ? 0 : 255;
+        }
+        const source = __addDisposableResource(env_3, matFromArray(h, w, CV_32FC3, window), false), warped = __addDisposableResource(env_3, new Mat(), false);
+        const transform = __addDisposableResource(env_3, matFromArray(2, 3, CV_64FC1, [1, 0, ox - x0, 0, 1, oy - y0]), false);
         warpAffine(source, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
         // Cubic taps reach two atlas pixels, so a frame pixel is known only when that neighborhood was observed.
-        const unseen = new Uint8Array(plate.count.length);
-        for (let a = 0; a < unseen.length; a++)
-            unseen[a] = plate.count[a] ? 0 : 255;
-        const holes = __addDisposableResource(env_3, matFromArray(atlas.height, atlas.width, CV_8UC1, unseen), false), grown = __addDisposableResource(env_3, new Mat(), false), sampled = __addDisposableResource(env_3, new Mat(), false);
+        const holes = __addDisposableResource(env_3, matFromArray(h, w, CV_8UC1, unseen), false), grown = __addDisposableResource(env_3, new Mat(), false), sampled = __addDisposableResource(env_3, new Mat(), false);
         const kernel = __addDisposableResource(env_3, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
         dilate(holes, grown, kernel);
         warpAffine(grown, sampled, transform, { width, height }, INTER_NEAREST | WARP_INVERSE_MAP, BORDER_CONSTANT, [255, 255, 255, 255]);

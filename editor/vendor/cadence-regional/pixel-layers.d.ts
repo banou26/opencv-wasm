@@ -3,7 +3,8 @@ import { type CandidateMotion, type TranslationFit } from './pixel-camera.ts';
 import { type CameraPath, type DrawingEvidence, type SilhouetteOptions } from './pixel-drawings.ts';
 import { type PixelFrame, type Translation } from './pixel-frame.ts';
 import { type RigidLayer } from './pixel-rigid.ts';
-import { type LayerPlate } from './pixel-plate.ts';
+import { type LayerPlate, type PlateReference, type PlateStatistics } from './pixel-plate.ts';
+import { type FramePool } from './pixel-share.ts';
 import type { Box } from './types.ts';
 /** Frames of one shot, decoded on demand at full resolution. */
 export type PixelFrameSource = {
@@ -81,7 +82,8 @@ export type MeasuredEvidence = DrawingEvidence & {
  * Every pair's change events under the camera. Besides the camera's own motion, a pixel is explained by
  * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
  * drawing's own displacement between two redraws and would explain the redraw away; without it, every
- * candidate the camera measurement found.
+ * candidate the camera measurement found. With `pairs`, only the pairs from its first up to its second
+ * are measured, and the arrays hold those alone (for workers, see `pixel-pool.ts`).
  */
 export declare function measureDrawingEvidence(source: PixelFrameSource, camera: CameraPath & {
     motions?: CandidateMotion[][];
@@ -91,6 +93,7 @@ export declare function measureDrawingEvidence(source: PixelFrameSource, camera:
     progress?: StageProgress;
     rigid?: RigidLayer[];
     rimWidth?: number;
+    pairs?: [number, number];
 }): Promise<MeasuredEvidence>;
 /**
  * Mark every change event whose value before or after it is the pixel's scenery: its median luma over the
@@ -119,21 +122,41 @@ export type SceneSilhouettes = {
         }[];
     }[];
 };
-/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`). */
+/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only those from its first up to its second are made. */
 export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: SilhouetteOptions & {
     progress?: StageProgress;
     source?: PixelFrameSource;
+    frames?: [number, number];
 }): Promise<SceneSilhouettes>;
+/** What the camera plate samples: frames outside the drawings, outside the paint of `layers` and outside what only another motion explains. */
+export type LayerPlateSampling = {
+    camera: CameraPath;
+    silhouettes: SceneSilhouettes;
+    margin: number;
+    layers?: RigidLayer[];
+    evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
+};
+/** One sampling pass of the camera plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
+export declare function layerPlateSamples(source: PixelFrameSource, sampling: LayerPlateSampling, range: [number, number], reference?: PlateReference): Promise<PlateStatistics>;
+/** The drift grids of the frames from `range`'s first up to its second, against `plate` (see `measureDrift`). */
+export declare function layerPlateDrift(source: PixelFrameSource, sampling: LayerPlateSampling, plate: LayerPlate, cell: number, range: [number, number]): Promise<{
+    columns: number;
+    rows: number;
+    frames: Float32Array[];
+}>;
 /**
  * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
- * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
- * `undecided`), which show no camera scenery the plate can trust.
+ * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). The
+ * rigid `layers` paint (or leave undecided, `renderCover`) pixels that show no camera scenery the plate can
+ * trust. With `pool`, every pass runs over ranges of frames on its threads; the sums merge in range order, so
+ * the plate matches the one made here to within float rounding.
  */
 export declare function buildLayerPlate(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, options?: {
     margin?: number;
     floor?: number;
     progress?: StageProgress;
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
-    covers?: (frame: number) => Uint8Array[];
+    layers?: RigidLayer[];
     drift?: number;
+    pool?: FramePool;
 }): Promise<LayerPlate>;

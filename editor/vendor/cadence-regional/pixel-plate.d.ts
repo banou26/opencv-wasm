@@ -71,6 +71,8 @@ export declare function medianReference(samples: PlateLumaSamples, floor?: numbe
     luma: Float32Array;
     tolerance: Float32Array;
 };
+/** Adds `other`'s sums and counts into `statistics`, both on the same atlas. */
+export declare function mergePlateStatistics(statistics: PlateStatistics, other: PlateStatistics): void;
 export declare function finishPlate(statistics: PlateStatistics): LayerPlate;
 /**
  * The plate seen by one frame, resampled at its sub-pixel camera position. `known` is 1 only where every

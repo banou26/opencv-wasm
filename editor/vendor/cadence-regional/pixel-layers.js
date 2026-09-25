@@ -56,7 +56,8 @@ import { AFTER_SCENERY, BEFORE_SCENERY, VALUED, cameraPath, drawingSilhouette, f
 import { pixelLuma } from "./pixel-frame.js";
 import { BORDER_REPLICATE, CV_32FC1, CV_64FC1, CV_8UC1, INTER_CUBIC, MORPH_RECT, Mat, WARP_INVERSE_MAP, dilate, getStructuringElement, matFromArray, warpAffine } from '@banou/opencv-wasm';
 import { renderCover } from "./pixel-rigid.js";
-import { addPlateSamples, finishPlate, measureDrift, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { addPlateSamples, finishPlate, measureDrift, mergePlateStatistics, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { shareDeep, splitRange } from "./pixel-share.js";
 /**
  * Candidate motions linked across pairs: each continues the track whose latest candidate, at most
  * `maxGap` pairs back, is nearest within `continuity` pixels. A static layer drops out on redraw pairs,
@@ -253,15 +254,17 @@ const otherLayer = (change) => packMask(change.flags.map(f => f & OTHER_LAYER ? 
  * Every pair's change events under the camera. Besides the camera's own motion, a pixel is explained by
  * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
  * drawing's own displacement between two redraws and would explain the redraw away; without it, every
- * candidate the camera measurement found.
+ * candidate the camera measurement found. With `pairs`, only the pairs from its first up to its second
+ * are measured, and the arrays hold those alone (for workers, see `pixel-pool.ts`).
  */
 export async function measureDrawingEvidence(source, camera, options = {}) {
     const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 0;
-    const { progress, dilation: _, inkDilation: __, rigid, rimWidth, ...changeOptions } = options;
+    const { progress, dilation: _, inkDilation: __, rigid, rimWidth, pairs: range, ...changeOptions } = options;
     const rims = rigid?.length ? (frame) => rigidRim(rigid, frame, rimWidth ?? 2) : undefined;
     const pairs = [], summaries = [], others = [], othersBackward = [];
-    let previous = await source.frame(0);
-    for (let pair = 0; pair < source.count - 1; pair++) {
+    const [first, end] = range ?? [0, source.count - 1];
+    let previous = await source.frame(first);
+    for (let pair = first; pair < end; pair++) {
         await progress?.(pair, source.count - 1);
         const next = await source.frame(pair + 1), step = camera.positions[pair + 1], base = camera.positions[pair];
         const d = { dx: step.dx - base.dx, dy: step.dy - base.dy };
@@ -370,10 +373,11 @@ export const unpackMask = (packed, length) => {
         out[p] = (packed[p >> 3] >> (7 - (p & 7))) & 1;
     return out;
 };
-/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`). */
+/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only those from its first up to its second are made. */
 export async function sceneSilhouettes(evidence, options = {}) {
-    const { progress, source, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
-    for (let frame = 0; frame <= evidence.pairs.length; frame++) {
+    const { progress, source, frames: range, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
+    const [first, end] = range ?? [0, evidence.pairs.length + 1];
+    for (let frame = first; frame < end; frame++) {
         await progress?.(frame, evidence.pairs.length + 1);
         const luma = source && Uint8Array.from(pixelLuma(await source.frame(frame)), v => Math.max(0, Math.min(255, Math.round(v))));
         const silhouette = drawingSilhouette(evidence, frame, silhouetteOptions, luma);
@@ -381,19 +385,15 @@ export async function sceneSilhouettes(evidence, options = {}) {
     }
     return { width, height, options: silhouetteOptions, frames };
 }
-/**
- * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
- * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). `covers` gives, per frame, the pixels each rigid layer paints or leaves undecided (`renderCover` with
- * `undecided`), which show no camera scenery the plate can trust.
- */
-export async function buildLayerPlate(source, camera, silhouettes, options = {}) {
-    const atlas = worldAtlas(camera), margin = options.margin ?? 3, size = source.width * source.height;
-    const exclude = (frame) => {
-        const mask = unpackMask(silhouettes.frames[frame].packed, size), ev = options.evidence;
-        // Pixels a rigid layer paints show that layer, not this plate.
-        for (const cover of options.covers?.(frame) ?? [])
+function plateExclusion(sampling, size) {
+    return (frame) => {
+        const mask = unpackMask(sampling.silhouettes.frames[frame].packed, size), ev = sampling.evidence;
+        // Pixels a rigid layer paints (or leaves undecided) show that layer, not this plate.
+        for (const layer of sampling.layers ?? []) {
+            const cover = renderCover(layer, frame, true);
             for (let p = 0; p < size; p++)
                 mask[p] |= cover[p];
+        }
         // Another layer only claims a pixel when neither neighbor pair explains it under the camera.
         if (!ev?.others.length)
             return mask;
@@ -404,27 +404,55 @@ export async function buildLayerPlate(source, camera, silhouettes, options = {})
                 mask[p] = 1;
         return mask;
     };
-    const first = plateStatistics(atlas);
-    for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(frame, source.count * 3);
-        addPlateSamples(first, camera, frame, await source.frame(frame), exclude(frame), margin);
+}
+/** One sampling pass of the camera plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
+export async function layerPlateSamples(source, sampling, range, reference) {
+    const exclude = plateExclusion(sampling, source.width * source.height), statistics = plateStatistics(worldAtlas(sampling.camera));
+    for (let frame = range[0]; frame < range[1]; frame++)
+        addPlateSamples(statistics, sampling.camera, frame, await source.frame(frame), exclude(frame), sampling.margin, reference);
+    return statistics;
+}
+/** The drift grids of the frames from `range`'s first up to its second, against `plate` (see `measureDrift`). */
+export async function layerPlateDrift(source, sampling, plate, cell, range) {
+    const exclude = plateExclusion(sampling, source.width * source.height), frames = [];
+    let columns = 0, rows = 0;
+    for (let frame = range[0]; frame < range[1]; frame++) {
+        const measured = measureDrift(renderPlate(plate, sampling.camera, frame), await source.frame(frame), exclude(frame), cell);
+        columns = measured.columns;
+        rows = measured.rows;
+        frames.push(measured.grid);
     }
-    const reference = plateReference(first, options.floor ?? 4), trimmed = plateStatistics(atlas);
-    for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(source.count + frame, source.count * 3);
-        addPlateSamples(trimmed, camera, frame, await source.frame(frame), exclude(frame), margin, reference);
-    }
-    const plate = finishPlate(trimmed), cell = options.drift ?? 64;
+    return { columns, rows, frames };
+}
+/**
+ * Two passes: a plain mean outside the drawings and other rigid layers, then a mean of the samples near
+ * it. Then, unless `drift` is 0, each frame's drift on cells of that many pixels (see `PlateDrift`). The
+ * rigid `layers` paint (or leave undecided, `renderCover`) pixels that show no camera scenery the plate can
+ * trust. With `pool`, every pass runs over ranges of frames on its threads; the sums merge in range order, so
+ * the plate matches the one made here to within float rounding.
+ */
+export async function buildLayerPlate(source, camera, silhouettes, options = {}) {
+    const sampling = { camera, silhouettes, margin: options.margin ?? 3, ...(options.layers ? { layers: options.layers } : {}), ...(options.evidence ? { evidence: options.evidence } : {}) };
+    const { pool } = options, all = [0, source.count];
+    const shared = pool && shareDeep(sampling), ranges = pool && splitRange(0, source.count, pool.size);
+    const pass = async (reference) => {
+        if (!pool)
+            return layerPlateSamples(source, sampling, all, reference);
+        const parts = await pool.map('layerPlateSamples', { sampling: shared, ...(reference ? { reference: shareDeep(reference) } : {}) }, ranges);
+        for (const part of parts.slice(1))
+            mergePlateStatistics(parts[0], part);
+        return parts[0];
+    };
+    await options.progress?.(0, 3);
+    const reference = plateReference(await pass(), options.floor ?? 4);
+    await options.progress?.(1, 3);
+    const plate = finishPlate(await pass(reference)), cell = options.drift ?? 64;
     if (!cell)
         return plate;
     // What the held paint cannot explain but a smooth field can: the shot's lighting changing.
-    const drift = { cell, columns: 0, rows: 0, frames: [] };
-    for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(source.count * 2 + frame, source.count * 3);
-        const measured = measureDrift(renderPlate(plate, camera, frame), await source.frame(frame), exclude(frame), cell);
-        drift.columns = measured.columns;
-        drift.rows = measured.rows;
-        drift.frames.push(measured.grid);
-    }
+    await options.progress?.(2, 3);
+    const parts = pool ? await pool.map('layerPlateDrift', { sampling: shared, plate: shareDeep(plate), cell }, ranges)
+        : [await layerPlateDrift(source, sampling, plate, cell, all)];
+    const drift = { cell, columns: parts[0].columns, rows: parts[0].rows, frames: parts.flatMap(p => p.frames) };
     return { ...plate, drift };
 }

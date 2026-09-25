@@ -53,8 +53,9 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
 import { BORDER_CONSTANT, BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32FC3, CV_32FC4, CV_64FC1, CV_8UC1, INTER_CUBIC, INTER_NEAREST, MORPH_CLOSE, MORPH_ELLIPSE, MORPH_RECT, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, dilate, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
 import { explainingMotions } from "./pixel-change.js";
 import { cameraPath, frameOffset, worldAtlas } from "./pixel-drawings.js";
+import { pixelLuma } from "./pixel-frame.js";
 import { motionTracks } from "./pixel-layers.js";
-import { addPlateSamples, finishPlate, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { addDrift, addPlateSamples, finishPlate, measureDrift, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
 const median = (values) => [...values].sort((a, b) => a - b)[values.length >> 1] ?? 0;
 /**
  * Fill the enclosed holes of `mask` under `maximum` pixels whose mean `open` score stays under `openLimit`,
@@ -300,6 +301,81 @@ export function orderPlanes(camera, found) {
     return [{ ...behind[0].entry, backdrop: true }, ...behind.slice(1).map(p => p.entry), own, ...front.map(p => p.entry)];
 }
 /**
+ * In a follow shot the camera tracks the characters and the whole background painting slides with one
+ * plane (street-busy: sky, mountains and forest together at 11.5 px per frame behind still characters), so
+ * outside the drawings the camera's coordinates hold no still plate. Over frames `gap` apart, every
+ * `stride` frames, each plane is scored on the pixels at least `away` from its cover (and undecided pixels)
+ * and outside the drawings in both frames: a pixel its step explains better than the camera's by `margin` codes of luma,
+ * each measured from its median change over the pair (the shot's lighting), is a win, the other way round
+ * a loss, a tie neither. The plane winning at least `fraction` of the decided pixels, the most of any, and
+ * at least `support` of all it scored (`won`), becomes the backdrop: first in the list, cover and decided all ones, so the
+ * camera plate is empty and the drawings carve against it at any depth. Planes already behind the
+ * camera's leave the list as it is.
+ */
+export async function promoteBackdrop(source, camera, layers, drawn, options = {}) {
+    if (!layers.length || layers.some(layer => layer.camera || layer.backdrop))
+        return { layers, share: [], won: [] };
+    const gap = options.gap ?? 10, stride = options.stride ?? 5, fraction = options.fraction ?? 2 / 3, margin = options.margin ?? 1, step = options.step ?? 2, away = options.away ?? 8;
+    const support = options.support ?? .2, { width, height } = source, wins = layers.map(() => 0), losses = layers.map(() => 0), scored = layers.map(() => 0);
+    const sample = (luma, x, y) => {
+        const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, p = y0 * width + x0;
+        return (luma[p] * (1 - fx) + luma[p + 1] * fx) * (1 - fy) + (luma[p + width] * (1 - fx) + luma[p + width + 1] * fx) * fy;
+    };
+    const shift = (path, t, u) => [path.positions[u].dx - path.positions[t].dx, path.positions[u].dy - path.positions[t].dy];
+    for (let t = 0; t + gap < source.count; t += stride) {
+        const u = t + gap, a = pixelLuma(await source.frame(t)), b = pixelLuma(await source.frame(u)), before = drawn(t), after = drawn(u), [cx, cy] = shift(camera, t, u);
+        for (const [k, layer] of layers.entries()) {
+            const env_4 = { stack: [], error: void 0, hasError: false };
+            try {
+                // Paint the cover missed lies beside it and favors the plane, whatever the scenery does: score only
+                // pixels `away` from the cover.
+                const covered = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, renderCover(layer, t, true)), false), grown = __addDisposableResource(env_4, new Mat(), false), kernel = __addDisposableResource(env_4, getStructuringElement(MORPH_RECT, { width: 2 * away + 1, height: 2 * away + 1 }), false);
+                dilate(covered, grown, kernel);
+                const cover = grown.data, [px, py] = shift(layer.path, t, u), owns = [], stills = [];
+                for (let y = 2; y < height - 2; y += step)
+                    for (let x = 2; x < width - 2; x += step) {
+                        const p = y * width + x;
+                        if (cover[p] || before?.[p])
+                            continue;
+                        const qx = x + px, qy = y + py, rx = x + cx, ry = y + cy;
+                        if (qx < 1 || qy < 1 || qx >= width - 2 || qy >= height - 2 || rx < 1 || ry < 1 || rx >= width - 2 || ry >= height - 2)
+                            continue;
+                        if (after?.[Math.round(qy) * width + Math.round(qx)] || after?.[Math.round(ry) * width + Math.round(rx)])
+                            continue;
+                        owns.push(sample(b, qx, qy) - a[p]);
+                        stills.push(sample(b, rx, ry) - a[p]);
+                    }
+                // The shot's lighting moves every difference alike (street-busy's sky darkens through the shot), so each
+                // hypothesis is measured from its own median change.
+                const ownShift = median(owns), stillShift = median(stills);
+                scored[k] += owns.length;
+                for (let i = 0; i < owns.length; i++) {
+                    const own = Math.abs(owns[i] - ownShift), still = Math.abs(stills[i] - stillShift);
+                    if (own + margin < still)
+                        wins[k]++;
+                    else if (still + margin < own)
+                        losses[k]++;
+                }
+            }
+            catch (e_4) {
+                env_4.error = e_4;
+                env_4.hasError = true;
+            }
+            finally {
+                __disposeResources(env_4);
+            }
+        }
+    }
+    // A ratio over a handful of decided pixels says nothing: street-busy's painting wins most of what it
+    // scores, while a still sky ties nearly everywhere and leaves only the paint the cover missed to decide.
+    const share = layers.map((_, k) => wins[k] + losses[k] ? wins[k] / (wins[k] + losses[k]) : 0), won = layers.map((_, k) => scored[k] ? wins[k] / scored[k] : 0);
+    const best = share.indexOf(Math.max(...share));
+    if (share[best] < fraction || won[best] < support)
+        return { layers, share, won };
+    const all = new Uint8Array(layers[best].cover.length).fill(1);
+    return { layers: [{ ...layers[best], cover: all, decided: all.slice(), backdrop: true }, ...layers.filter((_, k) => k !== best)], share, won };
+}
+/**
  * Covers for planes in back-to-front order, measured front to back: each plane is tested against every
  * other one, and only where the planes already measured in front of it leave it visible. The backdrop is
  * never measured, and one already built is reused, as is every other plane's order. With a camera entry
@@ -345,7 +421,7 @@ export function hiddenBy(layers, index, exclude, rim = 1) {
     if (!nearer.length)
         return exclude;
     return frame => {
-        const env_4 = { stack: [], error: void 0, hasError: false };
+        const env_5 = { stack: [], error: void 0, hasError: false };
         try {
             const hidden = new Uint8Array(width * height);
             for (const layer of nearer) {
@@ -353,7 +429,7 @@ export function hiddenBy(layers, index, exclude, rim = 1) {
                 for (let p = 0; p < hidden.length; p++)
                     hidden[p] |= mask[p];
             }
-            const mask = __addDisposableResource(env_4, matFromArray(height, width, CV_8UC1, hidden), false), grown = __addDisposableResource(env_4, new Mat(), false), kernel = __addDisposableResource(env_4, getStructuringElement(MORPH_RECT, { width: 2 * rim + 1, height: 2 * rim + 1 }), false);
+            const mask = __addDisposableResource(env_5, matFromArray(height, width, CV_8UC1, hidden), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: 2 * rim + 1, height: 2 * rim + 1 }), false);
             dilate(mask, grown, kernel);
             const out = grown.data.slice(), base = exclude?.(frame);
             if (base)
@@ -361,12 +437,12 @@ export function hiddenBy(layers, index, exclude, rim = 1) {
                     out[p] |= base[p] ? 1 : 0;
             return out;
         }
-        catch (e_4) {
-            env_4.error = e_4;
-            env_4.hasError = true;
+        catch (e_5) {
+            env_5.error = e_5;
+            env_5.hasError = true;
         }
         finally {
-            __disposeResources(env_4);
+            __disposeResources(env_5);
         }
     };
 }
@@ -536,7 +612,11 @@ export function peelNearer(source, nearer, exclude, most = .9) {
         exclude: frame => last?.frame === frame ? last.mask : new Uint8Array(size).fill(1),
     };
 }
-/** The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside `exclude`. */
+/**
+ * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
+ * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
+ * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
+ */
 export async function buildRigidPlate(source, layer, exclude, options = {}) {
     const margin = options.margin ?? 1;
     const outside = (frame) => {
@@ -555,7 +635,30 @@ export async function buildRigidPlate(source, layer, exclude, options = {}) {
         await options.progress?.(source.count + frame, source.count * 2);
         addPlateSamples(trimmed, layer.path, frame, await source.frame(frame), outside(frame), margin, reference);
     }
-    return finishPlate(trimmed);
+    const plate = finishPlate(trimmed);
+    if (!options.drift)
+        return plate;
+    // A rim mixes what lies behind into the frame, so the drift is measured away from it.
+    const drift = { cell: options.drift, columns: 0, rows: 0, frames: [] };
+    for (let frame = 0; frame < source.count; frame++) {
+        const env_6 = { stack: [], error: void 0, hasError: false };
+        try {
+            const mask = __addDisposableResource(env_6, matFromArray(source.height, source.width, CV_8UC1, outside(frame)), false), away = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 7, height: 7 }), false);
+            dilate(mask, away, kernel);
+            const measured = measureDrift(renderPlate(plate, layer.path, frame), await source.frame(frame), away.data, options.drift);
+            drift.columns = measured.columns;
+            drift.rows = measured.rows;
+            drift.frames.push(measured.grid);
+        }
+        catch (e_6) {
+            env_6.error = e_6;
+            env_6.hasError = true;
+        }
+        finally {
+            __disposeResources(env_6);
+        }
+    }
+    return { ...plate, drift };
 }
 /**
  * Unmix the rim of a rigid layer from what shows behind it. A layer pixel slides over changing scenery,
@@ -568,7 +671,7 @@ export async function buildRigidPlate(source, layer, exclude, options = {}) {
  * What is behind is the camera plate unless `behind` renders the farther planes instead.
  */
 export async function matteRigidLayer(source, camera, plate, layer, options = {}) {
-    const env_5 = { stack: [], error: void 0, hasError: false };
+    const env_7 = { stack: [], error: void 0, hasError: false };
     try {
         const band = options.band ?? 2, minimumSpread = options.minimumSpread ?? 6, minimumFrames = options.minimumFrames ?? 4;
         const { atlas, path, cover } = layer, { width, height } = source, size = atlas.width * atlas.height;
@@ -579,7 +682,7 @@ export async function matteRigidLayer(source, camera, plate, layer, options = {}
                 if (cover[a] !== cover[a - 1] || cover[a] !== cover[a + 1] || cover[a] !== cover[a - atlas.width] || cover[a] !== cover[a + atlas.width])
                     edge[a] = 255;
             }
-        const edges = __addDisposableResource(env_5, matFromArray(atlas.height, atlas.width, CV_8UC1, edge), false), grown = __addDisposableResource(env_5, new Mat(), false), kernel = __addDisposableResource(env_5, getStructuringElement(MORPH_RECT, { width: 2 * band - 1, height: 2 * band - 1 }), false);
+        const edges = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_8UC1, edge), false), grown = __addDisposableResource(env_7, new Mat(), false), kernel = __addDisposableResource(env_7, getStructuringElement(MORPH_RECT, { width: 2 * band - 1, height: 2 * band - 1 }), false);
         dilate(edges, grown, kernel);
         const slot = new Int32Array(size).fill(-1), rim = grown.data;
         let slots = 0;
@@ -589,14 +692,14 @@ export async function matteRigidLayer(source, camera, plate, layer, options = {}
         // Per slot: frames, and sums of behind, behind squared (over channels), frame minus behind, and their product.
         const n = new Uint16Array(slots), sb = new Float32Array(slots * 3), sbb = new Float32Array(slots), sy = new Float32Array(slots * 3), syb = new Float32Array(slots);
         for (let frame = 0; frame < source.count; frame++) {
-            const env_6 = { stack: [], error: void 0, hasError: false };
+            const env_8 = { stack: [], error: void 0, hasError: false };
             try {
                 await options.progress?.(frame, source.count);
                 const position = path.positions[frame], offset = frameOffset(path, atlas, frame);
                 const behind = options.behind ? options.behind(frame) : renderPlate(plate, camera, frame), skip = options.exclude?.(frame);
-                const transform = __addDisposableResource(env_6, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
-                const frameMat = __addDisposableResource(env_6, matFromArray(height, width, CV_32FC3, (await source.frame(frame)).data), false), behindMat = __addDisposableResource(env_6, matFromArray(height, width, CV_32FC3, behind.data), false);
-                const warpedFrame = __addDisposableResource(env_6, new Mat(), false), warpedBehind = __addDisposableResource(env_6, new Mat(), false);
+                const transform = __addDisposableResource(env_8, matFromArray(2, 3, CV_64FC1, [1, 0, position.dx - Math.round(position.dx), 0, 1, position.dy - Math.round(position.dy)]), false);
+                const frameMat = __addDisposableResource(env_8, matFromArray(height, width, CV_32FC3, (await source.frame(frame)).data), false), behindMat = __addDisposableResource(env_8, matFromArray(height, width, CV_32FC3, behind.data), false);
+                const warpedFrame = __addDisposableResource(env_8, new Mat(), false), warpedBehind = __addDisposableResource(env_8, new Mat(), false);
                 warpAffine(frameMat, warpedFrame, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
                 warpAffine(behindMat, warpedBehind, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_REPLICATE);
                 const o = warpedFrame.data32F, b = warpedBehind.data32F;
@@ -615,12 +718,12 @@ export async function matteRigidLayer(source, camera, plate, layer, options = {}
                         }
                     }
             }
-            catch (e_5) {
-                env_6.error = e_5;
-                env_6.hasError = true;
+            catch (e_7) {
+                env_8.error = e_7;
+                env_8.hasError = true;
             }
             finally {
-                __disposeResources(env_6);
+                __disposeResources(env_8);
             }
         }
         const alpha = new Float32Array(slots).fill(NaN), color = new Float32Array(slots * 3), identified = new Uint8Array(slots);
@@ -664,12 +767,12 @@ export async function matteRigidLayer(source, camera, plate, layer, options = {}
                     color[k * 3 + c] = (sy[k * 3 + c] + alpha[k] * sb[k * 3 + c]) / n[k];
         return { slot, alpha, color, identified, solved };
     }
-    catch (e_6) {
-        env_5.error = e_6;
-        env_5.hasError = true;
+    catch (e_8) {
+        env_7.error = e_8;
+        env_7.hasError = true;
     }
     finally {
-        __disposeResources(env_5);
+        __disposeResources(env_7);
     }
 }
 /** Premultiplied RGBA of a layer on its atlas, and 255 where what it contributes is unknown; rebuilt when its plate or matte is replaced. */
@@ -708,25 +811,37 @@ function layerImage(layer) {
  * not known (paint never observed, or a pixel nobody decided). Needs the plane's plate.
  */
 export function renderPlane(layer, frame) {
-    const env_7 = { stack: [], error: void 0, hasError: false };
+    const env_9 = { stack: [], error: void 0, hasError: false };
     try {
         const { rgba, unknown } = layerImage(layer), { atlas } = layer, { width, height } = layer.path, position = layer.path.positions[frame];
-        const transform = __addDisposableResource(env_7, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
-        const image = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_7, new Mat(), false);
+        const transform = __addDisposableResource(env_9, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
+        const image = __addDisposableResource(env_9, matFromArray(atlas.height, atlas.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_9, new Mat(), false);
         warpAffine(image, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_CONSTANT, [0, 0, 0, 0]);
         // Cubic taps reach two atlas pixels, as in `renderPlate`.
-        const holes = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_8UC1, unknown), false), grown = __addDisposableResource(env_7, new Mat(), false), sampled = __addDisposableResource(env_7, new Mat(), false);
-        const kernel = __addDisposableResource(env_7, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
+        const holes = __addDisposableResource(env_9, matFromArray(atlas.height, atlas.width, CV_8UC1, unknown), false), grown = __addDisposableResource(env_9, new Mat(), false), sampled = __addDisposableResource(env_9, new Mat(), false);
+        const kernel = __addDisposableResource(env_9, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
         dilate(holes, grown, kernel);
         warpAffine(grown, sampled, transform, { width, height }, INTER_NEAREST | WARP_INVERSE_MAP, BORDER_CONSTANT, [255, 255, 255, 255]);
-        return { rgba: warped.data32F.slice(), unknown: sampled.data.slice() };
+        const out = warped.data32F.slice(), drift = layer.plate?.drift;
+        // The frame's lighting on the paint, in proportion to how much of the pixel the plane covers.
+        if (drift?.frames[frame]) {
+            const field = new Float32Array(width * height * 3);
+            addDrift(field, width, height, drift, frame);
+            for (let p = 0; p < width * height; p++) {
+                const a = out[p * 4 + 3];
+                if (a > 0)
+                    for (let c = 0; c < 3; c++)
+                        out[p * 4 + c] += a * field[p * 3 + c];
+            }
+        }
+        return { rgba: out, unknown: sampled.data.slice() };
     }
-    catch (e_7) {
-        env_7.error = e_7;
-        env_7.hasError = true;
+    catch (e_9) {
+        env_9.error = e_9;
+        env_9.hasError = true;
     }
     finally {
-        __disposeResources(env_7);
+        __disposeResources(env_9);
     }
 }
 /**

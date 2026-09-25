@@ -48,6 +48,8 @@ export declare function renderPlate(plate: LayerPlate, camera: CameraPath, frame
     data: Float32Array;
     known: Uint8Array;
 };
+/** Adds one frame's drift to BGR `data` on the frame's grid: bilinear between cell centers, clamped at the border. */
+export declare function addDrift(data: Float32Array, width: number, height: number, drift: PlateDrift, frame: number): void;
 /**
  * One frame's drift: per cell and channel the median of frame minus plate over known pixels outside
  * `exclude`, ignoring residuals beyond `limit` codes (drawings the exclusion missed). Cells with fewer

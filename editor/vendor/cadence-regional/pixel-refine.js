@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, DIST_L2, INTER_CUBIC, MORPH_BLACKHAT, MORPH_CLOSE, MORPH_ELLIPSE, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, distanceTransform, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
+import { BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STAT_LEFT, CC_STAT_TOP, CC_STAT_WIDTH, CV_32F, CV_32FC1, CV_32FC3, CV_64FC1, CV_8UC1, DIST_L2, INTER_CUBIC, MORPH_BLACKHAT, MORPH_CLOSE, MORPH_ELLIPSE, WARP_INVERSE_MAP, Mat, connectedComponentsWithStats, distanceTransform, erode, getStructuringElement, matFromArray, morphologyEx, warpAffine, } from '@banou/opencv-wasm';
 import { fillEnclosed, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { frameLayerLabels } from "./pixel-frames.js";
 import { pixelLuma } from "./pixel-frame.js";
@@ -292,13 +292,15 @@ function silhouetteFrame(mask, width, height) {
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
  * redraws, so inside each hold's silhouette a region whose pixels changed at neither redraw bounding the
  * hold (the pair into its first frame and the pair out of its last) is not this layer's update. When it
- * also carries scenery's texture, rather than a cel's flat fill, it is what shows between the drawings
- * (the wagon between market-pan's walkers) and is taken out of every frame of the hold, so the plate
- * learns it. A hold with no redraw on either side has nothing to compare and is kept. Run it on the final
+ * also carries scenery's texture, rather than a cel's flat fill, and is ringed by the layer's lines that
+ * moved at the redraw, it is what shows between the drawings (the wagon between market-pan's walkers) and
+ * is taken out of every frame of the hold, so the plate learns it; pieces the release cuts off under the
+ * silhouettes' minimum area go too. A hold with no redraw on either side has nothing to compare and is kept. Run it on the final
  * silhouettes: growth fills enclosed holes again.
  */
 export async function releaseHeldScenery(source, evidence, silhouettes, frames, options = {}) {
-    const gradient = options.gradient ?? 8, texture = options.texture ?? .25, minimumArea = options.minimumArea ?? 32;
+    const gradient = options.gradient ?? 8, texture = options.texture ?? .25, minimumArea = options.minimumArea ?? 32, enclosed = options.enclosed ?? .5, margin = options.margin ?? 2;
+    const splinter = silhouettes.options.minimumArea ?? 800;
     const { width, height } = source, size = width * height, { atlas, camera, pairs } = evidence;
     const masks = silhouettes.frames.map(f => unpackMask(f.packed, size)), released = silhouettes.frames.map(() => 0);
     const holds = frames.layers.flatMap(layer => layer.drawings.map(drawing => ({ layer: layer.id, drawing })));
@@ -324,6 +326,8 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             const luma = pixelLuma(await source.frame(first));
             const heldMat = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, held), false), labels = __addDisposableResource(env_6, new Mat(), false), stats = __addDisposableResource(env_6, new Mat(), false), centroids = __addDisposableResource(env_6, new Mat(), false);
             const count = connectedComponentsWithStats(heldMat, labels, stats, centroids, 4), l = labels.data32S, rough = new Uint32Array(count), area = new Uint32Array(count);
+            // Border per region: neighbors outside it, those outside the layer, and those that moved at the redraw.
+            const border = new Uint32Array(count), open = new Uint32Array(count), moving = new Uint32Array(count);
             for (let y = 1; y < height - 1; y++)
                 for (let x = 1; x < width - 1; x++) {
                     const p = y * width + x, k = l[p];
@@ -332,17 +336,35 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                     area[k]++;
                     if (Math.hypot(luma[p + 1] - luma[p - 1], luma[p + width] - luma[p - width]) / 2 > gradient)
                         rough[k]++;
+                    for (const q of [p - 1, p + 1, p - width, p + width]) {
+                        if (l[q] === k)
+                            continue;
+                        border[k]++;
+                        if (own[q] !== layer + 1)
+                            open[k]++;
+                        else if (changed[q])
+                            moving[k]++;
+                    }
                 }
             const release = new Uint8Array(count);
             for (let k = 1; k < count; k++)
-                release[k] = Number(area[k] >= minimumArea && rough[k] >= texture * area[k]);
+                release[k] = Number(area[k] >= minimumArea && rough[k] >= texture * area[k] && open[k] <= .1 * border[k] && moving[k] >= enclosed * border[k]);
+            // The lines ringing a released region keep their antialiased edge: where a line held still through the
+            // redraw its edge pixels are held too, and released they would leave half ink in the plate and a cut
+            // edge on the cel. So `margin` pixels of the region stay, for the matte to unmix.
+            const chosen = new Uint8Array(size);
+            for (let p = 0; p < size; p++)
+                chosen[p] = release[l[p]] ? 255 : 0;
+            const chosenMat = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, chosen), false), inner = __addDisposableResource(env_6, new Mat(), false), shrink = __addDisposableResource(env_6, getStructuringElement(MORPH_ELLIPSE, { width: 2 * margin + 1, height: 2 * margin + 1 }), false);
+            erode(chosenMat, inner, shrink);
+            const out = inner.data;
             // The hold's drawing stays put in the world, so every frame of it loses the same world pixels.
             for (let f = first; f <= drawing.last; f++) {
                 const o = frameOffset(camera, atlas, f), dx = o.x - offset.x, dy = o.y - offset.y, mask = masks[f];
                 for (let y = 0; y < height; y++)
                     for (let x = 0; x < width; x++) {
                         const p = y * width + x;
-                        if (!release[l[p]])
+                        if (!out[p])
                             continue;
                         const fx = x - dx, fy = y - dy;
                         if (fx < 0 || fy < 0 || fx >= width || fy >= height || !mask[fy * width + fx])
@@ -360,7 +382,26 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             __disposeResources(env_6);
         }
     }
-    return { ...silhouettes, frames: masks.map(mask => silhouetteFrame(mask, width, height)), released };
+    // What a release cuts off a silhouette goes the way of any small component.
+    return { ...silhouettes, frames: masks.map((mask, f) => released[f] ? silhouetteFrame(dropSmall(mask, width, height, splinter), width, height) : silhouettes.frames[f]), released };
+}
+/** The mask without its 8-connected components under `minimum` pixels. */
+function dropSmall(mask, width, height, minimum) {
+    const env_7 = { stack: [], error: void 0, hasError: false };
+    try {
+        const solid = __addDisposableResource(env_7, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_7, new Mat(), false), stats = __addDisposableResource(env_7, new Mat(), false), centroids = __addDisposableResource(env_7, new Mat(), false);
+        const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count);
+        for (let k = 1; k < count; k++)
+            keep[k] = Number(stats.data32S[k * stats.cols + CC_STAT_AREA] >= minimum);
+        return mask.map((m, p) => m && keep[l[p]] ? 1 : 0);
+    }
+    catch (e_7) {
+        env_7.error = e_7;
+        env_7.hasError = true;
+    }
+    finally {
+        __disposeResources(env_7);
+    }
 }
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
@@ -376,7 +417,7 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
     const median = band && { ...band, count: band.count.map((n, a) => n >= 10 && !trusted.count[a] ? n : 0) };
     const frames = [], carved = [];
     for (let frame = 0; frame < silhouettes.frames.length; frame++) {
-        const env_7 = { stack: [], error: void 0, hasError: false };
+        const env_8 = { stack: [], error: void 0, hasError: false };
         try {
             await progress?.(frame, silhouettes.frames.length);
             const before = silhouettes.frames[frame], rendered = renderScene(trusted, camera, layers, frame);
@@ -401,7 +442,7 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
                         fallback.known[p] = 0;
             const result = carveSilhouette(unpackMask(before.packed, size), await source.frame(frame), rendered, carve, fallback, layers.length ? covered : undefined);
             // Carving can cut splinters off a silhouette; they go the way of any small component.
-            const solid = __addDisposableResource(env_7, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_7, new Mat(), false), stats = __addDisposableResource(env_7, new Mat(), false), centroids = __addDisposableResource(env_7, new Mat(), false);
+            const solid = __addDisposableResource(env_8, matFromArray(source.height, source.width, CV_8UC1, result.mask), false), labels = __addDisposableResource(env_8, new Mat(), false), stats = __addDisposableResource(env_8, new Mat(), false), centroids = __addDisposableResource(env_8, new Mat(), false);
             const count = connectedComponentsWithStats(solid, labels, stats, centroids, 8), l = labels.data32S, keep = new Uint8Array(count), s = stats.data32S, columns = stats.cols;
             const components = [];
             for (let label = 1; label < count; label++) {
@@ -416,12 +457,12 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
             frames.push({ packed: packMask(result.mask), area, components });
             carved.push(result.carved);
         }
-        catch (e_7) {
-            env_7.error = e_7;
-            env_7.hasError = true;
+        catch (e_8) {
+            env_8.error = e_8;
+            env_8.hasError = true;
         }
         finally {
-            __disposeResources(env_7);
+            __disposeResources(env_8);
         }
     }
     return { ...silhouettes, frames, carved };
@@ -431,7 +472,8 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
  * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
  * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
  * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
- * `band` is how far from the cover's edge rims are solved (a defocused edge needs more than the default),
+ * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables). `band` is how
+ * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
  * rim. Returns copies of the layers.
  */
@@ -446,7 +488,9 @@ export async function buildScenePlates(source, camera, silhouettes, layers, opti
     const out = layers.map(layer => ({ ...layer }));
     for (const [k, layer] of out.entries()) {
         const hidden = hiddenBy(out, k, drawn);
-        layer.plate = await buildRigidPlate(source, layer, hidden, { progress });
+        // A lone backdrop (a follow shot's painting) carries the lighting drift the camera plate would have.
+        const lone = layer.backdrop && out.length === 1 ? { drift: options.backdropDrift ?? 64 } : {};
+        layer.plate = await buildRigidPlate(source, layer, hidden, { progress, ...lone });
         if (layer.backdrop || options.mattes === false)
             continue;
         const behind = k > 0 ? { behind: (frame) => renderScene(plate, camera, out.slice(0, k), frame) } : {};

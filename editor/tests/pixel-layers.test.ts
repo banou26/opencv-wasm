@@ -50,7 +50,7 @@ test('pixel prefab chains every full-resolution stage into one inspected 2 x 2 o
   expect(explicitGraph('pixelLayers')).toEqual(pixelLayersGraph())
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   const steps = planGraph(doc, 'n5', null, 3, 'clip', COUNT).steps.map(s => s.node.type)
-  for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelRelease', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
+  for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelBackdrop', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelRelease', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
   expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:planes', 'out:frame:rebuilt', 'out:frame:residual', 'out:frame:drawings', 'out:string:summary'])
 })
 

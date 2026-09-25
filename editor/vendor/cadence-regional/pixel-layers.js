@@ -249,6 +249,12 @@ const shiftMask = (mask, dx, dy, width, height) => {
 };
 const unite = (a, b) => a.map((v, p) => v | b[p]);
 const otherLayer = (change) => packMask(change.flags.map(f => f & OTHER_LAYER ? 1 : 0));
+/**
+ * Every pair's change events under the camera. Besides the camera's own motion, a pixel is explained by
+ * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
+ * drawing's own displacement between two redraws and would explain the redraw away; without it, every
+ * candidate the camera measurement found.
+ */
 export async function measureDrawingEvidence(source, camera, options = {}) {
     const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 0;
     const { progress, dilation: _, inkDilation: __, rigid, rimWidth, ...changeOptions } = options;
@@ -259,7 +265,9 @@ export async function measureDrawingEvidence(source, camera, options = {}) {
         await progress?.(pair, source.count - 1);
         const next = await source.frame(pair + 1), step = camera.positions[pair + 1], base = camera.positions[pair];
         const d = { dx: step.dx - base.dx, dy: step.dy - base.dy };
-        const layers = camera.motions?.[pair]?.slice(1) ?? [];
+        // street-busy's archer moves its bow 51 px between the drawings at pair 54, a three-block candidate.
+        const layers = rigid ? rigid.map(({ path }) => ({ dx: path.positions[pair + 1].dx - path.positions[pair].dx, dy: path.positions[pair + 1].dy - path.positions[pair].dy }))
+            .filter(m => Math.hypot(m.dx - d.dx, m.dy - d.dy) >= .15) : camera.motions?.[pair]?.slice(1) ?? [];
         // Each test's rim is its own frame's, plus the other frame's brought onto its grid.
         const rimA = rims?.(pair), rimB = rims?.(pair + 1), sx = Math.round(d.dx), sy = Math.round(d.dy);
         const rimForward = rimA && rimB && unite(rimA, shiftMask(rimB, -sx, -sy, source.width, source.height));

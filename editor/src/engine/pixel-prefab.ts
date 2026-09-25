@@ -5,16 +5,17 @@ import type { GraphDocument, GraphNode, NodeType, Params } from './types'
 const node = (id: string, type: NodeType, x: number, y: number, params: Params = {}): GraphNode => ({ id, type, params: { ...defaultParams(type), ...params }, position: { x, y } })
 
 /**
- * Full-resolution layer extraction: camera, sliding layers, redraw ink, silhouettes, plate, carve against the
- * scene, the sliding layers' second pass, plate again, growth into what the scene cannot explain, the
- * scenery held between drawings released, plate again, layer frames. With no sliding layer both of its
- * stages pass through. The inspect rows show each plane alone beside the source.
+ * Full-resolution layer extraction: camera, sliding layers, redraw ink, silhouettes, a follow shot's sliding
+ * painting promoted to the backdrop, plate, carve against the scene, the sliding layers' second pass, plate
+ * again, growth into what the scene cannot explain, the scenery held between drawings released, plate again,
+ * layer frames. With no sliding layer its stages pass through. The inspect rows show each plane alone beside
+ * the source.
  */
 export const pixelLayersGraph = (): GraphDocument => {
   let doc: GraphDocument = { version: 1, nodes: [
     node('n1', 'clip', 20, 40), node('ninfo', 'videoInfo', 20, 400), node('nlast', 'math', 350, 400, { operation: 'subtract', b: 1 }),
     node('nscene', 'sceneRange', 700, 40), node('ncamera', 'pixelCamera', 1080, 40), node('nrigid', 'pixelRigid', 1080, 420), node('nevidence', 'pixelEvidence', 1460, 40),
-    node('nmedian', 'pixelScenery', 1460, 420), node('nsilhouettes', 'pixelSilhouettes', 1840, 40), node('nplate', 'pixelPlate', 2220, 40), node('nrefine', 'pixelRefine', 2600, 40),
+    node('nmedian', 'pixelScenery', 1460, 420), node('nsilhouettes', 'pixelSilhouettes', 1840, 40), node('nbackdrop', 'pixelBackdrop', 1840, 420), node('nplate', 'pixelPlate', 2220, 40), node('nrefine', 'pixelRefine', 2600, 40),
     node('nrigid2', 'pixelRigidRefine', 2600, 420), node('nplate2', 'pixelPlate', 2980, 40), node('ngrow', 'pixelGrow', 2980, 420), node('nrelease', 'pixelRelease', 2980, 1160), node('nplate3', 'pixelPlate', 3360, 420), node('nframes', 'pixelFrames', 3360, 40),
     node('ntime', 'time', 2980, 780), node('ninspect', 'pixelInspect', 3360, 700),
     node('ntop', 'frameLayout', 3740, 560), node('nbottom', 'frameLayout', 3740, 1080), node('nrebuild', 'frameLayout', 3740, 1600), node('nrows', 'frameLayout', 4110, 1340, { direction: 'vertical' }),
@@ -26,7 +27,7 @@ export const pixelLayersGraph = (): GraphDocument => {
   wire('ninfo', 'out:scalar:frames', 'nlast', 'param:a')
   wire('nlast', 'out:scalar:value', 'nscene', 'param:last')
   wire('n1', 'out:video:clip', 'nscene', 'in:video:clip')
-  for (const [source, target] of [['nscene', 'ncamera'], ['ncamera', 'nrigid'], ['nrigid', 'nevidence'], ['nevidence', 'nmedian'], ['nmedian', 'nsilhouettes'], ['nsilhouettes', 'nplate'], ['nplate', 'nrefine'], ['nrefine', 'nrigid2'], ['nrigid2', 'nplate2'], ['nplate2', 'ngrow'], ['ngrow', 'nrelease'], ['nrelease', 'nplate3'], ['nplate3', 'nframes'], ['nframes', 'ninspect']] as const) wire(source, 'out:regions:data', target, 'in:regions:data')
+  for (const [source, target] of [['nscene', 'ncamera'], ['ncamera', 'nrigid'], ['nrigid', 'nevidence'], ['nevidence', 'nmedian'], ['nmedian', 'nsilhouettes'], ['nsilhouettes', 'nbackdrop'], ['nbackdrop', 'nplate'], ['nplate', 'nrefine'], ['nrefine', 'nrigid2'], ['nrigid2', 'nplate2'], ['nplate2', 'ngrow'], ['ngrow', 'nrelease'], ['nrelease', 'nplate3'], ['nplate3', 'nframes'], ['nframes', 'ninspect']] as const) wire(source, 'out:regions:data', target, 'in:regions:data')
   wire('ntime', 'out:scalar:index', 'ninspect', 'param:frame')
   wire('ninspect', 'out:frame:changes', 'ntop', 'in:frame:a')
   wire('ninspect', 'out:frame:ink', 'ntop', 'in:frame:b')

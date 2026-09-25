@@ -1,6 +1,6 @@
 import type { Behind } from './pixel-cels.ts';
 import { type CameraPath, type WorldAtlas } from './pixel-drawings.ts';
-import type { Translation } from './pixel-frame.ts';
+import { type Translation } from './pixel-frame.ts';
 import { type MeasuredCamera, type PixelFrameSource, type StageProgress } from './pixel-layers.ts';
 import { type LayerPlate } from './pixel-plate.ts';
 /**
@@ -137,6 +137,31 @@ export declare function orderPlanes(camera: CameraPath, found: {
     measured: number;
 }[]): PlaneEntry[];
 /**
+ * In a follow shot the camera tracks the characters and the whole background painting slides with one
+ * plane (street-busy: sky, mountains and forest together at 11.5 px per frame behind still characters), so
+ * outside the drawings the camera's coordinates hold no still plate. Over frames `gap` apart, every
+ * `stride` frames, each plane is scored on the pixels at least `away` from its cover (and undecided pixels)
+ * and outside the drawings in both frames: a pixel its step explains better than the camera's by `margin` codes of luma,
+ * each measured from its median change over the pair (the shot's lighting), is a win, the other way round
+ * a loss, a tie neither. The plane winning at least `fraction` of the decided pixels, the most of any, and
+ * at least `support` of all it scored (`won`), becomes the backdrop: first in the list, cover and decided all ones, so the
+ * camera plate is empty and the drawings carve against it at any depth. Planes already behind the
+ * camera's leave the list as it is.
+ */
+export declare function promoteBackdrop(source: PixelFrameSource, camera: CameraPath, layers: RigidLayer[], drawn: (frame: number) => Uint8Array | undefined, options?: {
+    gap?: number;
+    stride?: number;
+    fraction?: number;
+    support?: number;
+    margin?: number;
+    step?: number;
+    away?: number;
+}): Promise<{
+    layers: RigidLayer[];
+    share: number[];
+    won: number[];
+}>;
+/**
  * Covers for planes in back-to-front order, measured front to back: each plane is tested against every
  * other one, and only where the planes already measured in front of it leave it visible. The backdrop is
  * never measured, and one already built is reused, as is every other plane's order. With a camera entry
@@ -203,10 +228,15 @@ export declare function peelNearer(source: PixelFrameSource, nearer: RigidLayer[
     source: PixelFrameSource;
     exclude: (frame: number) => Uint8Array;
 };
-/** The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside `exclude`. */
+/**
+ * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
+ * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
+ * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
+ */
 export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLayer, exclude?: (frame: number) => Uint8Array | undefined, options?: {
     margin?: number;
     floor?: number;
+    drift?: number;
     progress?: StageProgress;
 }): Promise<LayerPlate>;
 /**

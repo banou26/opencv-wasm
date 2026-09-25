@@ -75,14 +75,23 @@ export type ReleaseOptions = {
     texture?: number;
     /** Held regions under this many pixels stay with the drawing. */
     minimumArea?: number;
+    /**
+     * A held region is released only when this fraction of its border is the layer's own lines moving at the
+     * redraw: scenery seen between walkers is ringed by outlines that move, while a still part of a drawing,
+     * detailed as it may be, is bounded by its own outline, which holds.
+     */
+    enclosed?: number;
+    /** Pixels of a released region beside the lines ringing it stay with the drawing, for its antialiased edge. */
+    margin?: number;
 };
 /**
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
  * redraws, so inside each hold's silhouette a region whose pixels changed at neither redraw bounding the
  * hold (the pair into its first frame and the pair out of its last) is not this layer's update. When it
- * also carries scenery's texture, rather than a cel's flat fill, it is what shows between the drawings
- * (the wagon between market-pan's walkers) and is taken out of every frame of the hold, so the plate
- * learns it. A hold with no redraw on either side has nothing to compare and is kept. Run it on the final
+ * also carries scenery's texture, rather than a cel's flat fill, and is ringed by the layer's lines that
+ * moved at the redraw, it is what shows between the drawings (the wagon between market-pan's walkers) and
+ * is taken out of every frame of the hold, so the plate learns it; pieces the release cuts off under the
+ * silhouettes' minimum area go too. A hold with no redraw on either side has nothing to compare and is kept. Run it on the final
  * silhouettes: growth fills enclosed holes again.
  */
 export declare function releaseHeldScenery(source: PixelFrameSource, evidence: DrawingEvidence, silhouettes: SceneSilhouettes, frames: LayerFrames, options?: ReleaseOptions & {
@@ -107,13 +116,15 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
  * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
  * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
  * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
- * `band` is how far from the cover's edge rims are solved (a defocused edge needs more than the default),
+ * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables). `band` is how
+ * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
  * rim. Returns copies of the layers.
  */
 export declare function buildScenePlates(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
     drift?: number;
+    backdropDrift?: number;
     margin?: number;
     floor?: number;
     mattes?: boolean;

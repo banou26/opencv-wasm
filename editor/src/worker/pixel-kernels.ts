@@ -1,7 +1,7 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
   annotateScenery, assembleCel, buildScenePlates, releaseHeldScenery, solveCel, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
-  measureScenePlanes, orderPlanes, pixelFrameFromRgba, rigidPaths, sceneSilhouettes, type PixelFrame, type PixelFrameSource, type RigidLayer,
+  measureScenePlanes, orderPlanes, pixelFrameFromRgba, promoteBackdrop, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
 import type { Bundle } from '../engine/types'
@@ -63,13 +63,20 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelEvidence') {
     if (!data.pixelCamera) throw new Error('Redraw Ink Evidence needs Pixel Camera Path')
     const options = { reach: Number(params.reach), noiseFactor: Number(params.noiseFactor), gradientSlope: Number(params.gradientSlope), inkDelta: Number(params.inkDelta), lineDelta: Number(params.lineDelta), dilation: Number(params.dilation) }
-    output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress, ...(data.pixelRigid?.length ? { rigid: data.pixelRigid } : {}) }) }
+    output = { ...data, stage: 'pixel-evidence', pixelEvidence: await measureDrawingEvidence(source, data.pixelCamera, { ...options, progress, ...(data.pixelRigid ? { rigid: data.pixelRigid } : {}) }) }
   } else if (type === 'pixelScenery') {
     if (!data.pixelEvidence) throw new Error('Scenery Median needs Redraw Ink Evidence')
     output = { ...data, stage: 'pixel-evidence', pixelEvidence: await annotateScenery(source, data.pixelEvidence, { tolerance: Number(params.tolerance), minimumSamples: Number(params.minimumSamples), progress }) }
   } else if (type === 'pixelSilhouettes') {
     if (!data.pixelEvidence) throw new Error('Drawing Silhouettes needs Redraw Ink Evidence')
     output = { ...data, stage: 'pixel-silhouettes', pixelSilhouettes: await sceneSilhouettes(data.pixelEvidence, { closeRadius: Number(params.closeRadius), minimumArea: Number(params.minimumArea), erode: Number(params.erode), recurrence: Number(params.recurrence), sceneryLeaves: String(params.sceneryLeaves) as 'never' | 'recurring' | 'known' | 'always', leaveHorizon: Number(params.leaveHorizon), holdTolerance: Number(params.holdTolerance), progress, ...(Number(params.holdTolerance) > 0 ? { source } : {}) }) }
+  } else if (type === 'pixelBackdrop') {
+    if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Promote Backdrop needs Drawing Silhouettes')
+    const rigid = data.pixelRigid ?? [], size = source.width * source.height, silhouettes = data.pixelSilhouettes
+    const promoted = await promoteBackdrop(source, data.pixelCamera, rigid, frame => unpackMask(silhouettes.frames[frame]!.packed, size), {
+      gap: Number(params.gap), stride: Number(params.stride), fraction: Number(params.fraction), support: Number(params.support), margin: Number(params.margin), away: Number(params.away),
+    })
+    output = { ...data, pixelRigid: promoted.layers, pixelBackdrop: { share: promoted.share, won: promoted.won, promoted: promoted.layers !== rigid } }
   } else if (type === 'pixelPlate') {
     if (!data.pixelCamera || !data.pixelSilhouettes) throw new Error('Background Plate needs Drawing Silhouettes')
     // The camera plate, then each plane's own plate outside the drawings and planes in front of it, its rim

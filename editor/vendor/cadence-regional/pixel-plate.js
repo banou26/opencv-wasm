@@ -152,8 +152,8 @@ export function renderPlate(plate, camera, frame) {
         addDrift(rendered.data, camera.width, camera.height, drift, frame);
     return rendered;
 }
-/** Bilinear between cell centers, clamped at the border. */
-function addDrift(data, width, height, drift, frame) {
+/** Adds one frame's drift to BGR `data` on the frame's grid: bilinear between cell centers, clamped at the border. */
+export function addDrift(data, width, height, drift, frame) {
     const { cell, columns, rows } = drift, grid = drift.frames[frame];
     if (!grid)
         return;

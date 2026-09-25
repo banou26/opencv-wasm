@@ -34,6 +34,8 @@ export type RegionalData = {
   pixelCarved?: number[]
   /** Pixels Grow Silhouettes added to each frame's silhouettes. */
   pixelGrown?: number[]
+  /** Promote Backdrop's scores: per sliding layer the share of decided pixels it won and the fraction of all it scored. */
+  pixelBackdrop?: { share: number[]; won: number[]; promoted: boolean }
   /** Pixels per frame released from the silhouettes as scenery a layer held between its drawings. */
   pixelReleased?: number[]
   pixelFrames?: LayerFrames
@@ -87,6 +89,7 @@ export const regionalSummary = (data: RegionalData): string => {
     const areas = data.pixelSilhouettes.frames.map(f => f.area)
     lines.push(`Drawing silhouettes: close ${data.pixelSilhouettes.options.closeRadius ?? 6} px, minimum area ${data.pixelSilhouettes.options.minimumArea ?? 800} px; frames with a drawing ${areas.filter(a => a > 0).length}/${areas.length}; largest ${Math.max(...areas)} px`)
   }
+  if (data.pixelBackdrop) lines.push(`Backdrop: ${data.pixelBackdrop.promoted ? 'the sliding layer is the backdrop' : 'no sliding layer promoted'}; share of decided ${data.pixelBackdrop.share.map(v => v.toFixed(3)).join(' ') || 'none'}, won ${data.pixelBackdrop.won.map(v => v.toFixed(3)).join(' ') || 'none'}`)
   if (data.pixelCarved) lines.push(`Refined silhouettes: ${data.pixelCarved.reduce((a, b) => a + b, 0)} pixels carved over ${data.pixelCarved.length} frames`)
   if (data.pixelReleased) lines.push(`Released scenery: ${data.pixelReleased.reduce((a, b) => a + b, 0)} pixels held between drawings taken out of the silhouettes over ${data.pixelReleased.length} frames`)
   if (data.pixelGrown) lines.push(`Grown silhouettes: ${data.pixelGrown.reduce((a, b) => a + b, 0)} pixels the scene could not explain added over ${data.pixelGrown.length} frames`)

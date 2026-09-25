@@ -77,6 +77,12 @@ export type MeasuredEvidence = DrawingEvidence & {
     others: Uint8Array[];
     othersBackward: Uint8Array[];
 };
+/**
+ * Every pair's change events under the camera. Besides the camera's own motion, a pixel is explained by
+ * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
+ * drawing's own displacement between two redraws and would explain the redraw away; without it, every
+ * candidate the camera measurement found.
+ */
 export declare function measureDrawingEvidence(source: PixelFrameSource, camera: CameraPath & {
     motions?: CandidateMotion[][];
 }, options?: PairChangeOptions & {

@@ -65,7 +65,8 @@ try {
     const summary = await page.locator('.value-preview pre').innerText()
     assert.match(summary, /Silhouettes: \d+ components/)
     assert.match(summary, /Layer \d+: drawing \d+ of \d+/)
-    for (const port of ['changes', 'ink', 'layer', 'plate', 'drawings']) {
+    assert.match(summary, /Rebuilt from \d+ held drawings?, each assembled over its hold/)
+    for (const port of ['changes', 'ink', 'layer', 'plate', 'rebuilt', 'residual', 'drawings']) {
       await change(() => page.getByLabel('Output socket').selectOption(`out:frame:${port}`))
       await page.getByRole('button', { name: 'Fit', exact: true }).click()
       const png = await page.locator('.image-viewport canvas').screenshot()

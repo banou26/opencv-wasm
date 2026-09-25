@@ -1,6 +1,6 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
-  annotateScenery, assembleCel, buildScenePlates, releaseHeldScenery, solveCel, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
+  annotateScenery, assembleCel, buildScenePlates, carveStill, releaseHeldScenery, solveCel, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
   measureScenePlanes, orderPlanes, pixelFrameFromRgba, promoteBackdrop, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
@@ -10,7 +10,7 @@ import { payloadBundle, type Payload } from './payload'
 import type { RegionalData } from './regional-data'
 import { renderPixelPanels } from './pixel-render'
 
-const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelRelease', 'pixelFrames', 'pixelInspect'])
+const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelStill', 'pixelRelease', 'pixelFrames', 'pixelInspect'])
 const THUMBNAIL = { width: 150, height: 200 }
 
 const decode = async (video: VideoSource, index: number, cancelled: () => boolean): Promise<PixelFrame> => {
@@ -107,6 +107,13 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     })
     const { grown: counts, ...silhouettes } = grown
     output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelGrown: counts }
+  } else if (type === 'pixelStill') {
+    if (!data.pixelCamera || !data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Carve What Holds Still needs Drawing Silhouettes')
+    const carved = await carveStill(source, data.pixelCamera, data.pixelEvidence, data.pixelSilhouettes, {
+      hold: Number(params.hold), consistent: Number(params.consistent), span: Number(params.span), islands: Number(params.islands), lasting: Number(params.lasting), progress,
+    })
+    const { stilled, ...silhouettes } = carved
+    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelStilled: stilled }
   } else if (type === 'pixelRelease') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Release Held Scenery needs Drawing Silhouettes')
     const released = await releaseHeldScenery(source, data.pixelEvidence, data.pixelSilhouettes, layerFrames(data.pixelEvidence, data.pixelSilhouettes), {

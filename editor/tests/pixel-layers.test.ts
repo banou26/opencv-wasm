@@ -50,7 +50,7 @@ test('pixel prefab chains every full-resolution stage into one inspected 2 x 2 o
   expect(explicitGraph('pixelLayers')).toEqual(pixelLayersGraph())
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   const steps = planGraph(doc, 'n5', null, 3, 'clip', COUNT).steps.map(s => s.node.type)
-  for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelBackdrop', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelRelease', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
+  for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelBackdrop', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelStill', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
   expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:planes', 'out:frame:rebuilt', 'out:frame:residual', 'out:frame:drawings', 'out:string:summary'])
 })
 
@@ -68,14 +68,18 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   const released = regions((await run('pixelRelease', silhouettes, { gradient: 8, texture: .25, minimumArea: 32, revealed: 1, window: 1 })).outputs)
   expect(released.pixelReleased).toHaveLength(silhouettes.pixelSilhouettes!.frames.length)
   expect(released.pixelReleased!.reduce((a, b) => a + b, 0)).toBeLessThan(released.pixelSilhouettes!.frames.reduce((a, f) => a + f.area, 0) * .02)
-  const frame = 4, mask = unpackMask(silhouettes.pixelSilhouettes!.frames[frame]!.packed, W * H), d = character(frame)
-  let inside = 0, covered = 0, onProp = 0
+  // The character walks, so none of it holds still against the whole plate.
+  const stilled = regions((await run('pixelStill', silhouettes)).outputs)
+  expect(stilled.pixelStilled).toHaveLength(COUNT)
+  const frame = 4, mask = unpackMask(silhouettes.pixelSilhouettes!.frames[frame]!.packed, W * H), still = unpackMask(stilled.pixelSilhouettes!.frames[frame]!.packed, W * H), d = character(frame)
+  let inside = 0, covered = 0, stillCovered = 0, onProp = 0
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const u = x + .5 + PAN * frame, v = y + .5, p = y * W + x
-    if (Math.hypot((u - d.cx) / d.rx, (v - d.cy) / d.ry) < .9) { inside++; covered += mask[p]! }
+    if (Math.hypot((u - d.cx) / d.rx, (v - d.cy) / d.ry) < .9) { inside++; covered += mask[p]!; stillCovered += still[p]! }
     if (Math.hypot((u - prop.cx) / prop.rx, (v - prop.cy) / prop.ry) < 1) onProp += mask[p]!
   }
   expect(covered / inside).toBeGreaterThan(.97)
+  expect(stillCovered / inside).toBeGreaterThan(.97)
   expect(onProp).toBe(0)
   const plate = regions((await run('pixelPlate', silhouettes)).outputs)
   const refined = regions((await run('pixelRefine', plate)).outputs)

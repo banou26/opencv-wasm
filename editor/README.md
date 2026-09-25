@@ -229,20 +229,27 @@ Every stage is its own node, so each can be inspected or rewired:
 7. **Refine Silhouettes**: carve silhouette pixels the scene explains, from the outside in.
    **Sliding Layers, Second Pass** then measures each cover again without the drawings, drops
    what the camera plate explains, and carves again. A second **Background Plate** rebuilds
-   every plate from the refined silhouettes.
+   every plate from the refined silhouettes. **Grow Silhouettes** then adds the pixels beside
+   each silhouette the scene cannot explain, inside its concavities (a part of a drawing that
+   never changed carries no ink), and a third **Background Plate** follows.
 8. **Layer Frames**: silhouettes linked into layers and split into held drawings.
 9. **Inspect Pixel Layers** at the timeline frame. The output shows, top to bottom:
    changes to the next frame (green ink arriving, magenta leaving, yellow other) and the
    held ink with its silhouette in cyan; the layer over a checkerboard and the scene at
    this camera position (plate and sliding layers, their covers outlined in green, purple
-   unknown, orange and red where the frame disagrees with it outside the silhouettes); then
-   every drawing of the layers on screen, the one shown now outlined in cyan with its frame
-   range.
+   unknown, orange and red where the frame disagrees with it outside the silhouettes); the
+   frame rebuilt from the layers alone (each shown drawing assembled once over its whole hold)
+   and its residual; then every drawing of the layers on screen, the one shown now outlined in
+   cyan with its frame range.
 
 The first evaluation decodes the whole shot at full resolution several times: 139 s for
 117 frames at 1080p in Chrome 153 before the Scenery Median stage, 272 s with it, and 330 s
-with the sliding stages, the hold check and plate drift, the last two while a Cadence run
-shared the CPU (all measured 2026-09-25), then about 1 s per inspected frame. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
+with the sliding stages, the hold check and plate drift, and 476 s with growth, the last
+three while Cadence runs shared the CPU (all measured 2026-09-25), then 2 to 3 s per inspected
+frame, most of it assembling the shown drawings. The chain needs more than the worker's old
+512 MiB cache: every stage carries the shot's evidence, so eviction took the whole chain and
+each timeline change re-ran the analysis (487 s). The cache is 1 GiB now, and the smoke fails
+when a frame change takes over a minute. `WESTON_BIN=<weston> node scripts/pixel-layers-smoke.mjs` runs the prefab on the
 market-pan clip in the system Chrome inside a nested headless weston (real GPU and
 decoder, no window on the desktop) and saves every panel for frames 40, 98 and 104 as
 Cadence `diagnostics/pixel-market-browser-*`. Later frames reuse the cached stages. The

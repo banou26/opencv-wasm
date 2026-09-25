@@ -83,6 +83,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     // matted over what lies behind it.
     const { plate: pixelPlate, layers: pixelRigid } = await buildScenePlates(source, data.pixelCamera, data.pixelSilhouettes, data.pixelRigid ?? [], {
       margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), backdropMedian: params.backdropMedian !== false, progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}),
+      ...(data.pixelClear ? { clear: data.pixelClear } : {}),
     })
     output = { ...data, stage: 'pixel-plate', pixelPlate, ...(data.pixelRigid ? { pixelRigid } : {}) }
   } else if (type === 'pixelRefine') {
@@ -110,10 +111,10 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelStill') {
     if (!data.pixelCamera || !data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Carve What Holds Still needs Drawing Silhouettes')
     const carved = await carveStill(source, data.pixelCamera, data.pixelEvidence, data.pixelSilhouettes, {
-      hold: Number(params.hold), consistent: Number(params.consistent), span: Number(params.span), islands: Number(params.islands), lasting: Number(params.lasting), progress,
+      hold: Number(params.hold), consistent: Number(params.consistent), span: Number(params.span), islands: Number(params.islands), lasting: Number(params.lasting), covering: Number(params.covering), progress,
     })
-    const { stilled, ...silhouettes } = carved
-    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelStilled: stilled }
+    const { stilled, continued: _, taken, ...silhouettes } = carved
+    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelStilled: stilled, pixelClear: taken }
   } else if (type === 'pixelRelease') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Release Held Scenery needs Drawing Silhouettes')
     const released = await releaseHeldScenery(source, data.pixelEvidence, data.pixelSilhouettes, layerFrames(data.pixelEvidence, data.pixelSilhouettes), {

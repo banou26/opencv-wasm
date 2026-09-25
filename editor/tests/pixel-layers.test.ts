@@ -71,6 +71,8 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   // The character walks, so none of it holds still against the whole plate.
   const stilled = regions((await run('pixelStill', silhouettes)).outputs)
   expect(stilled.pixelStilled).toHaveLength(COUNT)
+  expect(stilled.pixelClear).toHaveLength(COUNT)
+  expect(regions((await run('pixelPlate', stilled)).outputs).pixelPlate).toBeDefined()
   const frame = 4, mask = unpackMask(silhouettes.pixelSilhouettes!.frames[frame]!.packed, W * H), still = unpackMask(stilled.pixelSilhouettes!.frames[frame]!.packed, W * H), d = character(frame)
   let inside = 0, covered = 0, stillCovered = 0, onProp = 0
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {

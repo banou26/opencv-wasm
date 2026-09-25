@@ -38,6 +38,8 @@ export type RegionalData = {
   pixelBackdrop?: { share: number[]; won: number[]; promoted: boolean }
   /** Pixels per frame Carve What Holds Still took out of the silhouettes. */
   pixelStilled?: number[]
+  /** Per frame, packed, the pixels Carve What Holds Still gave up, which later plates sample even beside the silhouettes. */
+  pixelClear?: Uint8Array[]
   /** Pixels per frame released from the silhouettes as scenery a layer held between its drawings. */
   pixelReleased?: number[]
   pixelFrames?: LayerFrames

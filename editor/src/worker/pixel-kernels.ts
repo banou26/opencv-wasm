@@ -110,7 +110,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelRelease') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Release Held Scenery needs Drawing Silhouettes')
     const released = await releaseHeldScenery(source, data.pixelEvidence, data.pixelSilhouettes, layerFrames(data.pixelEvidence, data.pixelSilhouettes), {
-      gradient: Number(params.gradient), texture: Number(params.texture), minimumArea: Number(params.minimumArea), revealed: Number(params.revealed), progress,
+      gradient: Number(params.gradient), texture: Number(params.texture), minimumArea: Number(params.minimumArea), revealed: Number(params.revealed), window: Number(params.window), progress,
     })
     const { released: counts, ...silhouettes } = released
     output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelReleased: counts }

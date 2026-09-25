@@ -61,6 +61,8 @@ export type PlateLumaSamples = {
 export declare function plateLumaSamples(atlas: WorldAtlas, capacity: number): PlateLumaSamples;
 /** Add one frame's luma outside `exclude` (grown by `margin` pixels), as `addPlateSamples` would sample it. */
 export declare function addLumaSamples(samples: PlateLumaSamples, camera: CameraPath, frame: number, pixels: PixelFrame, exclude?: Uint8Array, margin?: number): void;
+/** Luma samples of consecutive frame ranges joined per atlas pixel, in range order. */
+export declare function mergeLumaSamples(parts: PlateLumaSamples[]): PlateLumaSamples;
 /**
  * The median luma per atlas pixel, and a tolerance of three robust spreads (1.4826 median absolute
  * deviations), never under `floor` codes. It holds while up to half the samples show something else: on a

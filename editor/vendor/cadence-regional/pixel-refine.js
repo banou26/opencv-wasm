@@ -56,7 +56,8 @@ import { frameLayerLabels } from "./pixel-frames.js";
 import { pixelLuma } from "./pixel-frame.js";
 import { buildLayerPlate, packMask, unpackMask } from "./pixel-layers.js";
 import { finishPlate, plateStatistics, renderPlate } from "./pixel-plate.js";
-import { buildRigidPlate, claimRigidCover, hiddenBy, matteRigidLayer, measureScenePlanes, peelNearer, planeShown, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
+import { shareDeep, splitRange } from "./pixel-share.js";
+import { buildRigidPlate, claimRigidCover, hiddenBy, planeHiding, matteRigidLayer, measureScenePlanes, peelNearer, planeShown, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
 /**
  * Remove silhouette pixels the plate explains, from the outside in. A pixel within `band` of the edge
  * whose value matches a well-observed plate is background only when it connects to the exterior through
@@ -214,9 +215,13 @@ export function growSilhouette(mask, pixels, scene, options = {}) {
         __disposeResources(env_3);
     }
 }
-/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second. */
+/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second, and with `pool` on its threads. */
 export async function growSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { layers = [], progress, frames: range, ...grow } = options, size = source.width * source.height, frames = [], grown = [];
+    const { layers = [], progress, frames: range, pool, ...grow } = options, size = source.width * source.height, frames = [], grown = [];
+    if (pool && !range) {
+        const parts = await pool.map('grow', shareDeep({ camera, silhouettes, plate, options: { ...grow, layers } }), splitRange(0, silhouettes.frames.length, pool.size * 3));
+        return { ...silhouettes, frames: parts.flatMap(p => p.frames), grown: parts.flatMap(p => p.grown) };
+    }
     const [first, end] = range ?? [0, silhouettes.frames.length];
     for (let frame = first; frame < end; frame++) {
         await progress?.(frame, silhouettes.frames.length);
@@ -324,7 +329,7 @@ function silhouetteFrame(mask, width, height) {
         __disposeResources(env_6);
     }
 }
-const REVEALED = .25;
+const REVEALED = 1;
 /**
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
  * redraws, so inside each hold's silhouette a region whose pixels changed at neither redraw bounding the
@@ -337,7 +342,7 @@ const REVEALED = .25;
  */
 export async function releaseHeldScenery(source, evidence, silhouettes, frames, options = {}) {
     const gradient = options.gradient ?? 8, texture = options.texture ?? .25, minimumArea = options.minimumArea ?? 32, enclosed = options.enclosed ?? .5, margin = options.margin ?? 2;
-    const revealed = options.revealed ?? REVEALED;
+    const revealed = options.revealed ?? REVEALED, window = options.window ?? 1;
     const splinter = silhouettes.options.minimumArea ?? 800;
     const { width, height } = source, size = width * height, { atlas, camera, pairs } = evidence;
     const masks = silhouettes.frames.map(f => unpackMask(f.packed, size)), released = silhouettes.frames.map(() => 0);
@@ -357,8 +362,8 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                     lumaSquare[a] += luma[p] * luma[p];
                 }
         }
-    const holds = frames.layers.flatMap(layer => layer.drawings.map(drawing => ({ layer: layer.id, drawing })));
-    for (const [done, { layer, drawing }] of holds.entries()) {
+    const holds = frames.layers.flatMap(layer => layer.drawings.map((drawing, index) => ({ layer: layer.id, drawing, index, drawings: layer.drawings })));
+    for (const [done, { layer, drawing, index, drawings }] of holds.entries()) {
         const env_7 = { stack: [], error: void 0, hasError: false };
         try {
             await options.progress?.(done, holds.length);
@@ -366,17 +371,25 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             if (!bounding.length)
                 continue;
             const first = drawing.first, offset = frameOffset(camera, atlas, first), own = frameLayerLabels(silhouettes, frames, first);
-            // Pixels of the layer at its first frame that changed at a bounding redraw.
-            const changed = new Uint8Array(size);
-            for (const pair of bounding)
-                for (const a of pairs[pair].indices) {
-                    const ay = Math.floor(a / atlas.width), x = a - ay * atlas.width - offset.x, y = ay - offset.y;
-                    if (x >= 0 && y >= 0 && x < width && y < height)
-                        changed[y * width + x] = 1;
-                }
+            const mark = (list) => {
+                const out = new Uint8Array(size);
+                for (const pair of list)
+                    for (const a of pairs[pair].indices) {
+                        const ay = Math.floor(a / atlas.width), x = a - ay * atlas.width - offset.x, y = ay - offset.y;
+                        if (x >= 0 && y >= 0 && x < width && y < height)
+                            out[y * width + x] = 1;
+                    }
+                return out;
+            };
+            // Pixels of the layer at its first frame that changed at a bounding redraw, and at the layer's redraws
+            // `window` holds either side: scenery holds still through all of them (the wagon between market-pan's
+            // walkers for a dozen), where a still part of a drawing changes once its drawing moves.
+            const changed = mark(bounding), around = drawings.slice(Math.max(0, index - window), index + window + 1)
+                .flatMap(d => [d.first - 1, d.last]).filter(pair => pair >= 0 && pair < pairs.length && !bounding.includes(pair));
+            const stirred = around.length ? mark([...new Set(around)]) : undefined;
             const held = new Uint8Array(size);
             for (let p = 0; p < size; p++)
-                held[p] = own[p] === layer + 1 && !changed[p] ? 255 : 0;
+                held[p] = own[p] === layer + 1 && !changed[p] && !stirred?.[p] ? 255 : 0;
             const luma = pixelLuma(await source.frame(first));
             const heldMat = __addDisposableResource(env_7, matFromArray(height, width, CV_8UC1, held), false), labels = __addDisposableResource(env_7, new Mat(), false), stats = __addDisposableResource(env_7, new Mat(), false), centroids = __addDisposableResource(env_7, new Mat(), false);
             const count = connectedComponentsWithStats(heldMat, labels, stats, centroids, 4), l = labels.data32S, rough = new Uint32Array(count), area = new Uint32Array(count);
@@ -403,7 +416,7 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                         border[k]++;
                         if (own[q] !== layer + 1)
                             open[k]++;
-                        else if (changed[q])
+                        else if (changed[q] || stirred?.[q])
                             moving[k]++;
                     }
                 }
@@ -468,15 +481,21 @@ function dropSmall(mask, width, height, minimum) {
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
  * are built) over it; the plates should be rebuilt afterwards. `bandMedian` hands in the fallback plate
- * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second.
+ * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second;
+ * with `pool` the frames are carved on its threads, a range each, the band median built here once.
  */
 export async function refineSilhouettes(source, camera, silhouettes, plate, options = {}) {
-    const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], bandMedian, frames: range, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
+    const { progress, minimumArea: area, medianFallback: _, layers: rigid = [], bandMedian, frames: range, pool: __, ...carve } = options, minimumCount = carve.minimumCount ?? 3, size = source.width * source.height;
     const minimumArea = area ?? silhouettes.options.minimumArea ?? 800;
     const trust = (p) => ({ ...p, count: p.count.map(n => n >= minimumCount ? n : 0) });
     const trusted = trust(plate), layers = rigid.map(layer => ({ ...layer, plate: layer.plate && trust(layer.plate) })), own = layers.findIndex(layer => layer.camera);
     // Where the plate is not trusted, the band median may stand in, if enough frames observed it.
     const band = options.medianFallback === false ? undefined : bandMedian ?? await bandMedianPlate(source, camera, silhouettes, carve.band ?? 8);
+    if (options.pool && !range) {
+        const { pool, progress: _, ...rest } = options, input = shareDeep({ camera, silhouettes, plate, options: { ...rest, ...(band ? { bandMedian: band } : {}) } });
+        const parts = await pool.map('carve', input, splitRange(0, silhouettes.frames.length, pool.size * 3));
+        return { ...silhouettes, frames: parts.flatMap(p => p.frames), carved: parts.flatMap(p => p.carved) };
+    }
     const median = band && { ...band, count: band.count.map((n, a) => n >= 10 && !trusted.count[a] ? n : 0) };
     const frames = [], carved = [], [first, end] = range ?? [0, silhouettes.frames.length];
     for (let frame = first; frame < end; frame++) {
@@ -555,7 +574,7 @@ export async function buildScenePlates(source, camera, silhouettes, layers, opti
         const hidden = hiddenBy(out, k, drawn);
         // A lone backdrop (a follow shot's painting) carries the lighting drift the camera plate would have.
         const lone = layer.backdrop && out.length === 1 ? { drift: options.backdropDrift ?? 64, median: options.backdropMedian ?? true } : {};
-        layer.plate = await buildRigidPlate(source, layer, hidden, { progress, ...lone });
+        layer.plate = await buildRigidPlate(source, layer, planeHiding(out, k, silhouettes), { progress, ...lone, ...(options.pool ? { pool: options.pool } : {}) });
         if (layer.backdrop || options.mattes === false)
             continue;
         const behind = k > 0 ? { behind: (frame) => renderScene(plate, camera, out.slice(0, k), frame) } : {};
@@ -592,10 +611,10 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
     const next = await measureScenePlanes(source, camera, layers, { exclude: drawn, progress });
     // What lies behind each plane, from the new covers: the camera plate, and the farther planes' plates.
     const scene = next.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
-        : await buildLayerPlate(source, camera, silhouettes, { layers: next, progress, ...(evidence ? { evidence } : {}) });
+        : await buildLayerPlate(source, camera, silhouettes, { layers: next, progress, ...(evidence ? { evidence } : {}), ...(options.pool ? { pool: options.pool } : {}) });
     const withPlates = [];
     for (const [k, layer] of next.entries())
-        withPlates.push(k < next.length - 1 ? { ...layer, plate: await buildRigidPlate(source, layer, hiddenBy(next, k, drawn), { progress }) } : layer);
+        withPlates.push(k < next.length - 1 ? { ...layer, plate: await buildRigidPlate(source, layer, planeHiding(next, k, silhouettes), { progress, ...(options.pool ? { pool: options.pool } : {}) }) } : layer);
     const dropped = [], refined = [];
     for (const [k, layer] of next.entries()) {
         if (layer.backdrop) {
@@ -620,7 +639,8 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
             refined[k] = kept;
             claimed[k] = count;
         }
-    const { plate, layers: out } = await buildScenePlates(source, camera, silhouettes, refined, { progress, ...(evidence ? { evidence } : {}) });
-    const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: out, progress });
+    const pool = options.pool ? { pool: options.pool } : {};
+    const { plate, layers: out } = await buildScenePlates(source, camera, silhouettes, refined, { progress, ...(evidence ? { evidence } : {}), ...pool });
+    const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: out, progress, ...pool });
     return { layers: out, silhouettes: carved, plate, dropped, claimed };
 }

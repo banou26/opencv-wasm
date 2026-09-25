@@ -3,7 +3,7 @@ import { type LayerFrames } from './pixel-frames.ts';
 import { type PixelFrame } from './pixel-frame.ts';
 import { type MeasuredCamera, type MeasuredEvidence, type PixelFrameSource, type SceneSilhouettes, type StageProgress } from './pixel-layers.ts';
 import { type LayerPlate } from './pixel-plate.ts';
-import type { FramePool } from './pixel-share.ts';
+import { type FramePool } from './pixel-share.ts';
 import { type RigidLayer } from './pixel-rigid.ts';
 export type CarveOptions = {
     /** Only pixels this close to the silhouette edge can be carved. */
@@ -64,11 +64,12 @@ export declare function growSilhouette(mask: Uint8Array, pixels: PixelFrame, sce
     mask: Uint8Array;
     grown: number;
 };
-/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second. */
+/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes; with `frames`, only those from its first up to its second, and with `pool` on its threads. */
 export declare function growSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: GrowOptions & {
     layers?: RigidLayer[];
     progress?: StageProgress;
     frames?: [number, number];
+    pool?: FramePool;
 }): Promise<SceneSilhouettes & {
     grown: number[];
 }>;
@@ -97,10 +98,19 @@ export type ReleaseOptions = {
     /**
      * Still scenery shows the same value whenever the drawings uncover it, so a region stays with the drawing
      * when more than this fraction of its pixels that frames show outside every silhouette (at least three)
-     * differ from their mean there by over `max(6, 3 spreads)` of luma: a still patch of a coat, or a wagon
-     * that moves behind the walkers, is something else when uncovered.
+     * differ from their mean there by over `max(6, 3 spreads)` of luma. Off (1) by default: on market-pan a
+     * character that stands still later over the wagon is outside every silhouette, so the frames "uncovering"
+     * the wagon show that character and the wagon seen between the walkers was kept. `window` does the job.
      */
     revealed?: number;
+    /**
+     * A held region also has to hold through the layer's redraws this many holds either side of its own (1):
+     * scenery shown between drawings stays put while they are redrawn around it, a still patch of a drawing
+     * changes once the drawing moves. Lines that moved at those redraws count toward its ring. One hold
+     * reaches the redraws into the drawings two away, so scenery near an edge that walks fast stays with the
+     * layer (a ring walking 3 px a drawing keeps 29% of the middle it encloses, 6.8% with no window).
+     */
+    window?: number;
 };
 /**
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
@@ -120,7 +130,8 @@ export declare function releaseHeldScenery(source: PixelFrameSource, evidence: D
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
  * are built) over it; the plates should be rebuilt afterwards. `bandMedian` hands in the fallback plate
- * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second.
+ * (`bandMedianPlate`) instead of building it, and `frames` carves only those from its first up to its second;
+ * with `pool` the frames are carved on its threads, a range each, the band median built here once.
  */
 export declare function refineSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: CarveOptions & {
     minimumArea?: number;
@@ -129,6 +140,7 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
     layers?: RigidLayer[];
     bandMedian?: LayerPlate;
     frames?: [number, number];
+    pool?: FramePool;
 }): Promise<SceneSilhouettes & {
     carved: number[];
 }>;
@@ -174,6 +186,7 @@ export declare function refineRigidScene(source: PixelFrameSource, camera: Measu
         minimumArea?: number;
     };
     progress?: StageProgress;
+    pool?: FramePool;
 }): Promise<{
     layers: RigidLayer[];
     silhouettes: SceneSilhouettes & {

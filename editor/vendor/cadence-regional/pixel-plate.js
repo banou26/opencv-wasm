@@ -159,6 +159,19 @@ export function addLumaSamples(samples, camera, frame, pixels, exclude, margin =
             values[a * capacity + count[a]++] = Math.max(0, Math.min(255, Math.round(BLUE * data[q] + GREEN * data[q + 1] + RED * data[q + 2])));
         }
 }
+/** Luma samples of consecutive frame ranges joined per atlas pixel, in range order. */
+export function mergeLumaSamples(parts) {
+    const capacity = parts.reduce((sum, part) => sum + part.capacity, 0), merged = plateLumaSamples(parts[0].atlas, capacity);
+    for (const part of parts)
+        for (let a = 0; a < merged.count.length; a++) {
+            const n = part.count[a];
+            if (!n)
+                continue;
+            merged.values.set(part.values.subarray(a * part.capacity, a * part.capacity + n), a * capacity + merged.count[a]);
+            merged.count[a] += n;
+        }
+    return merged;
+}
 /**
  * The median luma per atlas pixel, and a tolerance of three robust spreads (1.4826 median absolute
  * deviations), never under `floor` codes. It holds while up to half the samples show something else: on a

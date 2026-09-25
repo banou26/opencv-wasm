@@ -54,8 +54,9 @@ import { BORDER_CONSTANT, BORDER_REPLICATE, CC_STAT_AREA, CC_STAT_HEIGHT, CC_STA
 import { explainingMotions } from "./pixel-change.js";
 import { cameraPath, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
-import { motionTracks } from "./pixel-layers.js";
-import { addDrift, addLumaSamples, addPlateSamples, finishPlate, measureDrift, medianReference, plateLumaSamples, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { motionTracks, unpackMask } from "./pixel-layers.js";
+import { addDrift, addLumaSamples, addPlateSamples, finishPlate, measureDrift, medianReference, mergeLumaSamples, mergePlateStatistics, plateLumaSamples, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { shareDeep, splitRange } from "./pixel-share.js";
 const median = (values) => [...values].sort((a, b) => a - b)[values.length >> 1] ?? 0;
 /**
  * Fill the enclosed holes of `mask` under `maximum` pixels whose mean `open` score stays under `openLimit`,
@@ -612,90 +613,122 @@ export function peelNearer(source, nearer, exclude, most = .9) {
         exclude: frame => last?.frame === frame ? last.mask : new Uint8Array(size).fill(1),
     };
 }
+export function planeHiding(layers, index, silhouettes) {
+    return { layers: layers.map(({ atlas, path, cover, decided }) => ({ atlas, path, cover, decided })), index, ...(silhouettes ? { silhouettes } : {}) };
+}
+/** The mask `hiddenBy` gives for a `PlaneHiding`. */
+export function hiding(description) {
+    const { silhouettes } = description, size = silhouettes ? silhouettes.width * silhouettes.height : 0;
+    return hiddenBy(description.layers, description.index, silhouettes && (frame => unpackMask(silhouettes.frames[frame].packed, size)));
+}
+function rigidSampler(source, sampling, exclude) {
+    const extra = sampling.hidden ? hiding(sampling.hidden) : exclude, layer = sampling.layer;
+    const outside = (frame) => {
+        const covered = renderCover(layer, frame), more = extra?.(frame), mask = new Uint8Array(covered.length);
+        for (let p = 0; p < mask.length; p++)
+            mask[p] = Number(!covered[p] || !!more?.[p]);
+        return mask;
+    };
+    const frame = async (t) => {
+        const pixels = await source.frame(t);
+        if (!sampling.unlit)
+            return pixels;
+        const data = pixels.data.slice();
+        addDrift(data, pixels.width, pixels.height, sampling.unlit, t);
+        return { ...pixels, data };
+    };
+    return { layer, outside, frame };
+}
+/** One sampling pass of a plane's plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
+export async function rigidPlateSamples(source, sampling, range, reference, exclude) {
+    const { layer, outside, frame } = rigidSampler(source, sampling, exclude), statistics = plateStatistics(layer.atlas);
+    for (let t = range[0]; t < range[1]; t++)
+        addPlateSamples(statistics, layer.path, t, await frame(t), outside(t), sampling.margin, reference);
+    return statistics;
+}
+/** Every sample's luma of a plane's plate over the frames of `range`, for `medianReference` (see `mergeLumaSamples`). */
+export async function rigidLumaSamples(source, sampling, range, exclude) {
+    const { layer, outside, frame } = rigidSampler(source, sampling, exclude), samples = plateLumaSamples(layer.atlas, range[1] - range[0]);
+    for (let t = range[0]; t < range[1]; t++)
+        addLumaSamples(samples, layer.path, t, await frame(t), outside(t), sampling.margin);
+    return samples;
+}
+/** A plane plate's drift grids over the frames of `range`, measured away from its rim (the lighting is never taken out here). */
+export async function rigidPlateDrift(source, sampling, plate, cell, range, exclude) {
+    const { layer, outside } = rigidSampler(source, { ...sampling, unlit: undefined }, exclude), frames = [];
+    let columns = 0, rows = 0;
+    for (let t = range[0]; t < range[1]; t++) {
+        const env_6 = { stack: [], error: void 0, hasError: false };
+        try {
+            // A rim mixes what lies behind into the frame, so the drift is measured away from it.
+            const mask = __addDisposableResource(env_6, matFromArray(source.height, source.width, CV_8UC1, outside(t)), false), away = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 7, height: 7 }), false);
+            dilate(mask, away, kernel);
+            const measured = measureDrift(renderPlate(plate, layer.path, t), await source.frame(t), away.data, cell);
+            columns = measured.columns;
+            rows = measured.rows;
+            frames.push(measured.grid);
+        }
+        catch (e_6) {
+            env_6.error = e_6;
+            env_6.hasError = true;
+        }
+        finally {
+            __disposeResources(env_6);
+        }
+    }
+    return { columns, rows, frames };
+}
 /**
  * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
  * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
  * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
  * With `median`, the trim is around each pixel's median luma (`medianReference`) rather than its mean, so
- * paint a missed drawing covers in under half the frames stays out.
+ * paint a missed drawing covers in under half the frames stays out. `exclude` may be a `PlaneHiding`, and
+ * then with `pool` every pass runs over ranges of frames on its threads, merged in order (the plate
+ * matches to float rounding).
  */
 export async function buildRigidPlate(source, layer, exclude, options = {}) {
     const margin = options.margin ?? 1, floor = options.floor ?? 4, count = source.count, cell = options.drift ?? 0, median = !!options.median;
-    const outside = (frame) => {
-        const covered = renderCover(layer, frame), extra = exclude?.(frame), mask = new Uint8Array(covered.length);
-        for (let p = 0; p < mask.length; p++)
-            mask[p] = Number(!covered[p] || !!extra?.[p]);
-        return mask;
+    const hidden = exclude && typeof exclude === 'object' ? exclude : undefined, closure = typeof exclude === 'function' ? exclude : undefined;
+    const sampling = { layer: { atlas: layer.atlas, path: layer.path, cover: layer.cover, decided: layer.decided }, margin, ...(hidden ? { hidden } : {}) };
+    const pool = closure ? undefined : options.pool, all = [0, count], ranges = pool && splitRange(0, count, pool.size);
+    const shared = pool && shareDeep(sampling);
+    const steps = median && cell ? 6 : cell ? 3 : 2;
+    let step = 0;
+    const tick = () => options.progress?.(step++, steps);
+    const samplesPass = async (reference, unlit) => {
+        await tick();
+        if (!pool)
+            return rigidPlateSamples(source, { ...sampling, ...(unlit ? { unlit } : {}) }, all, reference, closure);
+        const parts = await pool.map('rigidPlateSamples', { sampling: { ...shared, ...(unlit ? { unlit: shareDeep(unlit) } : {}) }, ...(reference ? { reference: shareDeep(reference) } : {}) }, ranges);
+        for (const part of parts.slice(1))
+            mergePlateStatistics(parts[0], part);
+        return parts[0];
     };
-    const passes = median && cell ? 4 : 2;
-    let done = 0;
-    const tick = () => options.progress?.(done++, count * passes);
-    // Trimmed around the mean of a first pass, or around each pixel's median luma.
-    const trimmedPlate = async (frame, around) => {
-        let reference;
-        if (around === 'median') {
-            const samples = plateLumaSamples(layer.atlas, count);
-            for (let t = 0; t < count; t++) {
-                await tick();
-                addLumaSamples(samples, layer.path, t, await frame(t), outside(t), margin);
-            }
-            reference = medianReference(samples, floor);
-        }
-        else {
-            const first = plateStatistics(layer.atlas);
-            for (let t = 0; t < count; t++) {
-                await tick();
-                addPlateSamples(first, layer.path, t, await frame(t), outside(t), margin);
-            }
-            reference = plateReference(first, floor);
-        }
-        const trimmed = plateStatistics(layer.atlas);
-        for (let t = 0; t < count; t++) {
-            await tick();
-            addPlateSamples(trimmed, layer.path, t, await frame(t), outside(t), margin, reference);
-        }
-        return finishPlate(trimmed);
+    const lumaPass = async (unlit) => {
+        await tick();
+        if (!pool)
+            return rigidLumaSamples(source, { ...sampling, ...(unlit ? { unlit } : {}) }, all, closure);
+        return mergeLumaSamples(await pool.map('rigidLumaSamples', { sampling: { ...shared, ...(unlit ? { unlit: shareDeep(unlit) } : {}) } }, ranges));
     };
-    // A rim mixes what lies behind into the frame, so the drift is measured away from it.
-    const ownDrift = async (plate) => {
-        const drift = { cell, columns: 0, rows: 0, frames: [] };
-        for (let t = 0; t < count; t++) {
-            const env_6 = { stack: [], error: void 0, hasError: false };
-            try {
-                const mask = __addDisposableResource(env_6, matFromArray(source.height, source.width, CV_8UC1, outside(t)), false), away = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 7, height: 7 }), false);
-                dilate(mask, away, kernel);
-                const measured = measureDrift(renderPlate(plate, layer.path, t), await source.frame(t), away.data, cell);
-                drift.columns = measured.columns;
-                drift.rows = measured.rows;
-                drift.frames.push(measured.grid);
-            }
-            catch (e_6) {
-                env_6.error = e_6;
-                env_6.hasError = true;
-            }
-            finally {
-                __disposeResources(env_6);
-            }
-        }
-        return drift;
+    const driftPass = async (plate) => {
+        await tick();
+        const parts = pool ? await pool.map('rigidPlateDrift', { sampling: shared, plate: shareDeep(plate), cell }, ranges)
+            : [await rigidPlateDrift(source, sampling, plate, cell, all, closure)];
+        return { cell, columns: parts[0].columns, rows: parts[0].rows, frames: parts.flatMap(p => p.frames) };
     };
-    const raw = (t) => source.frame(t);
     if (!median || !cell) {
-        const plate = await trimmedPlate(raw, median ? 'median' : 'mean');
-        return cell ? { ...plate, drift: await ownDrift(plate) } : plate;
+        const reference = median ? medianReference(await lumaPass(), floor) : plateReference(await samplesPass(), floor);
+        const plate = finishPlate(await samplesPass(reference));
+        return cell ? { ...plate, drift: await driftPass(plate) } : plate;
     }
     // The shot's lighting spreads each pixel's samples over the frames that saw it, and a pixel a drawing hid in
     // the middle of the shot keeps an early and a late group, of which a median picks one, differently from its
     // neighbor. So the lighting of a plate trimmed around the mean comes out of every frame first.
-    const rough = await trimmedPlate(raw, 'mean'), lighting = await ownDrift(rough);
+    const rough = finishPlate(await samplesPass(plateReference(await samplesPass(), floor))), lighting = await driftPass(rough);
     const unlit = { ...lighting, frames: lighting.frames.map(grid => grid.map(v => -v)) };
-    const corrected = async (t) => {
-        const pixels = await source.frame(t), data = pixels.data.slice();
-        addDrift(data, pixels.width, pixels.height, unlit, t);
-        return { ...pixels, data };
-    };
-    const plate = await trimmedPlate(corrected, 'median');
-    return { ...plate, drift: await ownDrift(plate) };
+    const plate = finishPlate(await samplesPass(medianReference(await lumaPass(unlit), floor), unlit));
+    return { ...plate, drift: await driftPass(plate) };
 }
 /**
  * Unmix the rim of a rigid layer from what shows behind it. A layer pixel slides over changing scenery,

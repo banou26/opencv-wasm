@@ -1,8 +1,9 @@
 import type { Behind } from './pixel-cels.ts';
 import { type CameraPath, type WorldAtlas } from './pixel-drawings.ts';
 import { type Translation } from './pixel-frame.ts';
-import { type MeasuredCamera, type PixelFrameSource, type StageProgress } from './pixel-layers.ts';
-import { type LayerPlate } from './pixel-plate.ts';
+import { type MeasuredCamera, type PixelFrameSource, type SceneSilhouettes, type StageProgress } from './pixel-layers.ts';
+import { type LayerPlate, type PlateDrift, type PlateLumaSamples, type PlateReference, type PlateStatistics } from './pixel-plate.ts';
+import { type FramePool } from './pixel-share.ts';
 /**
  * A held painting that slides with its own rigid motion over the camera's plate, such as a parallax
  * forest. Its path maps like the camera's: frame pixel (x, y) shows layer point (x - dx, y - dy).
@@ -229,18 +230,51 @@ export declare function peelNearer(source: PixelFrameSource, nearer: RigidLayer[
     exclude: (frame: number) => Uint8Array;
 };
 /**
+ * What hides plane `index` of a back-to-front list, as data a worker can rebuild it from: the drawings
+ * (`silhouettes`) and the nearer planes' covers, as `hiddenBy` makes them. Only each plane's placement and
+ * cover are read, so `planeHiding` keeps those alone.
+ */
+export type PlaneHiding = {
+    layers: Pick<RigidLayer, 'atlas' | 'path' | 'cover' | 'decided'>[];
+    index: number;
+    silhouettes?: SceneSilhouettes;
+};
+export declare function planeHiding(layers: RigidLayer[], index: number, silhouettes?: SceneSilhouettes): PlaneHiding;
+/** The mask `hiddenBy` gives for a `PlaneHiding`. */
+export declare function hiding(description: PlaneHiding): ((frame: number) => Uint8Array | undefined) | undefined;
+/** What a plane's plate samples: frames under its cover, outside `hidden`, their lighting taken out by `unlit` when given. */
+export type RigidPlateSampling = {
+    layer: Pick<RigidLayer, 'atlas' | 'path' | 'cover' | 'decided'>;
+    margin: number;
+    hidden?: PlaneHiding;
+    unlit?: PlateDrift;
+};
+/** One sampling pass of a plane's plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
+export declare function rigidPlateSamples(source: PixelFrameSource, sampling: RigidPlateSampling, range: [number, number], reference?: PlateReference, exclude?: (frame: number) => Uint8Array | undefined): Promise<PlateStatistics>;
+/** Every sample's luma of a plane's plate over the frames of `range`, for `medianReference` (see `mergeLumaSamples`). */
+export declare function rigidLumaSamples(source: PixelFrameSource, sampling: RigidPlateSampling, range: [number, number], exclude?: (frame: number) => Uint8Array | undefined): Promise<PlateLumaSamples>;
+/** A plane plate's drift grids over the frames of `range`, measured away from its rim (the lighting is never taken out here). */
+export declare function rigidPlateDrift(source: PixelFrameSource, sampling: RigidPlateSampling, plate: LayerPlate, cell: number, range: [number, number], exclude?: (frame: number) => Uint8Array | undefined): Promise<{
+    columns: number;
+    rows: number;
+    frames: Float32Array[];
+}>;
+/**
  * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
  * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
  * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
  * With `median`, the trim is around each pixel's median luma (`medianReference`) rather than its mean, so
- * paint a missed drawing covers in under half the frames stays out.
+ * paint a missed drawing covers in under half the frames stays out. `exclude` may be a `PlaneHiding`, and
+ * then with `pool` every pass runs over ranges of frames on its threads, merged in order (the plate
+ * matches to float rounding).
  */
-export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLayer, exclude?: (frame: number) => Uint8Array | undefined, options?: {
+export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLayer, exclude?: ((frame: number) => Uint8Array | undefined) | PlaneHiding, options?: {
     margin?: number;
     floor?: number;
     drift?: number;
     median?: boolean;
     progress?: StageProgress;
+    pool?: FramePool;
 }): Promise<LayerPlate>;
 /**
  * A rigid layer's edge: `slot` maps atlas pixels within the rim band to entries of `alpha` and of

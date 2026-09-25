@@ -255,11 +255,17 @@ const otherLayer = (change) => packMask(change.flags.map(f => f & OTHER_LAYER ? 
  * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
  * drawing's own displacement between two redraws and would explain the redraw away; without it, every
  * candidate the camera measurement found. With `pairs`, only the pairs from its first up to its second
- * are measured, and the arrays hold those alone (for workers, see `pixel-pool.ts`).
+ * are measured, and the arrays hold those alone; with `pool`, ranges of pairs are measured on its threads
+ * (see `pixel-pool.ts`) and merged in order.
  */
 export async function measureDrawingEvidence(source, camera, options = {}) {
     const atlas = worldAtlas(camera), dilation = options.dilation ?? 1, inkDilation = options.inkDilation ?? 0;
-    const { progress, dilation: _, inkDilation: __, rigid, rimWidth, pairs: range, ...changeOptions } = options;
+    const { progress, dilation: _, inkDilation: __, rigid, rimWidth, pairs: range, pool, ...changeOptions } = options;
+    if (pool && !range) {
+        const { progress: ___, pool: ____, ...rest } = options;
+        const parts = await pool.map('evidence', shareDeep({ camera, options: rest }), splitRange(0, source.count - 1, pool.size * 3));
+        return { ...parts[0], pairs: parts.flatMap(p => p.pairs), summaries: parts.flatMap(p => p.summaries), others: parts.flatMap(p => p.others), othersBackward: parts.flatMap(p => p.othersBackward) };
+    }
     const rims = rigid?.length ? (frame) => rigidRim(rigid, frame, rimWidth ?? 2) : undefined;
     const pairs = [], summaries = [], others = [], othersBackward = [];
     const [first, end] = range ?? [0, source.count - 1];
@@ -373,9 +379,17 @@ export const unpackMask = (packed, length) => {
         out[p] = (packed[p >> 3] >> (7 - (p & 7))) & 1;
     return out;
 };
-/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only those from its first up to its second are made. */
+/**
+ * With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only
+ * those from its first up to its second are made; with `pool`, the frames are made on its threads, a range
+ * each, checked against the pool's frames when `source` is given.
+ */
 export async function sceneSilhouettes(evidence, options = {}) {
-    const { progress, source, frames: range, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
+    const { progress, source, frames: range, pool, ...silhouetteOptions } = options, { width, height } = evidence.camera, frames = [];
+    if (pool && !range) {
+        const parts = await pool.map('silhouettes', { evidence: shareDeep(evidence), options: { ...silhouetteOptions, check: !!source } }, splitRange(0, evidence.pairs.length + 1, pool.size * 3));
+        return { width, height, options: silhouetteOptions, frames: parts.flatMap(p => p.frames) };
+    }
     const [first, end] = range ?? [0, evidence.pairs.length + 1];
     for (let frame = first; frame < end; frame++) {
         await progress?.(frame, evidence.pairs.length + 1);

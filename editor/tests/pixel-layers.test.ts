@@ -65,7 +65,7 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   const annotated = regions((await run('pixelScenery', evidence)).outputs)
   const silhouettes = regions((await run('pixelSilhouettes', annotated, { minimumArea: 200 })).outputs)
   // The character's flat fill is its own; nothing textured is held between its drawings.
-  const released = regions((await run('pixelRelease', silhouettes, { gradient: 8, texture: .25, minimumArea: 32, revealed: .25 })).outputs)
+  const released = regions((await run('pixelRelease', silhouettes, { gradient: 8, texture: .25, minimumArea: 32, revealed: 1, window: 1 })).outputs)
   expect(released.pixelReleased).toHaveLength(silhouettes.pixelSilhouettes!.frames.length)
   expect(released.pixelReleased!.reduce((a, b) => a + b, 0)).toBeLessThan(released.pixelSilhouettes!.frames.reduce((a, f) => a + f.area, 0) * .02)
   const frame = 4, mask = unpackMask(silhouettes.pixelSilhouettes!.frames[frame]!.packed, W * H), d = character(frame)

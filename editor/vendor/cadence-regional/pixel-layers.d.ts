@@ -83,7 +83,8 @@ export type MeasuredEvidence = DrawingEvidence & {
  * another layer's: with `rigid`, only those layers' steps count, since a lone candidate motion is often a
  * drawing's own displacement between two redraws and would explain the redraw away; without it, every
  * candidate the camera measurement found. With `pairs`, only the pairs from its first up to its second
- * are measured, and the arrays hold those alone (for workers, see `pixel-pool.ts`).
+ * are measured, and the arrays hold those alone; with `pool`, ranges of pairs are measured on its threads
+ * (see `pixel-pool.ts`) and merged in order.
  */
 export declare function measureDrawingEvidence(source: PixelFrameSource, camera: CameraPath & {
     motions?: CandidateMotion[][];
@@ -94,6 +95,7 @@ export declare function measureDrawingEvidence(source: PixelFrameSource, camera:
     rigid?: RigidLayer[];
     rimWidth?: number;
     pairs?: [number, number];
+    pool?: FramePool;
 }): Promise<MeasuredEvidence>;
 /**
  * Mark every change event whose value before or after it is the pixel's scenery: its median luma over the
@@ -122,11 +124,16 @@ export type SceneSilhouettes = {
         }[];
     }[];
 };
-/** With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only those from its first up to its second are made. */
+/**
+ * With `source`, held ink is checked against each frame's own luma (see `holdTolerance`); with `frames`, only
+ * those from its first up to its second are made; with `pool`, the frames are made on its threads, a range
+ * each, checked against the pool's frames when `source` is given.
+ */
 export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: SilhouetteOptions & {
     progress?: StageProgress;
     source?: PixelFrameSource;
     frames?: [number, number];
+    pool?: FramePool;
 }): Promise<SceneSilhouettes>;
 /** What the camera plate samples: frames outside the drawings, outside the paint of `layers` and outside what only another motion explains. */
 export type LayerPlateSampling = {

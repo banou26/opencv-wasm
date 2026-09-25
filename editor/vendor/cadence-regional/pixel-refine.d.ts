@@ -168,6 +168,7 @@ export declare function buildScenePlates(source: PixelFrameSource, camera: Camer
     mattes?: boolean;
     band?: number;
     peel?: number;
+    clear?: Uint8Array[];
     progress?: StageProgress;
     pool?: FramePool;
 }): Promise<{

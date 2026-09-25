@@ -77,6 +77,10 @@ export type StillOptions = HeldPlateOptions & {
     islands?: number;
     /** Frames a layer the carve leaves under the minimum area in every frame must last to stay (12). */
     lasting?: number;
+    /** Frames the carved silhouettes must have covered a stretch for what the input lost of it to stay (12); 0 leaves it out (`continueLayers`). */
+    covering?: number;
+    /** Radius of the closing whose enclosed pixels next to a piece `continueLayers` kept join it (4); 0 leaves them. */
+    closing?: number;
 };
 /**
  * Carve out of the silhouettes what holds still against the whole plate (`HeldPlate`): a point that shows the
@@ -89,7 +93,8 @@ export type StillOptions = HeldPlateOptions & {
  * plate does not know, uncovered and covered again), unless the point shows the plate before and after the run
  * (a drawing that stood over the scenery). Trusted pieces neither flood reached go when their median `share`
  * reaches `islands`. Of what is left, a piece under the silhouettes' minimum area goes when most of it shows
- * the plate, and a layer of such pieces (`layerFrames`) goes unless it lasts `lasting` frames. Only for scenery
+ * the plate, and a layer of such pieces (`layerFrames`) goes unless it lasts `lasting` frames. Last, what the
+ * input silhouettes lost of a layer that stopped goes back into it (`continueLayers`). Only for scenery
  * held in the camera's coordinates: with a backdrop the camera holds the drawings instead. With `pool`, the
  * plate and the frames are worked on its threads.
  */
@@ -98,6 +103,24 @@ export declare function carveStill(source: PixelFrameSource, camera: CameraPath,
     progress?: StageProgress;
 }): Promise<SceneSilhouettes & {
     stilled: number[];
+    continued: number[];
+    taken: Uint8Array[];
+}>;
+/**
+ * What a layer that stopped left without changing, put back into its carved silhouettes. Change evidence carries
+ * no ink inside a flat drawing that stops, so the silhouettes can lose its inside while every pixel there still
+ * shows what the layer showed the frame before, and the plate then learns the drawing (market-pan's red coat from
+ * frame 98). Per world point, read as the held plate is, a stretch runs while each frame is within `tolerance` of
+ * its mean luma and `chromaTolerance` of its color. A pixel outside `input` is kept when its point was inside
+ * `carved` or kept the frame before, the frame continues that stretch, `carved` covered the stretch `covering`
+ * frames, and the frame does not show the held plate there. Per frame, kept pieces under the silhouettes'
+ * minimum area go, and what a closing by `closing` pixels encloses within that of a kept piece joins it (the rim
+ * the stopped drawing's last redraw left). Scenery a silhouette merely covered shows its held plate or was
+ * covered only a few frames. Run it after the carve, against the plate checked on the input silhouettes: fed
+ * back into them, it would make the held plate of a walking coat consistent.
+ */
+export declare function continueLayers(source: PixelFrameSource, camera: CameraPath, plate: HeldPlate, input: SceneSilhouettes, carved: SceneSilhouettes, options?: StillOptions): Promise<SceneSilhouettes & {
+    continued: number[];
 }>;
 /** `carveStill`'s frames from `range`'s first up to its second, against a held plate and event index made for the shot. */
 export declare function stillFrames(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: HeldPlate, index: EventIndex, options: StillOptions, range: [number, number], progress?: StageProgress): Promise<SceneSilhouettes & {

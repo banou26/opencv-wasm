@@ -567,7 +567,7 @@ export async function buildScenePlates(source, camera, silhouettes, layers, opti
     const plate = layers.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
         : await buildLayerPlate(source, camera, silhouettes, {
             layers, progress, ...(evidence ? { evidence } : {}), ...(drift === undefined ? {} : { drift }), ...(options.pool ? { pool: options.pool } : {}),
-            ...(margin === undefined ? {} : { margin }), ...(floor === undefined ? {} : { floor }),
+            ...(margin === undefined ? {} : { margin }), ...(floor === undefined ? {} : { floor }), ...(options.clear ? { clear: options.clear } : {}),
         });
     const out = layers.map(layer => ({ ...layer }));
     for (const [k, layer] of out.entries()) {

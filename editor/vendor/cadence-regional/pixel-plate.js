@@ -57,7 +57,7 @@ export function plateStatistics(atlas) {
     return { atlas, sum: new Float32Array(size * 3), square: new Float32Array(size * 3), count: new Uint16Array(size) };
 }
 /** Frame samples on the atlas grid of its window, plus a per-pixel usable flag. */
-function frameSamples(camera, atlas, frame, pixels, exclude, margin) {
+function frameSamples(camera, atlas, frame, pixels, exclude, margin, clear) {
     const env_1 = { stack: [], error: void 0, hasError: false };
     try {
         const { width, height } = pixels, position = camera.positions[frame], offset = frameOffset(camera, atlas, frame);
@@ -82,8 +82,10 @@ function frameSamples(camera, atlas, frame, pixels, exclude, margin) {
             }
         }
         for (let y = 3; y < height - 3; y++)
-            for (let x = 3; x < width - 3; x++)
-                usable[y * width + x] = Number(!grown || !grown[y * width + x]);
+            for (let x = 3; x < width - 3; x++) {
+                const p = y * width + x;
+                usable[p] = Number(!grown || !grown[p] || (!!clear?.[p] && !exclude?.[p]));
+            }
         return { offset, data: warped.data32F.slice(), usable };
     }
     catch (e_2) {
@@ -95,10 +97,13 @@ function frameSamples(camera, atlas, frame, pixels, exclude, margin) {
     }
 }
 const BLUE = .0722, GREEN = .7152, RED = .2126;
-/** Add one frame outside `exclude` (grown by `margin` pixels). With `reference`, only samples near it count. */
-export function addPlateSamples(statistics, camera, frame, pixels, exclude, margin = 3, reference) {
+/**
+ * Add one frame outside `exclude` (grown by `margin` pixels, except where `clear` holds pixels known to show the
+ * scenery). With `reference`, only samples near it count.
+ */
+export function addPlateSamples(statistics, camera, frame, pixels, exclude, margin = 3, reference, clear) {
     const { atlas, sum, square, count } = statistics, { width, height } = pixels;
-    const { offset, data, usable } = frameSamples(camera, atlas, frame, pixels, exclude, margin);
+    const { offset, data, usable } = frameSamples(camera, atlas, frame, pixels, exclude, margin, clear);
     for (let y = 0; y < height; y++)
         for (let x = 0; x < width; x++) {
             const p = y * width + x;

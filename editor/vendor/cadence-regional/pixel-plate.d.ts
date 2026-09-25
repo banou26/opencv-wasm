@@ -41,8 +41,11 @@ export type PlateReference = {
     luma: Float32Array;
     tolerance: Float32Array;
 };
-/** Add one frame outside `exclude` (grown by `margin` pixels). With `reference`, only samples near it count. */
-export declare function addPlateSamples(statistics: PlateStatistics, camera: CameraPath, frame: number, pixels: PixelFrame, exclude?: Uint8Array, margin?: number, reference?: PlateReference): void;
+/**
+ * Add one frame outside `exclude` (grown by `margin` pixels, except where `clear` holds pixels known to show the
+ * scenery). With `reference`, only samples near it count.
+ */
+export declare function addPlateSamples(statistics: PlateStatistics, camera: CameraPath, frame: number, pixels: PixelFrame, exclude?: Uint8Array, margin?: number, reference?: PlateReference, clear?: Uint8Array): void;
 /** Mean, plus a per-pixel tolerance for the trimmed pass: three spreads, never under `floor` codes. */
 export declare function plateReference(statistics: PlateStatistics, floor?: number): {
     mean: Float32Array;

@@ -136,12 +136,14 @@ export declare function sceneSilhouettes(evidence: DrawingEvidence, options?: Si
     pool?: FramePool;
 }): Promise<SceneSilhouettes>;
 /** What the camera plate samples: frames outside the drawings, outside the paint of `layers` and outside what only another motion explains. */
+/** `clear`: per frame, packed, the pixels the silhouettes gave up as scenery (the still carve's), sampled even beside them. */
 export type LayerPlateSampling = {
     camera: CameraPath;
     silhouettes: SceneSilhouettes;
     margin: number;
     layers?: RigidLayer[];
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
+    clear?: Uint8Array[];
 };
 /** One sampling pass of the camera plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
 export declare function layerPlateSamples(source: PixelFrameSource, sampling: LayerPlateSampling, range: [number, number], reference?: PlateReference): Promise<PlateStatistics>;
@@ -165,5 +167,6 @@ export declare function buildLayerPlate(source: PixelFrameSource, camera: Camera
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
     layers?: RigidLayer[];
     drift?: number;
+    clear?: Uint8Array[];
     pool?: FramePool;
 }): Promise<LayerPlate>;

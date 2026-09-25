@@ -422,8 +422,10 @@ function plateExclusion(sampling, size) {
 /** One sampling pass of the camera plate over the frames from `range`'s first up to its second; with `reference`, only samples near it. */
 export async function layerPlateSamples(source, sampling, range, reference) {
     const exclude = plateExclusion(sampling, source.width * source.height), statistics = plateStatistics(worldAtlas(sampling.camera));
-    for (let frame = range[0]; frame < range[1]; frame++)
-        addPlateSamples(statistics, sampling.camera, frame, await source.frame(frame), exclude(frame), sampling.margin, reference);
+    for (let frame = range[0]; frame < range[1]; frame++) {
+        const clear = sampling.clear?.[frame] && unpackMask(sampling.clear[frame], source.width * source.height);
+        addPlateSamples(statistics, sampling.camera, frame, await source.frame(frame), exclude(frame), sampling.margin, reference, clear || undefined);
+    }
     return statistics;
 }
 /** The drift grids of the frames from `range`'s first up to its second, against `plate` (see `measureDrift`). */
@@ -446,7 +448,7 @@ export async function layerPlateDrift(source, sampling, plate, cell, range) {
  * the plate matches the one made here to within float rounding.
  */
 export async function buildLayerPlate(source, camera, silhouettes, options = {}) {
-    const sampling = { camera, silhouettes, margin: options.margin ?? 3, ...(options.layers ? { layers: options.layers } : {}), ...(options.evidence ? { evidence: options.evidence } : {}) };
+    const sampling = { camera, silhouettes, margin: options.margin ?? 3, ...(options.layers ? { layers: options.layers } : {}), ...(options.evidence ? { evidence: options.evidence } : {}), ...(options.clear ? { clear: options.clear } : {}) };
     const { pool } = options, all = [0, source.count];
     const shared = pool && shareDeep(sampling), ranges = pool && splitRange(0, source.count, pool.size);
     const pass = async (reference) => {

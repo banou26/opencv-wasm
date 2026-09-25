@@ -1,7 +1,60 @@
-import { frameOffset } from "./pixel-drawings.js";
+var __addDisposableResource = (this && this.__addDisposableResource) || function (env, value, async) {
+    if (value !== null && value !== void 0) {
+        if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
+        var dispose, inner;
+        if (async) {
+            if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
+            dispose = value[Symbol.asyncDispose];
+        }
+        if (dispose === void 0) {
+            if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
+            dispose = value[Symbol.dispose];
+            if (async) inner = dispose;
+        }
+        if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
+        if (inner) dispose = function() { try { inner.call(this); } catch (e) { return Promise.reject(e); } };
+        env.stack.push({ value: value, dispose: dispose, async: async });
+    }
+    else if (async) {
+        env.stack.push({ async: true });
+    }
+    return value;
+};
+var __disposeResources = (this && this.__disposeResources) || (function (SuppressedError) {
+    return function (env) {
+        function fail(e) {
+            env.error = env.hasError ? new SuppressedError(e, env.error, "An error was suppressed during disposal.") : e;
+            env.hasError = true;
+        }
+        var r, s = 0;
+        function next() {
+            while (r = env.stack.pop()) {
+                try {
+                    if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
+                    if (r.dispose) {
+                        var result = r.dispose.call(r.value);
+                        if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) { fail(e); return next(); });
+                    }
+                    else s |= 1;
+                }
+                catch (e) {
+                    fail(e);
+                }
+            }
+            if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
+            if (env.hasError) throw env.error;
+        }
+        return next();
+    };
+})(typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
+    var e = new Error(message);
+    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+});
+import { CV_8UC1, MORPH_ELLIPSE, Mat, dilate, getStructuringElement, matFromArray } from '@banou/opencv-wasm';
+import { fillEnclosed, frameOffset } from "./pixel-drawings.js";
 import { frameLayerLabels, layerFrames } from "./pixel-frames.js";
-import { unpackMask } from "./pixel-layers.js";
-import { silhouetteFrame } from "./pixel-refine.js";
+import { packMask, unpackMask } from "./pixel-layers.js";
+import { closeByDisc, silhouetteFrame } from "./pixel-refine.js";
 import { shareDeep, splitRange } from "./pixel-share.js";
 /** Index a shot's change events by world pixel. */
 export function indexEvents(evidence) {
@@ -167,7 +220,8 @@ export async function heldPlate(source, camera, atlas, options = {}) {
  * plate does not know, uncovered and covered again), unless the point shows the plate before and after the run
  * (a drawing that stood over the scenery). Trusted pieces neither flood reached go when their median `share`
  * reaches `islands`. Of what is left, a piece under the silhouettes' minimum area goes when most of it shows
- * the plate, and a layer of such pieces (`layerFrames`) goes unless it lasts `lasting` frames. Only for scenery
+ * the plate, and a layer of such pieces (`layerFrames`) goes unless it lasts `lasting` frames. Last, what the
+ * input silhouettes lost of a layer that stopped goes back into it (`continueLayers`). Only for scenery
  * held in the camera's coordinates: with a backdrop the camera holds the drawings instead. With `pool`, the
  * plate and the frames are worked on its threads.
  */
@@ -178,7 +232,124 @@ export async function carveStill(source, camera, evidence, silhouettes, options 
         const parts = await pool.map('stillCarve', shareDeep({ camera, silhouettes, plate, index, options: rest }), splitRange(0, silhouettes.frames.length, pool.size * 3));
         return { ...silhouettes, frames: parts.flatMap(p => p.frames), stilled: parts.flatMap(p => p.stilled) };
     })() : await stillFrames(source, camera, silhouettes, plate, index, rest, [0, silhouettes.frames.length], progress);
-    return dropFleeting(evidence, carved, silhouettes.options.minimumArea ?? 800, options.lasting ?? 12);
+    const kept = dropFleeting(evidence, carved, silhouettes.options.minimumArea ?? 800, options.lasting ?? 12);
+    const out = options.covering === 0 ? { ...kept, continued: kept.frames.map(() => 0) } : { ...await continueLayers(source, camera, plate, silhouettes, kept, options), stilled: kept.stilled };
+    // What the carve gave up, for the plate to sample beside what it kept (`buildLayerPlate`'s `clear`).
+    const size = source.width * source.height;
+    const taken = out.frames.map((frame, t) => { const before = unpackMask(silhouettes.frames[t].packed, size), after = unpackMask(frame.packed, size); return packMask(before.map((v, p) => v & ~after[p] & 1)); });
+    return { ...out, taken };
+}
+/**
+ * What a layer that stopped left without changing, put back into its carved silhouettes. Change evidence carries
+ * no ink inside a flat drawing that stops, so the silhouettes can lose its inside while every pixel there still
+ * shows what the layer showed the frame before, and the plate then learns the drawing (market-pan's red coat from
+ * frame 98). Per world point, read as the held plate is, a stretch runs while each frame is within `tolerance` of
+ * its mean luma and `chromaTolerance` of its color. A pixel outside `input` is kept when its point was inside
+ * `carved` or kept the frame before, the frame continues that stretch, `carved` covered the stretch `covering`
+ * frames, and the frame does not show the held plate there. Per frame, kept pieces under the silhouettes'
+ * minimum area go, and what a closing by `closing` pixels encloses within that of a kept piece joins it (the rim
+ * the stopped drawing's last redraw left). Scenery a silhouette merely covered shows its held plate or was
+ * covered only a few frames. Run it after the carve, against the plate checked on the input silhouettes: fed
+ * back into them, it would make the held plate of a walking coat consistent.
+ */
+export async function continueLayers(source, camera, plate, input, carved, options = {}) {
+    const tolerance = options.tolerance ?? 8, chroma = options.chromaTolerance ?? 10, least = options.covering ?? 12, closing = options.closing ?? 4;
+    const piece = carved.options.minimumArea ?? 800, { width, height } = source, size = width * height, { atlas } = plate, W = atlas.width, n = W * atlas.height;
+    const mean = new Float32Array(n), meanBlue = new Float32Array(n), meanRed = new Float32Array(n), length = new Uint16Array(n), seen = new Int16Array(n).fill(-2);
+    const run = new Uint16Array(n), covered = new Uint8Array(n), frames = [], continued = [];
+    for (let s = 0; s < source.count; s++) {
+        const data = (await source.frame(s)).data, { dx, dy } = camera.positions[s], o = frameOffset(camera, atlas, s), k = bilinear(atlas.x + dx, atlas.y + dy);
+        const inside = unpackMask(input.frames[s].packed, size), cover = unpackMask(carved.frames[s].packed, size), kept = new Uint8Array(size);
+        const u0 = Math.max(0, -k.ix), u1 = Math.min(W - 1, width - 1 - k.ex - k.ix), v0 = Math.max(0, -k.iy), v1 = Math.min(atlas.height - 1, height - 1 - k.ey - k.iy);
+        for (let v = v0; v <= v1; v++)
+            for (let u = u0; u <= u1; u++) {
+                const q = ((v + k.iy) * width + k.ix + u) * 3, q10 = q + k.ex * 3, q01 = q + k.ey * width * 3, q11 = q01 + k.ex * 3, i = v * W + u;
+                const b = k.w00 * data[q] + k.w10 * data[q10] + k.w01 * data[q01] + k.w11 * data[q11];
+                const g = k.w00 * data[q + 1] + k.w10 * data[q10 + 1] + k.w01 * data[q01 + 1] + k.w11 * data[q11 + 1];
+                const r = k.w00 * data[q + 2] + k.w10 * data[q10 + 2] + k.w01 * data[q01 + 2] + k.w11 * data[q11 + 2];
+                const y = .0722 * b + .7152 * g + .2126 * r, bl = b - y, rd = r - y;
+                const same = seen[i] === s - 1 && Math.abs(y - mean[i]) <= tolerance && Math.abs(bl - meanBlue[i]) <= chroma && Math.abs(rd - meanRed[i]) <= chroma;
+                if (same) {
+                    const m = length[i];
+                    mean[i] = (mean[i] * m + y) / (m + 1);
+                    meanBlue[i] = (meanBlue[i] * m + bl) / (m + 1);
+                    meanRed[i] = (meanRed[i] * m + rd) / (m + 1);
+                    length[i] = Math.min(65535, m + 1);
+                }
+                else {
+                    mean[i] = y;
+                    meanBlue[i] = bl;
+                    meanRed[i] = rd;
+                    length[i] = 1;
+                    run[i] = 0;
+                }
+                seen[i] = s;
+                const x = u - o.x, fy = v - o.y, p = fy * width + x, within = x >= 0 && fy >= 0 && x < width && fy < height;
+                if (within && cover[p])
+                    run[i]++;
+                const shows = plate.luma[i] >= 0 && Math.abs(y - plate.luma[i]) <= tolerance && Math.abs(bl - plate.blue[i]) <= chroma && Math.abs(rd - plate.red[i]) <= chroma;
+                const keep = within && !inside[p] && same && covered[i] === 1 && run[i] >= least && !shows;
+                covered[i] = Number((within && cover[p] === 1) || keep);
+                if (keep)
+                    kept[p] = 1;
+            }
+        // A layer's piece is never under the area a silhouette may have.
+        const done = new Uint8Array(size), members = [];
+        for (let p = 0; p < size; p++) {
+            if (!kept[p] || done[p])
+                continue;
+            members.length = 0;
+            done[p] = 1;
+            members.push(p);
+            for (let m = 0; m < members.length; m++) {
+                const q = members[m], x = q % width;
+                for (let dy = -width; dy <= width; dy += width)
+                    for (let dx = x > 0 ? -1 : 0; dx <= (x < width - 1 ? 1 : 0); dx++) {
+                        const nb = q + dy + dx;
+                        if (nb >= 0 && nb < size && kept[nb] && !done[nb]) {
+                            done[nb] = 1;
+                            members.push(nb);
+                        }
+                    }
+            }
+            if (members.length < piece)
+                for (const q of members)
+                    kept[q] = 0;
+        }
+        let count = 0;
+        for (let p = 0; p < size; p++)
+            count += kept[p];
+        if (count && closing) {
+            const env_1 = { stack: [], error: void 0, hasError: false };
+            try {
+                const union = cover.map((m, p) => m | inside[p] | kept[p]), closed = fillEnclosed(closeByDisc(union, width, height, closing), width, height);
+                const marks = __addDisposableResource(env_1, matFromArray(height, width, CV_8UC1, kept.map(v => v ? 255 : 0)), false), kernel = __addDisposableResource(env_1, getStructuringElement(MORPH_ELLIPSE, { width: closing * 2 + 1, height: closing * 2 + 1 }), false), near = __addDisposableResource(env_1, new Mat(), false);
+                dilate(marks, near, kernel);
+                const reach = near.data;
+                for (let p = 0; p < size; p++)
+                    if (closed[p] && !union[p] && reach[p]) {
+                        kept[p] = 1;
+                        count++;
+                    }
+            }
+            catch (e_1) {
+                env_1.error = e_1;
+                env_1.hasError = true;
+            }
+            finally {
+                __disposeResources(env_1);
+            }
+        }
+        continued.push(count);
+        if (!count) {
+            frames.push(carved.frames[s]);
+            continue;
+        }
+        for (let p = 0; p < size; p++)
+            cover[p] |= kept[p];
+        frames.push(silhouetteFrame(cover, width, height));
+    }
+    return { ...carved, frames, continued };
 }
 /** Without the layers under `minimum` pixels in every frame that last fewer than `lasting` frames: flicker the carve cut free. */
 function dropFleeting(evidence, carved, minimum, lasting) {

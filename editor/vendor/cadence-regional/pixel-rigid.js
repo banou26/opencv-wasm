@@ -161,34 +161,94 @@ export function rigidPaths(camera, minimumPresence = .5, merge = .5) {
 export async function measureRigidCover(source, camera, layer, options = {}) {
     return measurePlaneCover(source, layer, [camera, ...(options.others ?? [])], options);
 }
-/**
- * The same test for any plane against every other one, the camera's included: bit 0 of each test is
- * this plane's motion. Used as is for the camera's own plane when planes lie behind it.
- */
+/** A plane's cover tests: every pair of frames a baseline apart (`[first frame, baseline]`), the baselines, and the planes' motions. */
+function planeTests(source, path, others, options) {
+    const displacements = options.displacements ?? [12, 48, 192], strides = options.strides ?? [2, 2, 4], frames = source.count;
+    // The baselines must separate this plane from the one moving most like it.
+    const speed = Math.min(...others.map(other => {
+        const relative = [];
+        for (let t = 0; t + 1 < frames; t++) {
+            const c = other.positions, r = path.positions;
+            relative.push(Math.hypot(r[t + 1].dx - r[t].dx - (c[t + 1].dx - c[t].dx), r[t + 1].dy - r[t].dy - (c[t + 1].dy - c[t].dy)));
+        }
+        return median(relative);
+    }));
+    const baselines = displacements.map(d => Math.max(1, Math.min(Math.floor((frames - 1) / 2), Math.ceil(d / Math.max(speed, 1e-3)))));
+    const tests = baselines.flatMap((baseline, k) => {
+        const out = [];
+        for (let t = 0; t + baseline < frames; t += strides[k] ?? 2)
+            out.push([t, baseline]);
+        return out;
+    });
+    const planes = [path, ...others];
+    const motions = (t, u) => planes.map(plane => ({ dx: plane.positions[u].dx - plane.positions[t].dx, dy: plane.positions[u].dy - plane.positions[t].dy }));
+    return { baselines, tests, planes, motions };
+}
+/** The cover tests from `range`'s first up to its second, counted per atlas pixel (see `measurePlaneCover`). */
+export async function planeCoverCounts(source, path, others, options, range) {
+    const atlas = worldAtlas(path), size = atlas.width * atlas.height, { width, height } = source, frameSize = width * height;
+    const own = new Uint16Array(size), back = new Uint16Array(size), both = new Uint16Array(size), tested = new Uint16Array(size), arrival = options.arrival ?? false;
+    const { tests, planes, motions } = planeTests(source, path, others, options), all = (1 << planes.length) - 1, noise = options.noise;
+    const drawn = options.drawnBy, exclude = options.exclude ?? (drawn && ((frame) => unpackMask(drawn.frames[frame].packed, frameSize)));
+    const nearer = options.occluding;
+    const occluders = options.occluders ?? (nearer?.length ? (frame) => {
+        const union = renderCover(nearer[0], frame, true);
+        for (const layer of nearer.slice(1)) {
+            const mask = renderCover(layer, frame, true);
+            for (let p = 0; p < union.length; p++)
+                union[p] |= mask[p];
+        }
+        return union;
+    } : undefined);
+    for (let done = range[0]; done < range[1]; done++) {
+        await options.progress?.(done, tests.length);
+        const [t, baseline] = tests[done], u = t + baseline;
+        const pair = motions(t, u), { bits, inside } = explainingMotions(await source.frame(t), await source.frame(u), pair, { noise });
+        const offset = frameOffset(path, atlas, t), shifts = pair.map(m => [Math.round(m.dx), Math.round(m.dy)]), before = exclude?.(t), after = exclude?.(u);
+        const hiddenBefore = occluders?.(t), hiddenAfter = occluders?.(u);
+        const covered = (mask, x, y) => !!mask && x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === 1;
+        const [sx, sy] = shifts[0];
+        const inFrame = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
+        const arrives = (x2, y2) => {
+            if (!inFrame(x2, y2))
+                return false;
+            if (!arrival)
+                return !(bits[y2 * width + x2] & ~1);
+            for (let k = 1; k < shifts.length; k++) {
+                const xk = x2 - shifts[k][0], yk = y2 - shifts[k][1];
+                if (!inFrame(xk, yk) || bits[yk * width + xk] & 1 << k)
+                    return false;
+            }
+            return true;
+        };
+        for (let y = 0; y < height; y++)
+            for (let x = 0; x < width; x++) {
+                const p = y * width + x, b = bits[p], a = (y + offset.y) * atlas.width + x + offset.x;
+                if (inside[p] !== all)
+                    continue;
+                if (before?.[p] || shifts.some(([dx, dy]) => covered(after, x + dx, y + dy)))
+                    continue;
+                if (hiddenBefore?.[p] || covered(hiddenAfter, x + sx, y + sy))
+                    continue;
+                if (tested[a] < 65535)
+                    tested[a]++;
+                // Where the layer's paint goes no other plane may explain the frame either: smooth scenery that paint
+                // covers by the second frame matches the layer's motion there, yet holds still where it went.
+                if (b === 1 && own[a] < 65535 && arrives(x + sx, y + sy))
+                    own[a]++;
+                else if (b && !(b & 1) && back[a] < 65535)
+                    back[a]++;
+                else if (b & 1 && b & ~1 && both[a] < 65535)
+                    both[a]++;
+            }
+    }
+    return { own, back, both, tested };
+}
 export async function measurePlaneCover(source, layer, others, options = {}) {
     const env_3 = { stack: [], error: void 0, hasError: false };
     try {
-        const { path } = layer, atlas = worldAtlas(path), size = atlas.width * atlas.height, closing = options.closing ?? 2;
-        const displacements = options.displacements ?? [12, 48, 192], strides = options.strides ?? [2, 2, 4];
-        const own = new Uint16Array(size), back = new Uint16Array(size), both = new Uint16Array(size), tested = new Uint16Array(size), { width, height } = source, frames = source.count;
-        const planes = [path, ...others], all = (1 << planes.length) - 1, arrival = options.arrival ?? false;
-        // The baselines must separate this plane from the one moving most like it.
-        const speed = Math.min(...others.map(other => {
-            const relative = [];
-            for (let t = 0; t + 1 < frames; t++) {
-                const c = other.positions, r = path.positions;
-                relative.push(Math.hypot(r[t + 1].dx - r[t].dx - (c[t + 1].dx - c[t].dx), r[t + 1].dy - r[t].dy - (c[t + 1].dy - c[t].dy)));
-            }
-            return median(relative);
-        }));
-        const baselines = displacements.map(d => Math.max(1, Math.min(Math.floor((frames - 1) / 2), Math.ceil(d / Math.max(speed, 1e-3)))));
-        const tests = baselines.flatMap((baseline, k) => {
-            const out = [];
-            for (let t = 0; t + baseline < frames; t += strides[k] ?? 2)
-                out.push([t, baseline]);
-            return out;
-        });
-        const motions = (t, u) => planes.map(plane => ({ dx: plane.positions[u].dx - plane.positions[t].dx, dy: plane.positions[u].dy - plane.positions[t].dy }));
+        const { path } = layer, atlas = worldAtlas(path), size = atlas.width * atlas.height, closing = options.closing ?? 2, frames = source.count;
+        const { baselines, tests, motions } = planeTests(source, path, others, options);
         // Scenery that changes slowly would pass for noise across a baseline; neighboring frames measure it.
         const samples = [];
         for (let k = 0; k < 5 && frames > 1; k++) {
@@ -196,48 +256,21 @@ export async function measurePlaneCover(source, layer, others, options = {}) {
             samples.push(explainingMotions(await source.frame(t), await source.frame(t + 1), motions(t, t + 1)).noise);
         }
         const noise = samples.filter(Number.isFinite).sort((a, b) => a - b)[samples.length >> 1];
-        for (const [done, [t, baseline]] of tests.entries()) {
-            await options.progress?.(done, tests.length);
-            const u = t + baseline;
-            const pair = motions(t, u), { bits, inside } = explainingMotions(await source.frame(t), await source.frame(u), pair, { noise });
-            const offset = frameOffset(path, atlas, t), shifts = pair.map(m => [Math.round(m.dx), Math.round(m.dy)]), before = options.exclude?.(t), after = options.exclude?.(u);
-            const hiddenBefore = options.occluders?.(t), hiddenAfter = options.occluders?.(u);
-            const covered = (mask, x, y) => !!mask && x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === 1;
-            const [sx, sy] = shifts[0];
-            const inFrame = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
-            const arrives = (x2, y2) => {
-                if (!inFrame(x2, y2))
-                    return false;
-                if (!arrival)
-                    return !(bits[y2 * width + x2] & ~1);
-                for (let k = 1; k < shifts.length; k++) {
-                    const xk = x2 - shifts[k][0], yk = y2 - shifts[k][1];
-                    if (!inFrame(xk, yk) || bits[yk * width + xk] & 1 << k)
-                        return false;
-                }
-                return true;
-            };
-            for (let y = 0; y < height; y++)
-                for (let x = 0; x < width; x++) {
-                    const p = y * width + x, b = bits[p], a = (y + offset.y) * atlas.width + x + offset.x;
-                    if (inside[p] !== all)
-                        continue;
-                    if (before?.[p] || shifts.some(([dx, dy]) => covered(after, x + dx, y + dy)))
-                        continue;
-                    if (hiddenBefore?.[p] || covered(hiddenAfter, x + sx, y + sy))
-                        continue;
-                    if (tested[a] < 65535)
-                        tested[a]++;
-                    // Where the layer's paint goes no other plane may explain the frame either: smooth scenery that paint
-                    // covers by the second frame matches the layer's motion there, yet holds still where it went.
-                    if (b === 1 && own[a] < 65535 && arrives(x + sx, y + sy))
-                        own[a]++;
-                    else if (b && !(b & 1) && back[a] < 65535)
-                        back[a]++;
-                    else if (b & 1 && b & ~1 && both[a] < 65535)
-                        both[a]++;
-                }
-        }
+        const { pool, progress, exclude, occluders, ...rest } = options;
+        const counts = pool && !exclude && !occluders
+            ? await (async () => {
+                const parts = await pool.map('planeCounts', shareDeep({ path, others, options: { ...rest, noise } }), splitRange(0, tests.length, pool.size * 3));
+                const sum = parts[0];
+                for (const part of parts.slice(1))
+                    for (const key of ['own', 'back', 'both', 'tested']) {
+                        const into = sum[key], from = part[key];
+                        for (let a = 0; a < into.length; a++)
+                            into[a] = Math.min(65535, into[a] + from[a]);
+                    }
+                return sum;
+            })()
+            : await planeCoverCounts(source, path, others, { ...options, noise }, [0, tests.length]);
+        const { own, back, both, tested } = counts;
         // Only this layer's motion explaining a pixel is paint. Another plane's alone is weaker evidence against:
         // a drawing held in front of the layer, or a nearer plane, shows it too, so paint tolerates `occlusion`
         // times as much.
@@ -396,18 +429,9 @@ export async function measureScenePlanes(source, camera, planes, options = {}) {
             out[k] = { path: plane.path, atlas, measured: plane.measured, depth: pathSpeed(plane.path), backdrop: true, baselines: [], own: none, back: none, both: none, tested: none, cover: all, decided: all };
             continue;
         }
-        const nearer = out.slice(k + 1);
-        const occluders = nearer.length ? (frame) => {
-            const union = renderCover(nearer[0], frame, true);
-            for (const layer of nearer.slice(1)) {
-                const mask = renderCover(layer, frame, true);
-                for (let p = 0; p < union.length; p++)
-                    union[p] |= mask[p];
-            }
-            return union;
-        } : undefined;
+        const nearer = out.slice(k + 1).map(({ atlas, path, cover, decided }) => ({ atlas, path, cover, decided }));
         const others = [...(hasCamera ? [] : [camera]), ...planes.filter((_, j) => j !== k).map(other => other.path)];
-        const measured = await measurePlaneCover(source, plane, others, { ...options, arrival: options.arrival ?? hasCamera, occluders });
+        const measured = await measurePlaneCover(source, plane, others, { ...options, arrival: options.arrival ?? hasCamera, ...(nearer.length ? { occluding: nearer } : {}) });
         out[k] = plane.camera ? { ...measured, camera: true } : measured;
     }
     return out;

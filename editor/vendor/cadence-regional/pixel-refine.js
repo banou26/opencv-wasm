@@ -608,7 +608,7 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
     if (!layers.length)
         return { layers, silhouettes, dropped: [], claimed: [] };
     const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size), { evidence, progress } = options;
-    const next = await measureScenePlanes(source, camera, layers, { exclude: drawn, progress });
+    const next = await measureScenePlanes(source, camera, layers, { drawnBy: silhouettes, progress, ...(options.pool ? { pool: options.pool } : {}) });
     // What lies behind each plane, from the new covers: the camera plate, and the farther planes' plates.
     const scene = next.some(layer => layer.backdrop) ? finishPlate(plateStatistics(worldAtlas(camera)))
         : await buildLayerPlate(source, camera, silhouettes, { layers: next, progress, ...(evidence ? { evidence } : {}), ...(options.pool ? { pool: options.pool } : {}) });

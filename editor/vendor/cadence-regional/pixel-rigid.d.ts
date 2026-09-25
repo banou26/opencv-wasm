@@ -82,6 +82,15 @@ export type RigidOptions = {
      * destination, the same test when the other planes hold still.
      */
     arrival?: boolean;
+    /** `exclude` as data: the silhouettes, whose drawings a test skips. */
+    drawnBy?: SceneSilhouettes;
+    /** `occluders` as data: the nearer planes, whose paint and undecided pixels hide this one. */
+    occluding?: Pick<RigidLayer, 'atlas' | 'path' | 'cover' | 'decided'>[];
+    /**
+     * Run the tests on these threads, a range of them each, their counts summed in order. Only with the data
+     * forms: `exclude` and `occluders` are functions no thread can be handed.
+     */
+    pool?: FramePool;
     progress?: StageProgress;
 };
 /**
@@ -112,6 +121,16 @@ export declare function measureRigidCover(source: PixelFrameSource, camera: Came
  * The same test for any plane against every other one, the camera's included: bit 0 of each test is
  * this plane's motion. Used as is for the camera's own plane when planes lie behind it.
  */
+type PlaneCounts = {
+    own: Uint16Array;
+    back: Uint16Array;
+    both: Uint16Array;
+    tested: Uint16Array;
+};
+/** The cover tests from `range`'s first up to its second, counted per atlas pixel (see `measurePlaneCover`). */
+export declare function planeCoverCounts(source: PixelFrameSource, path: CameraPath, others: CameraPath[], options: RigidOptions & {
+    noise: number;
+}, range: [number, number]): Promise<PlaneCounts>;
 export declare function measurePlaneCover(source: PixelFrameSource, layer: {
     path: CameraPath;
     measured: number;
@@ -326,3 +345,4 @@ export declare function renderScene(plate: LayerPlate, camera: CameraPath, layer
     data: Float32Array;
     known: Uint8Array;
 };
+export {};

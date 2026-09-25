@@ -1,7 +1,7 @@
-import { ARRIVE, LEAVE, composeCels, drawingInk, frameOffset, matteLayer, pixelLuma, renderCover, renderPlate, renderScene, unpackMask, type HeldCel, type PixelFrame } from 'cadence/regional'
+import { ARRIVE, LEAVE, composeCels, drawingInk, frameOffset, matteLayer, pixelLuma, renderCover, renderPlane, renderPlate, renderScene, unpackMask, type HeldCel, type PixelFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
-type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; rebuilt: Uint8Array; residual: Uint8Array; drawings: Uint8Array }
+type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; planes: Uint8Array; rebuilt: Uint8Array; residual: Uint8Array; drawings: Uint8Array }
 
 /** Display pixels average their source block; flags use the block's strongest entry so thin lines survive. */
 const downsample = (width: number, height: number, displayWidth: number, displayHeight: number, paint: (p: number) => [number, number, number], priority: (p: number) => number) => {
@@ -85,7 +85,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     return [matte.color[q + 2]! * a + c * (1 - a), matte.color[q + 1]! * a + c * (1 - a), matte.color[q]! * a + c * (1 - a)]
   }
   const none = () => 0
-  const panels: Omit<Panels, 'drawings' | 'rebuilt' | 'residual'> & Partial<Pick<Panels, 'drawings' | 'rebuilt' | 'residual'>> = {
+  const panels: Omit<Panels, 'drawings' | 'planes' | 'rebuilt' | 'residual'> & Partial<Pick<Panels, 'drawings' | 'planes' | 'rebuilt' | 'residual'>> = {
     source: downsample(width, height, displayWidth, displayHeight, p => rgb(p), none),
     changes: downsample(width, height, displayWidth, displayHeight, p => {
       const f = changes[p]!
@@ -103,6 +103,22 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
       return residual[p]! > 20 ? [255, 45, 45] : residual[p]! > 12 ? [255, 160, 40] : color
     }, p => coverEdge[p] ? 3 : plate && plate.known[p] && !mask[p] && residual[p]! > 12 ? 1 + Number(residual[p]! > 20) : 0),
   }
+  // Each plane alone on this frame, back to front, straight alpha over a checkerboard, one tile per plane.
+  const tiles = built.map((layer, k) => ({ image: renderPlane(layer, index), label: `${k} ${layer.backdrop ? 'backdrop' : layer.camera ? 'camera plane' : 'plane'}, ${layer.depth.toFixed(1)} px/frame` }))
+  const columns = Math.max(1, Math.ceil(Math.sqrt(tiles.length))), rows = Math.max(1, Math.ceil(tiles.length / columns))
+  const tileWidth = Math.max(1, Math.floor(displayWidth / columns)), tileHeight = Math.max(1, Math.floor(displayHeight / rows))
+  const planes = new Uint8Array(displayWidth * displayHeight * 4), planeLabels: { text: string; x: number; y: number }[] = []
+  for (const [k, tile] of tiles.entries()) planeLabels.push({ text: tile.label, x: (k % columns) * tileWidth + 6, y: Math.floor(k / columns) * tileHeight + 16 })
+  for (let y = 0; y < displayHeight; y++) for (let x = 0; x < displayWidth; x++) {
+    const o = (y * displayWidth + x) * 4, k = Math.floor(x / tileWidth) + Math.floor(y / tileHeight) * columns, tile = x < columns * tileWidth && y < rows * tileHeight ? tiles[k] : undefined
+    planes[o + 3] = 255
+    if (!tile) { planes[o] = planes[o + 1] = planes[o + 2] = 24; continue }
+    const sx = Math.min(width - 1, Math.floor((x % tileWidth) * width / tileWidth)), sy = Math.min(height - 1, Math.floor((y % tileHeight) * height / tileHeight)), p = sy * width + sx
+    const c = checker(p), a = Math.min(1, Math.max(0, tile.image.rgba[p * 4 + 3]!))
+    if (tile.image.unknown[p]) { planes[o] = c + 50; planes[o + 1] = 40; planes[o + 2] = c + 70; continue }
+    for (let i = 0; i < 3; i++) planes[o + i] = Math.max(0, Math.min(255, tile.image.rgba[p * 4 + 2 - i]! + (1 - a) * c))
+  }
+  panels.planes = planes
   // The frame rebuilt from the layers alone: the scene with each shown drawing, one image per hold, over it.
   const rebuilt = plate && cels && data.pixelEvidence ? composeCels(plate, camera, data.pixelEvidence.atlas, cels, index) : undefined
   const rebuiltResidual = new Float32Array(size)
@@ -136,7 +152,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     rebuilt ? `Rebuilt from ${cels!.length} held drawing${cels!.length === 1 ? '' : 's'}, each assembled over its hold: ${layered} drawing pixels, ${(100 * within6 / Math.max(1, layered)).toFixed(1)}% within 6 codes, ${(100 * within12 / Math.max(1, layered)).toFixed(1)}% within 12` : 'Connect Layer Frames for the rebuilt panels',
     'Ink colors: green arrived at the last change, magenta leaves at the next, white both. Cyan: silhouette outline.',
   ].join('\n')
-  return { width: displayWidth, height: displayHeight, panels: panels as Panels, sheet, summary }
+  return { width: displayWidth, height: displayHeight, panels: panels as Panels, sheet, planeLabels, summary }
 }
 
 /** Every drawing of the layers on screen, in order; the drawing shown at this frame is outlined. */

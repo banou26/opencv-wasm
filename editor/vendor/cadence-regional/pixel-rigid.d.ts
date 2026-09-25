@@ -210,6 +210,15 @@ export declare function matteRigidLayer(source: PixelFrameSource, camera: Camera
     progress?: StageProgress;
 }): Promise<RigidMatte>;
 /**
+ * One plane alone on a frame's pixel grid, as `renderScene` places it: premultiplied color and alpha
+ * (four per pixel), resampled at its sub-pixel position, and 255 in `unknown` where what it contributes is
+ * not known (paint never observed, or a pixel nobody decided). Needs the plane's plate.
+ */
+export declare function renderPlane(layer: RigidLayer, frame: number): {
+    rgba: Float32Array;
+    unknown: Uint8Array;
+};
+/**
  * The scene without its drawings: the camera plate with the rigid layers composited over it in order,
  * back to front, each resampled at its sub-pixel position as premultiplied color and alpha: its plate
  * where it covers, and its matte, when solved, on its rim. A pixel is unknown where a layer's contribution

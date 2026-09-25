@@ -142,6 +142,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
         const size = key === 'drawings' ? result.sheet : result
         using rgba = matFromArray(size.height, size.width, CV_8UC4, pixels)
         if (key === 'drawings') for (const label of result.sheet.labels) putText(rgba, label.text, { x: label.x, y: label.y }, FONT_HERSHEY_SIMPLEX, .38, label.current ? [40, 225, 255, 255] : [215, 222, 230, 255], 1, LINE_AA)
+        if (key === 'planes') for (const label of result.planeLabels) putText(rgba, label.text, { x: label.x, y: label.y }, FONT_HERSHEY_SIMPLEX, .45, [235, 240, 245, 255], 1, LINE_AA)
         const mat = new Mat(); allocated.push(mat)
         rgba.convertTo(mat, CV_32F, 1 / 255)
         outputs[`out:frame:${key}`] = { kind: 'frame', mat, range: 'unit' }

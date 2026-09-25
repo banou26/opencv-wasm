@@ -592,6 +592,33 @@ function layerImage(layer) {
     return image;
 }
 /**
+ * One plane alone on a frame's pixel grid, as `renderScene` places it: premultiplied color and alpha
+ * (four per pixel), resampled at its sub-pixel position, and 255 in `unknown` where what it contributes is
+ * not known (paint never observed, or a pixel nobody decided). Needs the plane's plate.
+ */
+export function renderPlane(layer, frame) {
+    const env_7 = { stack: [], error: void 0, hasError: false };
+    try {
+        const { rgba, unknown } = layerImage(layer), { atlas } = layer, { width, height } = layer.path, position = layer.path.positions[frame];
+        const transform = __addDisposableResource(env_7, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
+        const image = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_7, new Mat(), false);
+        warpAffine(image, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_CONSTANT, [0, 0, 0, 0]);
+        // Cubic taps reach two atlas pixels, as in `renderPlate`.
+        const holes = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_8UC1, unknown), false), grown = __addDisposableResource(env_7, new Mat(), false), sampled = __addDisposableResource(env_7, new Mat(), false);
+        const kernel = __addDisposableResource(env_7, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
+        dilate(holes, grown, kernel);
+        warpAffine(grown, sampled, transform, { width, height }, INTER_NEAREST | WARP_INVERSE_MAP, BORDER_CONSTANT, [255, 255, 255, 255]);
+        return { rgba: warped.data32F.slice(), unknown: sampled.data.slice() };
+    }
+    catch (e_7) {
+        env_7.error = e_7;
+        env_7.hasError = true;
+    }
+    finally {
+        __disposeResources(env_7);
+    }
+}
+/**
  * The scene without its drawings: the camera plate with the rigid layers composited over it in order,
  * back to front, each resampled at its sub-pixel position as premultiplied color and alpha: its plate
  * where it covers, and its matte, when solved, on its rim. A pixel is unknown where a layer's contribution
@@ -600,40 +627,21 @@ function layerImage(layer) {
 export function renderScene(plate, camera, layers, frame) {
     const out = renderPlate(plate, camera, frame), { width, height } = camera;
     for (const layer of layers) {
-        const env_7 = { stack: [], error: void 0, hasError: false };
-        try {
-            if (!layer.plate)
+        if (!layer.plate)
+            continue;
+        const { rgba: w, unknown: gap } = renderPlane(layer, frame);
+        for (let p = 0; p < width * height; p++) {
+            const a = Math.min(1, Math.max(0, w[p * 4 + 3]));
+            if (gap[p]) {
+                out.known[p] = 0;
                 continue;
-            const { rgba, unknown } = layerImage(layer), { atlas } = layer, position = layer.path.positions[frame];
-            const transform = __addDisposableResource(env_7, matFromArray(2, 3, CV_64FC1, [1, 0, -(position.dx + atlas.x), 0, 1, -(position.dy + atlas.y)]), false);
-            const image = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_7, new Mat(), false);
-            warpAffine(image, warped, transform, { width, height }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_CONSTANT, [0, 0, 0, 0]);
-            // Cubic taps reach two atlas pixels, as in `renderPlate`.
-            const holes = __addDisposableResource(env_7, matFromArray(atlas.height, atlas.width, CV_8UC1, unknown), false), grown = __addDisposableResource(env_7, new Mat(), false), sampled = __addDisposableResource(env_7, new Mat(), false);
-            const kernel = __addDisposableResource(env_7, getStructuringElement(MORPH_ELLIPSE, { width: 5, height: 5 }), false);
-            dilate(holes, grown, kernel);
-            warpAffine(grown, sampled, transform, { width, height }, INTER_NEAREST | WARP_INVERSE_MAP, BORDER_CONSTANT, [255, 255, 255, 255]);
-            const w = warped.data32F, gap = sampled.data;
-            for (let p = 0; p < width * height; p++) {
-                const a = Math.min(1, Math.max(0, w[p * 4 + 3]));
-                if (gap[p]) {
-                    out.known[p] = 0;
-                    continue;
-                }
-                if (a < 1e-3)
-                    continue;
-                for (let c = 0; c < 3; c++)
-                    out.data[p * 3 + c] = w[p * 4 + c] + (1 - a) * out.data[p * 3 + c];
-                if (a > .999)
-                    out.known[p] = 1;
             }
-        }
-        catch (e_7) {
-            env_7.error = e_7;
-            env_7.hasError = true;
-        }
-        finally {
-            __disposeResources(env_7);
+            if (a < 1e-3)
+                continue;
+            for (let c = 0; c < 3; c++)
+                out.data[p * 3 + c] = w[p * 4 + c] + (1 - a) * out.data[p * 3 + c];
+            if (a > .999)
+                out.known[p] = 1;
         }
     }
     return out;

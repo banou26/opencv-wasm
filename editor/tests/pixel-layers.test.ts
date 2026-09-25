@@ -51,7 +51,7 @@ test('pixel prefab chains every full-resolution stage into one inspected 2 x 2 o
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   const steps = planGraph(doc, 'n5', null, 3, 'clip', COUNT).steps.map(s => s.node.type)
   for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
-  expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:rebuilt', 'out:frame:residual', 'out:frame:drawings', 'out:string:summary'])
+  expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:planes', 'out:frame:rebuilt', 'out:frame:residual', 'out:frame:drawings', 'out:string:summary'])
 })
 
 test('kernels measure the pan, outline the redrawn character, keep the static prop in the plate and inspect a frame', async () => {
@@ -134,6 +134,19 @@ test('a pan whose backdrop is slower than the camera\'s own plane orders the pla
   const view = await pixelKernel(step('pixelInspect', { frame: 8, displayMaxSide: 0 }), { 'in:regions:data': { kind: 'regions', data: plated } }, () => video, () => false)
   const summary = view!.outputs['out:string:summary']
   expect(summary?.kind === 'string' && summary.value).toMatch(/Sliding layers back to front: 2, painting the backdrop behind them, \d+ px \(the camera's own plane\)/)
+  // One tile per plane: the backdrop's tile is opaque, the trunks' tile shows the checkerboard between trunks.
+  const planes = view!.outputs['out:frame:planes']
+  expect(planes?.kind).toBe('frame')
+  if (planes?.kind === 'frame') {
+    const m = planes.mat, data = m.data32F, spread = (x0: number, x1: number, y0: number, y1: number) => {
+      let lo = 1, hi = 0
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const v = data[(y * m.cols + x) * 4 + 1]!; lo = Math.min(lo, v); hi = Math.max(hi, v) }
+      return hi - lo
+    }
+    expect(m.cols).toBe(w)
+    expect(spread(8, w / 2 - 8, 24, h / 2 - 8)).toBeGreaterThan(.1)
+    expect(spread(w / 2 + 8, w - 8, 24, h / 2 - 8)).toBeGreaterThan(.1)
+  }
   view!.dispose()
 })
 

@@ -312,7 +312,7 @@ export async function bandMedianPlate(source, camera, silhouettes, band = 8, pro
     return { atlas, data, count: counts };
 }
 /** One frame of silhouettes from its mask: the packed mask, its area and its components. */
-function silhouetteFrame(mask, width, height) {
+export function silhouetteFrame(mask, width, height) {
     const env_6 = { stack: [], error: void 0, hasError: false };
     try {
         const solid = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, mask), false), labels = __addDisposableResource(env_6, new Mat(), false), stats = __addDisposableResource(env_6, new Mat(), false), centroids = __addDisposableResource(env_6, new Mat(), false);

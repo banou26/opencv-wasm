@@ -80,6 +80,8 @@ export declare function growSilhouettes(source: PixelFrameSource, camera: Camera
  * covers most of the time gets the drawing; the carve's line-art stop protects that case.
  */
 export declare function bandMedianPlate(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, band?: number, progress?: StageProgress): Promise<LayerPlate>;
+/** One frame of silhouettes from its mask: the packed mask, its area and its components. */
+export declare function silhouetteFrame(mask: Uint8Array, width: number, height: number): SceneSilhouettes['frames'][number];
 export type ReleaseOptions = {
     /** A pixel is textured when its luma gradient exceeds this many codes per pixel. */
     gradient?: number;

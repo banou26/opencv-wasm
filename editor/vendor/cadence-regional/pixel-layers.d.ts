@@ -60,6 +60,8 @@ export type PairSummary = {
     noise: number;
     evidence: number;
 };
+/** Pixels within `width` of a boundary of any rigid layer's cover at the frame. */
+export declare function rigidRim(layers: RigidLayer[], frame: number, width: number): Uint8Array;
 /**
  * `others[p]` packs, per pixel of frame p, whether only a non-camera motion explains it against frame
  * p + 1; `othersBackward[p]` the same for frame p + 1 against frame p. Those pixels belong to another

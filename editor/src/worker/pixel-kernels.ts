@@ -1,6 +1,6 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
-  annotateScenery, buildLayerPlate, buildRigidPlate, frameLayerLabels, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
+  annotateScenery, assembleCel, buildLayerPlate, buildRigidPlate, frameLayerLabels, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
   matteRigidLayer, measureRigidCover, pixelFrameFromRgba, renderCover, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
@@ -116,8 +116,19 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     }
     output = { ...data, stage: 'pixel-frames', pixelFrames: frames, pixelDrawings: drawings }
   } else {
-    const sourceFrame = Number(params.frame)
-    const result = renderPixelPanels(data, sourceFrame, await decode(video, sourceFrame, cancelled), Number(params.displayMaxSide))
+    const sourceFrame = Number(params.frame), index = sourceFrame - data.scene.first
+    // The drawings shown here, each assembled over its whole hold, to rebuild this frame from the layers alone.
+    let cels: HeldCel[] | undefined
+    if (data.pixelFrames && data.pixelSilhouettes && data.pixelPlate && data.pixelEvidence && data.pixelCamera && data.pixelFrames.frames[index]) {
+      const camera = data.pixelCamera, plate = data.pixelPlate, rigid = (data.pixelRigid ?? []).filter(layer => layer.plate)
+      const behind = (frame: number) => rigid.length ? renderScene(plate, camera, rigid, frame) : renderPlate(plate, camera, frame)
+      cels = []
+      for (const [layer, drawing] of data.pixelFrames.frames[index]!) {
+        await progress()
+        cels.push(await assembleCel(source, camera, data.pixelEvidence.atlas, data.pixelSilhouettes, data.pixelFrames, layer, drawing, behind))
+      }
+    }
+    const result = renderPixelPanels(data, sourceFrame, await decode(video, sourceFrame, cancelled), Number(params.displayMaxSide), cels)
     const outputs: Record<string, Payload> = { 'out:string:summary': { kind: 'string', value: result.summary } }, allocated: Mat[] = []
     try {
       for (const [key, pixels] of Object.entries(result.panels)) {

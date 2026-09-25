@@ -51,7 +51,7 @@ test('pixel prefab chains every full-resolution stage into one inspected 2 x 2 o
   expect(doc.nodes.filter(node => node.type === 'output')).toHaveLength(1)
   const steps = planGraph(doc, 'n5', null, 3, 'clip', COUNT).steps.map(s => s.node.type)
   for (const type of ['sceneRange', 'pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelFrames', 'pixelInspect'] as const) expect(steps).toContain(type)
-  expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:drawings', 'out:string:summary'])
+  expect(specFor(doc.nodes.find(node => node.id === 'ninspect')!, doc).outputs.map(port => port.id)).toEqual(['out:frame:source', 'out:frame:changes', 'out:frame:ink', 'out:frame:layer', 'out:frame:plate', 'out:frame:rebuilt', 'out:frame:residual', 'out:frame:drawings', 'out:string:summary'])
 })
 
 test('kernels measure the pan, outline the redrawn character, keep the static prop in the plate and inspect a frame', async () => {
@@ -83,7 +83,7 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   expect(layered.pixelFrames!.layers.map(layer => layer.drawings.map(d => [d.first, d.last]))).toEqual([[[0, 2], [3, 5], [6, 8], [9, 9]]])
   expect(layered.pixelDrawings).toHaveLength(4)
   const view = await run('pixelInspect', layered, { frame, displayMaxSide: 0 })
-  for (const key of ['source', 'changes', 'ink', 'layer', 'plate']) {
+  for (const key of ['source', 'changes', 'ink', 'layer', 'plate', 'rebuilt', 'residual']) {
     const panel = view.outputs[`out:frame:${key}`]
     expect(panel?.kind).toBe('frame')
     if (panel?.kind === 'frame') { expect(panel.mat.cols).toBe(W); expect(panel.mat.rows).toBe(H) }
@@ -91,6 +91,12 @@ test('kernels measure the pan, outline the redrawn character, keep the static pr
   const summary = view.outputs['out:string:summary']
   expect(summary?.kind === 'string' && summary.value).toMatch(/Silhouettes: 1 components/)
   expect(summary?.kind === 'string' && summary.value).toMatch(/Layer 0: drawing 1 of 4, frames 3 to 5/)
+  // One image per hold rebuilds the character of every frame of it.
+  // Hard synthetic outlines on a small frame, resampled onto the atlas and back, cost several codes: 87.5%
+  // lands within 12 here, where market-pan's own drawings reach 96% within 6.
+  const rebuilt = summary?.kind === 'string' ? /Rebuilt from 1 held drawing, each assembled over its hold: (\d+) drawing pixels, [\d.]+% within 6 codes, ([\d.]+)% within 12/.exec(summary.value) : null
+  expect(Number(rebuilt?.[1])).toBeGreaterThan(1000)
+  expect(Number(rebuilt?.[2])).toBeGreaterThan(80)
   view.dispose()
 })
 

@@ -1,7 +1,7 @@
-import { ARRIVE, LEAVE, drawingInk, frameOffset, matteLayer, pixelLuma, renderCover, renderPlate, renderScene, unpackMask, type PixelFrame } from 'cadence/regional'
+import { ARRIVE, LEAVE, composeCels, drawingInk, frameOffset, matteLayer, pixelLuma, renderCover, renderPlate, renderScene, unpackMask, type HeldCel, type PixelFrame } from 'cadence/regional'
 import type { RegionalData } from './regional-data'
 
-type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; drawings: Uint8Array }
+type Panels = { source: Uint8Array; changes: Uint8Array; ink: Uint8Array; layer: Uint8Array; plate: Uint8Array; rebuilt: Uint8Array; residual: Uint8Array; drawings: Uint8Array }
 
 /** Display pixels average their source block; flags use the block's strongest entry so thin lines survive. */
 const downsample = (width: number, height: number, displayWidth: number, displayHeight: number, paint: (p: number) => [number, number, number], priority: (p: number) => number) => {
@@ -25,7 +25,7 @@ const downsample = (width: number, height: number, displayWidth: number, display
 }
 
 /** Read-only panels for one source frame; every overlay is computed at full resolution first. */
-export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixels: PixelFrame, displayMaxSide: number) => {
+export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixels: PixelFrame, displayMaxSide: number, cels?: HeldCel[]) => {
   const camera = data.pixelCamera
   if (!camera) throw new Error('Pixel inspection requires Pixel Camera Path')
   const index = sourceFrame - data.scene.first, { width, height } = pixels, size = width * height
@@ -80,7 +80,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     return [matte.color[q + 2]! * a + c * (1 - a), matte.color[q + 1]! * a + c * (1 - a), matte.color[q]! * a + c * (1 - a)]
   }
   const none = () => 0
-  const panels: Omit<Panels, 'drawings'> & { drawings?: Uint8Array } = {
+  const panels: Omit<Panels, 'drawings' | 'rebuilt' | 'residual'> & Partial<Pick<Panels, 'drawings' | 'rebuilt' | 'residual'>> = {
     source: downsample(width, height, displayWidth, displayHeight, p => rgb(p), none),
     changes: downsample(width, height, displayWidth, displayHeight, p => {
       const f = changes[p]!
@@ -98,6 +98,23 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
       return residual[p]! > 20 ? [255, 45, 45] : residual[p]! > 12 ? [255, 160, 40] : color
     }, p => coverEdge[p] ? 3 : plate && plate.known[p] && !mask[p] && residual[p]! > 12 ? 1 + Number(residual[p]! > 20) : 0),
   }
+  // The frame rebuilt from the layers alone: the scene with each shown drawing, one image per hold, over it.
+  const rebuilt = plate && cels && data.pixelEvidence ? composeCels(plate, camera, data.pixelEvidence.atlas, cels, index) : undefined
+  const rebuiltResidual = new Float32Array(size)
+  let layered = 0, within6 = 0, within12 = 0
+  if (rebuilt) for (let p = 0; p < size; p++) {
+    const q = p * 3
+    rebuiltResidual[p] = rebuilt.known[p] ? Math.max(Math.abs(v[q]! - rebuilt.data[q]!), Math.abs(v[q + 1]! - rebuilt.data[q + 1]!), Math.abs(v[q + 2]! - rebuilt.data[q + 2]!)) : NaN
+    if (!rebuilt.layered[p] || !rebuilt.known[p]) continue
+    layered++; within6 += Number(rebuiltResidual[p]! <= 6); within12 += Number(rebuiltResidual[p]! <= 12)
+  }
+  panels.rebuilt = downsample(width, height, displayWidth, displayHeight, p => !rebuilt ? [checker(p), checker(p), checker(p)] : !rebuilt.known[p] ? [checker(p) + 50, 40, checker(p) + 70]
+    : [rebuilt.data[p * 3 + 2]!, rebuilt.data[p * 3 + 1]!, rebuilt.data[p * 3]!], none)
+  panels.residual = downsample(width, height, displayWidth, displayHeight, p => {
+    if (!rebuilt) return [checker(p), checker(p), checker(p)]
+    const r = rebuiltResidual[p]!, shade = v[p * 3 + 1]! * .35
+    return !(r >= 0) ? [checker(p) + 50, 40, checker(p) + 70] : r > 12 ? [255, 45, 45] : r > 6 ? [255, 160, 40] : rebuilt.layered[p] ? [shade, shade + 70, shade] : [shade, shade, shade]
+  }, p => rebuilt && rebuiltResidual[p]! > 6 ? 1 + Number(rebuiltResidual[p]! > 12) : 0)
   const sheet = drawingSheet(data, index, Math.max(320, displayWidth * 2))
   panels.drawings = sheet.pixels
   const position = camera.positions[index]!, fit = camera.fits[index]
@@ -111,6 +128,7 @@ export const renderPixelPanels = (data: RegionalData, sourceFrame: number, pixel
     ...(rigid.length ? [`Sliding layers: ${rigid.length}, painting ${cover.reduce((s, v) => s + v, 0)} px of this frame (green outline in the plate panel)`] : []),
     matte ? `Edge matte: ${matte.unmixed} pixels unmixed against the plate; layer panel shows straight alpha over a checkerboard` : 'Layer panel: binary silhouette (no plate for an edge matte)',
     ...(data.pixelFrames ? data.pixelFrames.frames[index]!.map(([layer, drawing]) => { const d = data.pixelFrames!.layers[layer]!.drawings[drawing]!; return `Layer ${layer}: drawing ${drawing} of ${data.pixelFrames!.layers[layer]!.drawings.length}, frames ${d.first + data.scene.first} to ${d.last + data.scene.first}` }) : ['Connect Layer Frames for the drawing sheet']),
+    rebuilt ? `Rebuilt from ${cels!.length} held drawing${cels!.length === 1 ? '' : 's'}, each assembled over its hold: ${layered} drawing pixels, ${(100 * within6 / Math.max(1, layered)).toFixed(1)}% within 6 codes, ${(100 * within12 / Math.max(1, layered)).toFixed(1)}% within 12` : 'Connect Layer Frames for the rebuilt panels',
     'Ink colors: green arrived at the last change, magenta leaves at the next, white both. Cyan: silhouette outline.',
   ].join('\n')
   return { width: displayWidth, height: displayHeight, panels: panels as Panels, sheet, summary }

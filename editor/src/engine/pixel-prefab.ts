@@ -16,7 +16,7 @@ export const pixelLayersGraph = (): GraphDocument => {
     node('nmedian', 'pixelScenery', 1460, 420), node('nsilhouettes', 'pixelSilhouettes', 1840, 40), node('nplate', 'pixelPlate', 2220, 40), node('nrefine', 'pixelRefine', 2600, 40),
     node('nrigid2', 'pixelRigidRefine', 2600, 420), node('nplate2', 'pixelPlate', 2980, 40), node('nframes', 'pixelFrames', 3360, 40),
     node('ntime', 'time', 2980, 780), node('ninspect', 'pixelInspect', 3360, 700),
-    node('ntop', 'frameLayout', 3740, 560), node('nbottom', 'frameLayout', 3740, 1080),
+    node('ntop', 'frameLayout', 3740, 560), node('nbottom', 'frameLayout', 3740, 1080), node('nrebuild', 'frameLayout', 3740, 1600), node('nrows', 'frameLayout', 4110, 1340, { direction: 'vertical' }),
     node('ngrid', 'frameLayout', 4110, 780, { direction: 'vertical' }), node('nlayout', 'frameLayout', 4480, 780, { direction: 'vertical' }), node('n5', 'output', 4850, 780),
   ], edges: [] }
   const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => { doc = connect(doc, { source, sourceHandle, target, targetHandle }) }
@@ -30,8 +30,12 @@ export const pixelLayersGraph = (): GraphDocument => {
   wire('ninspect', 'out:frame:ink', 'ntop', 'in:frame:b')
   wire('ninspect', 'out:frame:layer', 'nbottom', 'in:frame:a')
   wire('ninspect', 'out:frame:plate', 'nbottom', 'in:frame:b')
+  wire('ninspect', 'out:frame:rebuilt', 'nrebuild', 'in:frame:a')
+  wire('ninspect', 'out:frame:residual', 'nrebuild', 'in:frame:b')
   wire('ntop', 'out:frame:image', 'ngrid', 'in:frame:a')
-  wire('nbottom', 'out:frame:image', 'ngrid', 'in:frame:b')
+  wire('nbottom', 'out:frame:image', 'nrows', 'in:frame:a')
+  wire('nrebuild', 'out:frame:image', 'nrows', 'in:frame:b')
+  wire('nrows', 'out:frame:image', 'ngrid', 'in:frame:b')
   wire('ngrid', 'out:frame:image', 'nlayout', 'in:frame:a')
   wire('ninspect', 'out:frame:drawings', 'nlayout', 'in:frame:b')
   wire('nlayout', 'out:frame:image', 'n5', 'in:frame:image')

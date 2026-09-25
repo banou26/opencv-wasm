@@ -22,5 +22,6 @@ export * from './pixel-frames.ts';
 export * from './pixel-refine.ts';
 export * from './pixel-matte.ts';
 export * from './pixel-rigid.ts';
+export * from './pixel-cels.ts';
 export type * from './regional-types.ts';
 export type { AnalysisFrame } from './types.ts';

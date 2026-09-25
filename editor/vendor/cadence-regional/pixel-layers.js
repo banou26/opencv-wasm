@@ -209,7 +209,7 @@ export async function measureCameraPath(source, options = {}) {
     return { ...cameraPath(source.width, source.height, fits), fits, coarse, motions };
 }
 /** Pixels within `width` of a boundary of any rigid layer's cover at the frame. */
-function rigidRim(layers, frame, width) {
+export function rigidRim(layers, frame, width) {
     const env_1 = { stack: [], error: void 0, hasError: false };
     try {
         const first = renderCover(layers[0], frame), { width: w, height: h } = layers[0].path, edge = new Uint8Array(w * h);

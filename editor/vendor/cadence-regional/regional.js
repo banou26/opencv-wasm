@@ -23,3 +23,4 @@ export * from "./pixel-frames.js";
 export * from "./pixel-refine.js";
 export * from "./pixel-matte.js";
 export * from "./pixel-rigid.js";
+export * from "./pixel-cels.js";

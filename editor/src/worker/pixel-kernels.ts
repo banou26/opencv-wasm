@@ -1,6 +1,6 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
-  annotateScenery, assembleCel, buildScenePlates, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
+  annotateScenery, assembleCel, buildScenePlates, releaseHeldScenery, solveCel, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
   measureScenePlanes, orderPlanes, pixelFrameFromRgba, rigidPaths, sceneSilhouettes, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
@@ -10,7 +10,7 @@ import { payloadBundle, type Payload } from './payload'
 import type { RegionalData } from './regional-data'
 import { renderPixelPanels } from './pixel-render'
 
-const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelFrames', 'pixelInspect'])
+const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelRelease', 'pixelFrames', 'pixelInspect'])
 const THUMBNAIL = { width: 150, height: 200 }
 
 const decode = async (video: VideoSource, index: number, cancelled: () => boolean): Promise<PixelFrame> => {
@@ -100,6 +100,13 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     })
     const { grown: counts, ...silhouettes } = grown
     output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelGrown: counts }
+  } else if (type === 'pixelRelease') {
+    if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Release Held Scenery needs Drawing Silhouettes')
+    const released = await releaseHeldScenery(source, data.pixelEvidence, data.pixelSilhouettes, layerFrames(data.pixelEvidence, data.pixelSilhouettes), {
+      gradient: Number(params.gradient), texture: Number(params.texture), minimumArea: Number(params.minimumArea), progress,
+    })
+    const { released: counts, ...silhouettes } = released
+    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelReleased: counts }
   } else if (type === 'pixelFrames') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Layer Frames needs Drawing Silhouettes')
     const frames = layerFrames(data.pixelEvidence, data.pixelSilhouettes, { minimumChanges: Number(params.minimumChanges), minimumFraction: Number(params.minimumFraction) })
@@ -129,7 +136,11 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
       for (const [layer, drawing] of data.pixelFrames.frames[index]!) {
         await progress()
         const started = performance.now()
-        cels.push(await assembleCel(source, camera, data.pixelEvidence.atlas, data.pixelSilhouettes, data.pixelFrames, layer, drawing, behind))
+        // Matted over its hold, then its color solved against every frame of the hold, other layers kept out.
+        const assembled = await assembleCel(source, camera, data.pixelEvidence.atlas, data.pixelSilhouettes, data.pixelFrames, layer, drawing, behind)
+        const silhouettes = data.pixelSilhouettes, drawings = data.pixelFrames
+        const others = (frame: number) => Uint8Array.from(frameLayerLabels(silhouettes, drawings, frame), l => Number(l !== 0 && l !== layer + 1))
+        cels.push(await solveCel(source, camera, data.pixelEvidence.atlas, assembled, behind, { exclude: others }))
         console.info(`[pixel] assembled layer ${layer} drawing ${drawing} in ${Math.round(performance.now() - started)} ms`)
       }
     }

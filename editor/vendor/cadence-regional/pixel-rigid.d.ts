@@ -192,6 +192,17 @@ export declare function claimRigidCover(source: PixelFrameSource, camera: Camera
 }>;
 /** The layer's cover on one frame's pixel grid, at the frame's integer placement; `undecided` also marks pixels nobody decided. */
 export declare function renderCover(layer: RigidLayer, frame: number, undecided?: boolean): Uint8Array;
+/**
+ * Frames with the planes in front peeled off. Where the nearer planes' known premultiplied color C and
+ * alpha A cover a pixel only partly, as on a defocused rim, what shows behind them is (frame - C) / (1 - A),
+ * so a plate built from these frames takes those pixels too instead of blends. Pixels they cover by more
+ * than `most`, or where one of them is unknown, join `exclude` in the returned mask. Nearer planes need
+ * their plates, and their mattes for the rims.
+ */
+export declare function peelNearer(source: PixelFrameSource, nearer: RigidLayer[], exclude?: (frame: number) => Uint8Array | undefined, most?: number): {
+    source: PixelFrameSource;
+    exclude: (frame: number) => Uint8Array;
+};
 /** The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside `exclude`. */
 export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLayer, exclude?: (frame: number) => Uint8Array | undefined, options?: {
     margin?: number;

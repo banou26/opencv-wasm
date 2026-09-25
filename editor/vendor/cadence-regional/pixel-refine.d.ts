@@ -1,4 +1,5 @@
-import { type CameraPath } from './pixel-drawings.ts';
+import { type CameraPath, type DrawingEvidence } from './pixel-drawings.ts';
+import { type LayerFrames } from './pixel-frames.ts';
 import { type PixelFrame } from './pixel-frame.ts';
 import { type MeasuredCamera, type MeasuredEvidence, type PixelFrameSource, type SceneSilhouettes, type StageProgress } from './pixel-layers.ts';
 import { type LayerPlate } from './pixel-plate.ts';
@@ -67,6 +68,28 @@ export declare function growSilhouettes(source: PixelFrameSource, camera: Camera
  * covers most of the time gets the drawing; the carve's line-art stop protects that case.
  */
 export declare function bandMedianPlate(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, band?: number, progress?: StageProgress): Promise<LayerPlate>;
+export type ReleaseOptions = {
+    /** A pixel is textured when its luma gradient exceeds this many codes per pixel. */
+    gradient?: number;
+    /** A held region is scenery when at least this fraction of its pixels is textured: a cel fill is flat. */
+    texture?: number;
+    /** Held regions under this many pixels stay with the drawing. */
+    minimumArea?: number;
+};
+/**
+ * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
+ * redraws, so inside each hold's silhouette a region whose pixels changed at neither redraw bounding the
+ * hold (the pair into its first frame and the pair out of its last) is not this layer's update. When it
+ * also carries scenery's texture, rather than a cel's flat fill, it is what shows between the drawings
+ * (the wagon between market-pan's walkers) and is taken out of every frame of the hold, so the plate
+ * learns it. A hold with no redraw on either side has nothing to compare and is kept. Run it on the final
+ * silhouettes: growth fills enclosed holes again.
+ */
+export declare function releaseHeldScenery(source: PixelFrameSource, evidence: DrawingEvidence, silhouettes: SceneSilhouettes, frames: LayerFrames, options?: ReleaseOptions & {
+    progress?: StageProgress;
+}): Promise<SceneSilhouettes & {
+    released: number[];
+}>;
 /**
  * Carve every frame's silhouettes against a plate built from them, with `layers` (rigid layers whose plates
  * are built) over it; the plates should be rebuilt afterwards.
@@ -84,7 +107,9 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
  * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
  * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
  * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
- * Returns copies of the layers.
+ * `band` is how far from the cover's edge rims are solved (a defocused edge needs more than the default),
+ * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
+ * rim. Returns copies of the layers.
  */
 export declare function buildScenePlates(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
@@ -92,6 +117,8 @@ export declare function buildScenePlates(source: PixelFrameSource, camera: Camer
     margin?: number;
     floor?: number;
     mattes?: boolean;
+    band?: number;
+    peel?: number;
     progress?: StageProgress;
 }): Promise<{
     plate: LayerPlate;

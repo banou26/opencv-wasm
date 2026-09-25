@@ -492,6 +492,50 @@ export function renderCover(layer, frame, undecided = false) {
         }
     return out;
 }
+/**
+ * Frames with the planes in front peeled off. Where the nearer planes' known premultiplied color C and
+ * alpha A cover a pixel only partly, as on a defocused rim, what shows behind them is (frame - C) / (1 - A),
+ * so a plate built from these frames takes those pixels too instead of blends. Pixels they cover by more
+ * than `most`, or where one of them is unknown, join `exclude` in the returned mask. Nearer planes need
+ * their plates, and their mattes for the rims.
+ */
+export function peelNearer(source, nearer, exclude, most = .9) {
+    const size = source.width * source.height;
+    let last;
+    const peel = async (frame) => {
+        if (last?.frame === frame)
+            return last;
+        const pixels = (await source.frame(frame)).data, color = new Float32Array(size * 3), alpha = new Float32Array(size), mask = new Uint8Array(size), extra = exclude?.(frame);
+        for (const layer of nearer) {
+            const { rgba, unknown } = renderPlane(layer, frame);
+            for (let p = 0; p < size; p++) {
+                if (unknown[p]) {
+                    mask[p] = 1;
+                    continue;
+                }
+                const a = Math.min(1, Math.max(0, rgba[p * 4 + 3]));
+                if (a < 1e-3)
+                    continue;
+                for (let c = 0; c < 3; c++)
+                    color[p * 3 + c] = rgba[p * 4 + c] + (1 - a) * color[p * 3 + c];
+                alpha[p] = a + (1 - a) * alpha[p];
+            }
+        }
+        const data = new Float32Array(size * 3);
+        for (let p = 0; p < size; p++) {
+            if (alpha[p] > most || extra?.[p])
+                mask[p] = 1;
+            for (let c = 0; c < 3; c++)
+                data[p * 3 + c] = mask[p] ? pixels[p * 3 + c] : (pixels[p * 3 + c] - color[p * 3 + c]) / (1 - alpha[p]);
+        }
+        last = { frame, data, mask };
+        return last;
+    };
+    return {
+        source: { ...source, frame: async (frame) => ({ width: source.width, height: source.height, data: (await peel(frame)).data }) },
+        exclude: frame => last?.frame === frame ? last.mask : new Uint8Array(size).fill(1),
+    };
+}
 /** The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside `exclude`. */
 export async function buildRigidPlate(source, layer, exclude, options = {}) {
     const margin = options.margin ?? 1;

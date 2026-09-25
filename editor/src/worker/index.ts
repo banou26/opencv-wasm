@@ -27,7 +27,10 @@ const wait = async () => {
   await new Promise<void>(resolve => setTimeout(resolve, 0))
   lastYield = performance.now()
 }
-const cache = new ResultCache<Payload>(512 * 1024 ** 2)
+// Full-resolution pixel stages each carry the shot's evidence, so eviction frees nothing until every
+// stage holding it goes. Market-pan's chain outgrew 512 MiB once growth added a plate, and every
+// timeline change then re-ran the whole 8-minute analysis. 1 GiB is the most a budget message may ask for.
+const cache = new ResultCache<Payload>(1024 ** 3)
 let presenter: Presenter | undefined, source: VideoSource | undefined
 const sources = new Map<string, VideoSource>()
 let displayed: Lease<Payload> | undefined

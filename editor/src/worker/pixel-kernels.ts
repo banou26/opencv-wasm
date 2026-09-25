@@ -132,10 +132,14 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
       cels = []
       for (const [layer, drawing] of data.pixelFrames.frames[index]!) {
         await progress()
+        const started = performance.now()
         cels.push(await assembleCel(source, camera, data.pixelEvidence.atlas, data.pixelSilhouettes, data.pixelFrames, layer, drawing, behind))
+        console.info(`[pixel] assembled layer ${layer} drawing ${drawing} in ${Math.round(performance.now() - started)} ms`)
       }
     }
+    const started = performance.now()
     const result = renderPixelPanels(data, sourceFrame, await decode(video, sourceFrame, cancelled), Number(params.displayMaxSide), cels)
+    console.info(`[pixel] panels for frame ${sourceFrame} in ${Math.round(performance.now() - started)} ms`)
     const outputs: Record<string, Payload> = { 'out:string:summary': { kind: 'string', value: result.summary } }, allocated: Mat[] = []
     try {
       for (const [key, pixels] of Object.entries(result.panels)) {

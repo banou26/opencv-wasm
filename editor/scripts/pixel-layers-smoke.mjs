@@ -38,6 +38,9 @@ try {
   await page.setViewportSize({ width: 1600, height: 1100 })
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  // Worker timings arrive on the context, not the page.
+  const launched = performance.now()
+  browser.contexts()[0].on('console', message => { if (message.text().startsWith('[pixel]')) console.log(`${((performance.now() - launched) / 1000).toFixed(1)} s ${message.text()}`) })
   await page.goto(new URL('/editor/', url).href)
   await page.getByText('Engine ready', { exact: true }).waitFor({ timeout: 90000 })
   const change = async (action, timeout = 180000) => {
@@ -58,7 +61,7 @@ try {
   const records = []
   for (const frame of frames) {
     const started = performance.now()
-    await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(frame)))
+    await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(frame)), 900000)
     const frameMs = performance.now() - started
     await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Pixel Layers' }).last().click())
     await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))

@@ -63,6 +63,9 @@ try {
     const started = performance.now()
     await change(() => page.getByLabel('Source frame', { exact: true }).fill(String(frame)), 900000)
     const frameMs = performance.now() - started
+    // Only Inspect should run: a frame change that takes minutes re-ran the analysis because the cache
+    // evicted the chain (487 s under a 512 MiB budget, 2.2 s under 1 GiB, 2026-09-25).
+    assert(frameMs < 60000, `frame ${frame} took ${(frameMs / 1000).toFixed(1)} s: the analysis re-ran`)
     await change(() => page.locator('.step-strip button').filter({ hasText: 'Inspect Pixel Layers' }).last().click())
     await change(() => page.getByLabel('Output socket').selectOption('out:string:summary'))
     const summary = await page.locator('.value-preview pre').innerText()

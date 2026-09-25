@@ -83,6 +83,13 @@ export type ReleaseOptions = {
     enclosed?: number;
     /** Pixels of a released region beside the lines ringing it stay with the drawing, for its antialiased edge. */
     margin?: number;
+    /**
+     * Still scenery shows the same value whenever the drawings uncover it, so a region stays with the drawing
+     * when more than this fraction of its pixels that frames show outside every silhouette (at least three)
+     * differ from their mean there by over `max(6, 3 spreads)` of luma: a still patch of a coat, or a wagon
+     * that moves behind the walkers, is something else when uncovered.
+     */
+    revealed?: number;
 };
 /**
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
@@ -116,7 +123,9 @@ export declare function refineSilhouettes(source: PixelFrameSource, camera: Came
  * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
  * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
  * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
- * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables). `band` is how
+ * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables), and unless
+ * `backdropMedian` is false it is trimmed around each pixel's median (`buildRigidPlate` `median`): a follow
+ * shot's drawings sweep over all of it, and those the silhouettes miss stay out. `band` is how
  * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
  * rim. Returns copies of the layers.
@@ -125,6 +134,7 @@ export declare function buildScenePlates(source: PixelFrameSource, camera: Camer
     evidence?: Pick<MeasuredEvidence, 'others' | 'othersBackward'>;
     drift?: number;
     backdropDrift?: number;
+    backdropMedian?: boolean;
     margin?: number;
     floor?: number;
     mattes?: boolean;

@@ -232,11 +232,14 @@ export declare function peelNearer(source: PixelFrameSource, nearer: RigidLayer[
  * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
  * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
  * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
+ * With `median`, the trim is around each pixel's median luma (`medianReference`) rather than its mean, so
+ * paint a missed drawing covers in under half the frames stays out.
  */
 export declare function buildRigidPlate(source: PixelFrameSource, layer: RigidLayer, exclude?: (frame: number) => Uint8Array | undefined, options?: {
     margin?: number;
     floor?: number;
     drift?: number;
+    median?: boolean;
     progress?: StageProgress;
 }): Promise<LayerPlate>;
 /**

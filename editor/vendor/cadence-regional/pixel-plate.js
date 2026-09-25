@@ -94,6 +94,7 @@ function frameSamples(camera, atlas, frame, pixels, exclude, margin) {
         __disposeResources(env_1);
     }
 }
+const BLUE = .0722, GREEN = .7152, RED = .2126;
 /** Add one frame outside `exclude` (grown by `margin` pixels). With `reference`, only samples near it count. */
 export function addPlateSamples(statistics, camera, frame, pixels, exclude, margin = 3, reference) {
     const { atlas, sum, square, count } = statistics, { width, height } = pixels;
@@ -106,7 +107,13 @@ export function addPlateSamples(statistics, camera, frame, pixels, exclude, marg
             const a = (y + offset.y) * atlas.width + x + offset.x, q = p * 3;
             if (reference) {
                 const t = reference.tolerance[a];
-                if (!(t >= 0) || Math.abs(data[q] - reference.mean[a * 3]) > t || Math.abs(data[q + 1] - reference.mean[a * 3 + 1]) > t || Math.abs(data[q + 2] - reference.mean[a * 3 + 2]) > t)
+                if (!(t >= 0))
+                    continue;
+                if ('luma' in reference) {
+                    if (Math.abs(BLUE * data[q] + GREEN * data[q + 1] + RED * data[q + 2] - reference.luma[a]) > t)
+                        continue;
+                }
+                else if (Math.abs(data[q] - reference.mean[a * 3]) > t || Math.abs(data[q + 1] - reference.mean[a * 3 + 1]) > t || Math.abs(data[q + 2] - reference.mean[a * 3 + 2]) > t)
                     continue;
             }
             for (let c = 0; c < 3; c++) {
@@ -133,6 +140,46 @@ export function plateReference(statistics, floor = 4) {
         tolerance[a] = Math.max(floor, 3 * spread);
     }
     return { mean, tolerance };
+}
+export function plateLumaSamples(atlas, capacity) {
+    return { atlas, capacity, count: new Uint16Array(atlas.width * atlas.height), values: new Uint8Array(atlas.width * atlas.height * capacity) };
+}
+/** Add one frame's luma outside `exclude` (grown by `margin` pixels), as `addPlateSamples` would sample it. */
+export function addLumaSamples(samples, camera, frame, pixels, exclude, margin = 3) {
+    const { atlas, capacity, count, values } = samples, { width, height } = pixels;
+    const { offset, data, usable } = frameSamples(camera, atlas, frame, pixels, exclude, margin);
+    for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+            const p = y * width + x;
+            if (!usable[p])
+                continue;
+            const a = (y + offset.y) * atlas.width + x + offset.x, q = p * 3;
+            if (count[a] >= capacity)
+                continue;
+            values[a * capacity + count[a]++] = Math.max(0, Math.min(255, Math.round(BLUE * data[q] + GREEN * data[q + 1] + RED * data[q + 2])));
+        }
+}
+/**
+ * The median luma per atlas pixel, and a tolerance of three robust spreads (1.4826 median absolute
+ * deviations), never under `floor` codes. It holds while up to half the samples show something else: on a
+ * follow shot a drawing the silhouettes missed sweeps over the backdrop, and the mean `plateReference` starts
+ * from moves toward it while its three spreads widen until they keep it.
+ */
+export function medianReference(samples, floor = 4) {
+    const { capacity, count, values } = samples, luma = new Float32Array(count.length), tolerance = new Float32Array(count.length).fill(-1);
+    const deviations = new Uint8Array(capacity);
+    for (let a = 0; a < count.length; a++) {
+        const n = count[a];
+        if (!n)
+            continue;
+        const own = values.subarray(a * capacity, a * capacity + n).sort(), median = n % 2 ? own[n >> 1] : (own[(n >> 1) - 1] + own[n >> 1]) / 2;
+        for (let k = 0; k < n; k++)
+            deviations[k] = Math.min(255, Math.round(Math.abs(own[k] - median)));
+        const spread = deviations.subarray(0, n).sort()[n >> 1];
+        luma[a] = median;
+        tolerance[a] = Math.max(floor, 3 * 1.4826 * spread);
+    }
+    return { luma, tolerance };
 }
 export function finishPlate(statistics) {
     const { atlas, sum, count } = statistics, data = new Float32Array(sum.length);

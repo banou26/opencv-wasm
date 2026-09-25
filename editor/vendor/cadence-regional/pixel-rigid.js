@@ -55,7 +55,7 @@ import { explainingMotions } from "./pixel-change.js";
 import { cameraPath, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
 import { motionTracks } from "./pixel-layers.js";
-import { addDrift, addPlateSamples, finishPlate, measureDrift, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
+import { addDrift, addLumaSamples, addPlateSamples, finishPlate, measureDrift, medianReference, plateLumaSamples, plateReference, plateStatistics, renderPlate } from "./pixel-plate.js";
 const median = (values) => [...values].sort((a, b) => a - b)[values.length >> 1] ?? 0;
 /**
  * Fill the enclosed holes of `mask` under `maximum` pixels whose mean `open` score stays under `openLimit`,
@@ -616,49 +616,86 @@ export function peelNearer(source, nearer, exclude, most = .9) {
  * The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside
  * `exclude`. With `drift`, each frame also gets the drift the camera plate carries, on cells of that many
  * frame pixels, measured on the paint's interior: the shot's lighting changes while the paint holds still.
+ * With `median`, the trim is around each pixel's median luma (`medianReference`) rather than its mean, so
+ * paint a missed drawing covers in under half the frames stays out.
  */
 export async function buildRigidPlate(source, layer, exclude, options = {}) {
-    const margin = options.margin ?? 1;
+    const margin = options.margin ?? 1, floor = options.floor ?? 4, count = source.count, cell = options.drift ?? 0, median = !!options.median;
     const outside = (frame) => {
         const covered = renderCover(layer, frame), extra = exclude?.(frame), mask = new Uint8Array(covered.length);
         for (let p = 0; p < mask.length; p++)
             mask[p] = Number(!covered[p] || !!extra?.[p]);
         return mask;
     };
-    const first = plateStatistics(layer.atlas);
-    for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(frame, source.count * 2);
-        addPlateSamples(first, layer.path, frame, await source.frame(frame), outside(frame), margin);
-    }
-    const reference = plateReference(first, options.floor ?? 4), trimmed = plateStatistics(layer.atlas);
-    for (let frame = 0; frame < source.count; frame++) {
-        await options.progress?.(source.count + frame, source.count * 2);
-        addPlateSamples(trimmed, layer.path, frame, await source.frame(frame), outside(frame), margin, reference);
-    }
-    const plate = finishPlate(trimmed);
-    if (!options.drift)
-        return plate;
+    const passes = median && cell ? 4 : 2;
+    let done = 0;
+    const tick = () => options.progress?.(done++, count * passes);
+    // Trimmed around the mean of a first pass, or around each pixel's median luma.
+    const trimmedPlate = async (frame, around) => {
+        let reference;
+        if (around === 'median') {
+            const samples = plateLumaSamples(layer.atlas, count);
+            for (let t = 0; t < count; t++) {
+                await tick();
+                addLumaSamples(samples, layer.path, t, await frame(t), outside(t), margin);
+            }
+            reference = medianReference(samples, floor);
+        }
+        else {
+            const first = plateStatistics(layer.atlas);
+            for (let t = 0; t < count; t++) {
+                await tick();
+                addPlateSamples(first, layer.path, t, await frame(t), outside(t), margin);
+            }
+            reference = plateReference(first, floor);
+        }
+        const trimmed = plateStatistics(layer.atlas);
+        for (let t = 0; t < count; t++) {
+            await tick();
+            addPlateSamples(trimmed, layer.path, t, await frame(t), outside(t), margin, reference);
+        }
+        return finishPlate(trimmed);
+    };
     // A rim mixes what lies behind into the frame, so the drift is measured away from it.
-    const drift = { cell: options.drift, columns: 0, rows: 0, frames: [] };
-    for (let frame = 0; frame < source.count; frame++) {
-        const env_6 = { stack: [], error: void 0, hasError: false };
-        try {
-            const mask = __addDisposableResource(env_6, matFromArray(source.height, source.width, CV_8UC1, outside(frame)), false), away = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 7, height: 7 }), false);
-            dilate(mask, away, kernel);
-            const measured = measureDrift(renderPlate(plate, layer.path, frame), await source.frame(frame), away.data, options.drift);
-            drift.columns = measured.columns;
-            drift.rows = measured.rows;
-            drift.frames.push(measured.grid);
+    const ownDrift = async (plate) => {
+        const drift = { cell, columns: 0, rows: 0, frames: [] };
+        for (let t = 0; t < count; t++) {
+            const env_6 = { stack: [], error: void 0, hasError: false };
+            try {
+                const mask = __addDisposableResource(env_6, matFromArray(source.height, source.width, CV_8UC1, outside(t)), false), away = __addDisposableResource(env_6, new Mat(), false), kernel = __addDisposableResource(env_6, getStructuringElement(MORPH_RECT, { width: 7, height: 7 }), false);
+                dilate(mask, away, kernel);
+                const measured = measureDrift(renderPlate(plate, layer.path, t), await source.frame(t), away.data, cell);
+                drift.columns = measured.columns;
+                drift.rows = measured.rows;
+                drift.frames.push(measured.grid);
+            }
+            catch (e_6) {
+                env_6.error = e_6;
+                env_6.hasError = true;
+            }
+            finally {
+                __disposeResources(env_6);
+            }
         }
-        catch (e_6) {
-            env_6.error = e_6;
-            env_6.hasError = true;
-        }
-        finally {
-            __disposeResources(env_6);
-        }
+        return drift;
+    };
+    const raw = (t) => source.frame(t);
+    if (!median || !cell) {
+        const plate = await trimmedPlate(raw, median ? 'median' : 'mean');
+        return cell ? { ...plate, drift: await ownDrift(plate) } : plate;
     }
-    return { ...plate, drift };
+    // The shot's lighting spreads each pixel's samples over the frames that saw it, and a pixel a drawing hid in
+    // the middle of the shot keeps an early and a late group, of which a median picks one, differently from its
+    // neighbor. So the lighting of a plate trimmed around the mean comes out of every frame first.
+    const rough = await trimmedPlate(raw, 'mean'), lighting = await ownDrift(rough);
+    const unlit = { ...lighting, frames: lighting.frames.map(grid => grid.map(v => -v)) };
+    const corrected = async (t) => {
+        const pixels = await source.frame(t), data = pixels.data.slice();
+        addDrift(data, pixels.width, pixels.height, unlit, t);
+        return { ...pixels, data };
+    };
+    const plate = await trimmedPlate(corrected, 'median');
+    return { ...plate, drift: await ownDrift(plate) };
 }
 /**
  * Unmix the rim of a rigid layer from what shows behind it. A layer pixel slides over changing scenery,

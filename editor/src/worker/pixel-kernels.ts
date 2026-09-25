@@ -82,7 +82,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
     // The camera plate, then each plane's own plate outside the drawings and planes in front of it, its rim
     // matted over what lies behind it.
     const { plate: pixelPlate, layers: pixelRigid } = await buildScenePlates(source, data.pixelCamera, data.pixelSilhouettes, data.pixelRigid ?? [], {
-      margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}),
+      margin: Number(params.margin), floor: Number(params.floor), drift: Number(params.drift), backdropMedian: params.backdropMedian !== false, progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}),
     })
     output = { ...data, stage: 'pixel-plate', pixelPlate, ...(data.pixelRigid ? { pixelRigid } : {}) }
   } else if (type === 'pixelRefine') {
@@ -110,7 +110,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelRelease') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Release Held Scenery needs Drawing Silhouettes')
     const released = await releaseHeldScenery(source, data.pixelEvidence, data.pixelSilhouettes, layerFrames(data.pixelEvidence, data.pixelSilhouettes), {
-      gradient: Number(params.gradient), texture: Number(params.texture), minimumArea: Number(params.minimumArea), progress,
+      gradient: Number(params.gradient), texture: Number(params.texture), minimumArea: Number(params.minimumArea), revealed: Number(params.revealed), progress,
     })
     const { released: counts, ...silhouettes } = released
     output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelReleased: counts }

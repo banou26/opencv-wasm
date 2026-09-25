@@ -288,6 +288,7 @@ function silhouetteFrame(mask, width, height) {
         __disposeResources(env_5);
     }
 }
+const REVEALED = .25;
 /**
  * Release the scenery a layer's silhouette holds between its drawings. A layer is what updates on its own
  * redraws, so inside each hold's silhouette a region whose pixels changed at neither redraw bounding the
@@ -300,9 +301,26 @@ function silhouetteFrame(mask, width, height) {
  */
 export async function releaseHeldScenery(source, evidence, silhouettes, frames, options = {}) {
     const gradient = options.gradient ?? 8, texture = options.texture ?? .25, minimumArea = options.minimumArea ?? 32, enclosed = options.enclosed ?? .5, margin = options.margin ?? 2;
+    const revealed = options.revealed ?? REVEALED;
     const splinter = silhouettes.options.minimumArea ?? 800;
     const { width, height } = source, size = width * height, { atlas, camera, pairs } = evidence;
     const masks = silhouettes.frames.map(f => unpackMask(f.packed, size)), released = silhouettes.frames.map(() => 0);
+    // What every world pixel shows outside every silhouette: count, and sums of luma and its square.
+    const uncovered = new Uint16Array(atlas.width * atlas.height), lumaSum = new Float32Array(uncovered.length), lumaSquare = new Float32Array(uncovered.length);
+    if (revealed < 1)
+        for (let f = 0; f < source.count; f++) {
+            const luma = pixelLuma(await source.frame(f)), o = frameOffset(camera, atlas, f), mask = masks[f];
+            for (let y = 0; y < height; y++)
+                for (let x = 0; x < width; x++) {
+                    const p = y * width + x;
+                    if (mask[p])
+                        continue;
+                    const a = (y + o.y) * atlas.width + x + o.x;
+                    uncovered[a]++;
+                    lumaSum[a] += luma[p];
+                    lumaSquare[a] += luma[p] * luma[p];
+                }
+        }
     const holds = frames.layers.flatMap(layer => layer.drawings.map(drawing => ({ layer: layer.id, drawing })));
     for (const [done, { layer, drawing }] of holds.entries()) {
         const env_6 = { stack: [], error: void 0, hasError: false };
@@ -327,7 +345,7 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
             const heldMat = __addDisposableResource(env_6, matFromArray(height, width, CV_8UC1, held), false), labels = __addDisposableResource(env_6, new Mat(), false), stats = __addDisposableResource(env_6, new Mat(), false), centroids = __addDisposableResource(env_6, new Mat(), false);
             const count = connectedComponentsWithStats(heldMat, labels, stats, centroids, 4), l = labels.data32S, rough = new Uint32Array(count), area = new Uint32Array(count);
             // Border per region: neighbors outside it, those outside the layer, and those that moved at the redraw.
-            const border = new Uint32Array(count), open = new Uint32Array(count), moving = new Uint32Array(count);
+            const border = new Uint32Array(count), open = new Uint32Array(count), moving = new Uint32Array(count), shown = new Uint32Array(count), differ = new Uint32Array(count);
             for (let y = 1; y < height - 1; y++)
                 for (let x = 1; x < width - 1; x++) {
                     const p = y * width + x, k = l[p];
@@ -336,6 +354,13 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                     area[k]++;
                     if (Math.hypot(luma[p + 1] - luma[p - 1], luma[p + width] - luma[p - width]) / 2 > gradient)
                         rough[k]++;
+                    const a = (y + offset.y) * atlas.width + x + offset.x, n = uncovered[a];
+                    if (n >= 3) {
+                        const mean = lumaSum[a] / n, spread = Math.sqrt(Math.max(0, lumaSquare[a] / n - mean * mean));
+                        shown[k]++;
+                        if (Math.abs(luma[p] - mean) > Math.max(6, 3 * spread))
+                            differ[k]++;
+                    }
                     for (const q of [p - 1, p + 1, p - width, p + width]) {
                         if (l[q] === k)
                             continue;
@@ -348,7 +373,8 @@ export async function releaseHeldScenery(source, evidence, silhouettes, frames, 
                 }
             const release = new Uint8Array(count);
             for (let k = 1; k < count; k++)
-                release[k] = Number(area[k] >= minimumArea && rough[k] >= texture * area[k] && open[k] <= .1 * border[k] && moving[k] >= enclosed * border[k]);
+                release[k] = Number(area[k] >= minimumArea && rough[k] >= texture * area[k] && open[k] <= .1 * border[k] && moving[k] >= enclosed * border[k]
+                    && differ[k] <= revealed * shown[k]);
             // The lines ringing a released region keep their antialiased edge: where a line held still through the
             // redraw its edge pixels are held too, and released they would leave half ink in the plate and a cut
             // edge on the cel. So `margin` pixels of the region stay, for the matte to unmix.
@@ -472,7 +498,9 @@ export async function refineSilhouettes(source, camera, silhouettes, plate, opti
  * and is empty once a backdrop is in the list, as then no pixel shows the camera's plane as a plate. Each
  * plane's plate comes from the frames where no drawing and no nearer plane hides it, and its rim is
  * unmixed against the planes behind it composited, or the camera plate for the farthest front plane.
- * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables). `band` is how
+ * A lone backdrop's plate carries a lighting drift on `backdropDrift` cells (64; 0 disables), and unless
+ * `backdropMedian` is false it is trimmed around each pixel's median (`buildRigidPlate` `median`): a follow
+ * shot's drawings sweep over all of it, and those the silhouettes miss stay out. `band` is how
  * far from the cover's edge rims are solved (a defocused edge needs more than the default),
  * and each `peel` round rebuilds the plates with the nearer planes peeled off (`peelNearer`), then every
  * rim. Returns copies of the layers.
@@ -489,7 +517,7 @@ export async function buildScenePlates(source, camera, silhouettes, layers, opti
     for (const [k, layer] of out.entries()) {
         const hidden = hiddenBy(out, k, drawn);
         // A lone backdrop (a follow shot's painting) carries the lighting drift the camera plate would have.
-        const lone = layer.backdrop && out.length === 1 ? { drift: options.backdropDrift ?? 64 } : {};
+        const lone = layer.backdrop && out.length === 1 ? { drift: options.backdropDrift ?? 64, median: options.backdropMedian ?? true } : {};
         layer.plate = await buildRigidPlate(source, layer, hidden, { progress, ...lone });
         if (layer.backdrop || options.mattes === false)
             continue;

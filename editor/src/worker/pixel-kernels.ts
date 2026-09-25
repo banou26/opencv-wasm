@@ -91,7 +91,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
         carve: { band: Number(params.band), tolerance: Number(params.tolerance), minimumCount: Number(params.minimumCount) }, progress, ...(data.pixelEvidence ? { evidence: data.pixelEvidence } : {}),
       })
       const { carved, ...silhouettes } = second.silhouettes
-      output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelCarved: carved ?? data.pixelCarved, pixelRigid: second.layers, pixelRigidDropped: second.dropped, ...(second.plate ? { pixelPlate: second.plate } : {}) }
+      output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelCarved: carved ?? data.pixelCarved, pixelRigid: second.layers, pixelRigidDropped: second.dropped, pixelRigidClaimed: second.claimed, ...(second.plate ? { pixelPlate: second.plate } : {}) }
     }
   } else if (type === 'pixelGrow') {
     if (!data.pixelCamera || !data.pixelSilhouettes || !data.pixelPlate) throw new Error('Grow Silhouettes needs Background Plate')

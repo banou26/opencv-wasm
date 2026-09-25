@@ -100,8 +100,9 @@ export declare function buildScenePlates(source: PixelFrameSource, camera: Camer
 /**
  * The second pass over the scene's planes, in back-to-front order, once the drawings are known: each
  * plane but the backdrop is measured again without the drawings, front to back; cover what lies behind a
- * plane explains is dropped; the plates and rims are rebuilt back to front, and the silhouettes carved
- * again against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
+ * plane explains is dropped, and where planes lie behind the camera's own, smooth paint is claimed
+ * (`claimRigidCover`); the plates and rims are rebuilt back to front and the silhouettes carved again
+ * against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
  * returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export declare function refineRigidScene(source: PixelFrameSource, camera: MeasuredCamera, silhouettes: SceneSilhouettes, layers: RigidLayer[], options?: {
@@ -117,4 +118,5 @@ export declare function refineRigidScene(source: PixelFrameSource, camera: Measu
     };
     plate?: LayerPlate;
     dropped: number[];
+    claimed: number[];
 }>;

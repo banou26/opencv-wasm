@@ -55,7 +55,7 @@ import { fillEnclosed, frameOffset, worldAtlas } from "./pixel-drawings.js";
 import { pixelLuma } from "./pixel-frame.js";
 import { buildLayerPlate, packMask, unpackMask } from "./pixel-layers.js";
 import { finishPlate, plateStatistics, renderPlate } from "./pixel-plate.js";
-import { buildRigidPlate, hiddenBy, matteRigidLayer, measureScenePlanes, planeShown, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
+import { buildRigidPlate, claimRigidCover, hiddenBy, matteRigidLayer, measureScenePlanes, planeShown, refineRigidCover, renderCover, renderScene } from "./pixel-rigid.js";
 /**
  * Remove silhouette pixels the plate explains, from the outside in. A pixel within `band` of the edge
  * whose value matches a well-observed plate is background only when it connects to the exterior through
@@ -376,13 +376,14 @@ export async function buildScenePlates(source, camera, silhouettes, layers, opti
 /**
  * The second pass over the scene's planes, in back-to-front order, once the drawings are known: each
  * plane but the backdrop is measured again without the drawings, front to back; cover what lies behind a
- * plane explains is dropped; the plates and rims are rebuilt back to front, and the silhouettes carved
- * again against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
+ * plane explains is dropped, and where planes lie behind the camera's own, smooth paint is claimed
+ * (`claimRigidCover`); the plates and rims are rebuilt back to front and the silhouettes carved again
+ * against the new scene. The returned plate is the camera plate the carve used; rebuild it from the
  * returned silhouettes. With no rigid layers the input comes back unchanged.
  */
 export async function refineRigidScene(source, camera, silhouettes, layers, options = {}) {
     if (!layers.length)
-        return { layers, silhouettes, dropped: [] };
+        return { layers, silhouettes, dropped: [], claimed: [] };
     const size = source.width * source.height, drawn = (frame) => unpackMask(silhouettes.frames[frame].packed, size), { evidence, progress } = options;
     const next = await measureScenePlanes(source, camera, layers, { exclude: drawn, progress });
     // What lies behind each plane, from the new covers: the camera plate, and the farther planes' plates.
@@ -403,7 +404,19 @@ export async function refineRigidScene(source, camera, silhouettes, layers, opti
         refined.push(kept);
         dropped.push(count);
     }
+    // With planes behind the camera's own, smooth paint no test decided is claimed front to back where it
+    // holds still and what lies behind misses it.
+    const claimed = refined.map(() => 0);
+    if (next.some(layer => layer.camera))
+        for (let k = refined.length - 1; k >= 0; k--) {
+            if (refined[k].backdrop)
+                continue;
+            const behind = k > 0 ? { behind: (frame) => renderScene(scene, camera, withPlates.slice(0, k), frame) } : {};
+            const { claimed: count, ...kept } = await claimRigidCover(source, camera, scene, refined[k], { exclude: hiddenBy(refined, k, drawn), progress, ...behind });
+            refined[k] = kept;
+            claimed[k] = count;
+        }
     const { plate, layers: out } = await buildScenePlates(source, camera, silhouettes, refined, { progress, ...(evidence ? { evidence } : {}) });
     const carved = await refineSilhouettes(source, camera, silhouettes, plate, { ...options.carve, layers: out, progress });
-    return { layers: out, silhouettes: carved, plate, dropped };
+    return { layers: out, silhouettes: carved, plate, dropped, claimed };
 }

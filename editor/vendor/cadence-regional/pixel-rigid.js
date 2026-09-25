@@ -415,6 +415,73 @@ export function planeShown(layers, index, frame) {
     }
     return shown;
 }
+/**
+ * Add cover where the layer's content holds still in its own coordinates and what lies behind does not
+ * explain it: the inside of a smooth trunk wider than the tests' shifts matches every motion, so no test
+ * calls it paint, and it touches the frame's edges, so no hole filling reaches it. Every atlas pixel gets
+ * a candidate color, the trimmed mean of the frames where nothing in front hides it (`exclude`); a pixel
+ * outside the cover is claimed when at least `minimumFrames` frames saw it, `fraction` of them match the
+ * candidate within `tolerance` codes, and what lies behind (the camera plate, or `behind`) misses them by
+ * `margin` codes more on average, and it connects to the cover through other claimed pixels.
+ */
+export async function claimRigidCover(source, camera, plate, layer, options = {}) {
+    const tolerance = options.tolerance ?? 6, fraction = options.fraction ?? .7, margin = options.margin ?? 6, minimumFrames = options.minimumFrames ?? 6;
+    const { atlas, path, cover } = layer, { width, height } = source, size = cover.length, all = new Uint8Array(size).fill(1);
+    const candidate = await buildRigidPlate(source, { ...layer, cover: all }, options.exclude);
+    const probe = { ...layer, cover: all, decided: all, plate: candidate, matte: undefined };
+    const seen = new Uint16Array(size), agree = new Uint16Array(size), own = new Float32Array(size), missed = new Float32Array(size);
+    for (let frame = 0; frame < source.count; frame++) {
+        await options.progress?.(frame, source.count);
+        const behind = options.behind ? options.behind(frame) : renderPlate(plate, camera, frame), mine = renderPlane(probe, frame);
+        const pixels = (await source.frame(frame)).data, offset = frameOffset(path, atlas, frame), skip = options.exclude?.(frame);
+        for (let y = 0; y < height; y++)
+            for (let x = 0; x < width; x++) {
+                const p = y * width + x, a = (y + offset.y) * atlas.width + x + offset.x, q = p * 3;
+                if (cover[a] || skip?.[p] || mine.unknown[p] || !behind.known[p])
+                    continue;
+                let e = 0, b = 0;
+                for (let c = 0; c < 3; c++) {
+                    e = Math.max(e, Math.abs(pixels[q + c] - mine.rgba[p * 4 + c]));
+                    b = Math.max(b, Math.abs(pixels[q + c] - behind.data[q + c]));
+                }
+                seen[a]++;
+                own[a] += e;
+                missed[a] += b;
+                if (e <= tolerance)
+                    agree[a]++;
+            }
+    }
+    // Smooth paint is bounded by paint the tests found: a claim grows from the cover, so a candidate alone in
+    // a gap, where what lies behind happens to be poorly known, stays out.
+    const eligible = new Uint8Array(size), claimed = cover.slice(), decided = layer.decided.slice(), queue = new Int32Array(size);
+    for (let a = 0; a < size; a++)
+        eligible[a] = Number(!cover[a] && seen[a] >= minimumFrames && agree[a] >= fraction * seen[a] && missed[a] >= own[a] + margin * seen[a]);
+    let head = 0, tail = 0;
+    const reach = (a) => { if (eligible[a]) {
+        eligible[a] = 0;
+        claimed[a] = 1;
+        decided[a] = 1;
+        queue[tail++] = a;
+    } };
+    for (let a = 0; a < size; a++)
+        if (cover[a])
+            queue[tail++] = a;
+    while (head < tail) {
+        const a = queue[head++], x = a % atlas.width;
+        if (x > 0)
+            reach(a - 1);
+        if (x < atlas.width - 1)
+            reach(a + 1);
+        if (a >= atlas.width)
+            reach(a - atlas.width);
+        if (a + atlas.width < size)
+            reach(a + atlas.width);
+    }
+    let count = 0;
+    for (let a = 0; a < size; a++)
+        count += claimed[a] - cover[a];
+    return { ...layer, cover: claimed, decided, claimed: count };
+}
 /** The layer's cover on one frame's pixel grid, at the frame's integer placement; `undecided` also marks pixels nobody decided. */
 export function renderCover(layer, frame, undecided = false) {
     const { path, atlas, cover, decided } = layer, { width, height } = path, offset = frameOffset(path, atlas, frame), out = new Uint8Array(width * height);

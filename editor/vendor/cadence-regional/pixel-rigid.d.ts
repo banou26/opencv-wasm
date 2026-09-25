@@ -170,6 +170,26 @@ export declare function refineRigidCover(source: PixelFrameSource, camera: Camer
 }>;
 /** Where plane `index` of a back-to-front list shows on one frame: its cover, outside every nearer plane's cover and undecided pixels. */
 export declare function planeShown(layers: RigidLayer[], index: number, frame: number): Uint8Array;
+/**
+ * Add cover where the layer's content holds still in its own coordinates and what lies behind does not
+ * explain it: the inside of a smooth trunk wider than the tests' shifts matches every motion, so no test
+ * calls it paint, and it touches the frame's edges, so no hole filling reaches it. Every atlas pixel gets
+ * a candidate color, the trimmed mean of the frames where nothing in front hides it (`exclude`); a pixel
+ * outside the cover is claimed when at least `minimumFrames` frames saw it, `fraction` of them match the
+ * candidate within `tolerance` codes, and what lies behind (the camera plate, or `behind`) misses them by
+ * `margin` codes more on average, and it connects to the cover through other claimed pixels.
+ */
+export declare function claimRigidCover(source: PixelFrameSource, camera: CameraPath, plate: LayerPlate, layer: RigidLayer, options?: {
+    tolerance?: number;
+    fraction?: number;
+    margin?: number;
+    minimumFrames?: number;
+    exclude?: (frame: number) => Uint8Array | undefined;
+    behind?: Behind;
+    progress?: StageProgress;
+}): Promise<RigidLayer & {
+    claimed: number;
+}>;
 /** The layer's cover on one frame's pixel grid, at the frame's integer placement; `undecided` also marks pixels nobody decided. */
 export declare function renderCover(layer: RigidLayer, frame: number, undecided?: boolean): Uint8Array;
 /** The layer's paint: a trimmed mean in its own coordinates of every frame pixel under its cover, outside `exclude`. */

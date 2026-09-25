@@ -31,6 +31,35 @@ export declare function carveSilhouette(mask: Uint8Array, pixels: PixelFrame, pl
     mask: Uint8Array;
     carved: number;
 };
+export type GrowOptions = {
+    /** Growth stays within this many pixels of the silhouette it starts from. */
+    band?: number;
+    /** ...and inside the silhouette's closing by this radius: its bays and gaps, never out past its outline. */
+    bay?: number;
+    /** A pixel differing from the scene by more than this (per channel, plus a gradient allowance) is not scenery. */
+    tolerance?: number;
+    gradientSlope?: number;
+};
+/**
+ * Add to a silhouette the pixels next to it that the scene cannot explain: a part of a drawing that never
+ * changed carries no ink, and the plate behind it, seen as that part in some frames and as scenery in
+ * others, matches neither. Growth floods from the silhouette's edge through such pixels, within `band`
+ * of it and inside its concavities (its closing by `bay`).
+ */
+export declare function growSilhouette(mask: Uint8Array, pixels: PixelFrame, scene: {
+    data: Float32Array;
+    known: Uint8Array;
+}, options?: GrowOptions): {
+    mask: Uint8Array;
+    grown: number;
+};
+/** Grow every frame's silhouettes into what the scene cannot explain next to them (see `growSilhouette`), then fill enclosed holes. */
+export declare function growSilhouettes(source: PixelFrameSource, camera: CameraPath, silhouettes: SceneSilhouettes, plate: LayerPlate, options?: GrowOptions & {
+    layers?: RigidLayer[];
+    progress?: StageProgress;
+}): Promise<SceneSilhouettes & {
+    grown: number[];
+}>;
 /**
  * Median of every observation, silhouettes ignored, of the world pixels that fall in some frame's edge
  * band. Where a drawing's outline jitters over background, the background is what most frames show, so

@@ -32,8 +32,9 @@ export type Behind = (frame: number) => {
  */
 export declare function assembleCel(source: PixelFrameSource, camera: CameraPath, atlas: WorldAtlas, silhouettes: SceneSilhouettes, frames: LayerFrames, layer: number, drawing: number, behind: Behind, margin?: number): Promise<HeldCel>;
 /**
- * Composite held drawings over what is behind a frame, each resampled bilinearly at the frame's camera
- * position, in the order given. `layered` marks pixels a drawing reaches with alpha over 1%.
+ * Composite held drawings over what is behind a frame, each resampled at the frame's camera position with
+ * the same cubic kernel the plate renders with, in the order given. `layered` marks pixels a drawing reaches
+ * with alpha over 1%.
  */
 export declare function composeCels(behind: {
     data: Float32Array;

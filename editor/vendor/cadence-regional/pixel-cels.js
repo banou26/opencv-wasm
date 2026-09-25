@@ -50,7 +50,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { BORDER_REPLICATE, CV_32FC4, CV_64FC1, INTER_CUBIC, Mat, WARP_INVERSE_MAP, matFromArray, warpAffine } from '@banou/opencv-wasm';
+import { BORDER_CONSTANT, BORDER_REPLICATE, CV_32FC4, CV_64FC1, INTER_CUBIC, Mat, WARP_INVERSE_MAP, matFromArray, warpAffine } from '@banou/opencv-wasm';
 import { frameLayerLabels } from "./pixel-frames.js";
 import { matteLayer } from "./pixel-matte.js";
 /**
@@ -131,34 +131,51 @@ export async function assembleCel(source, camera, atlas, silhouettes, frames, la
     return { layer, drawing, first: held.first, last: held.last, x, y, width: w, height: h, alpha, color };
 }
 /**
- * Composite held drawings over what is behind a frame, each resampled bilinearly at the frame's camera
- * position, in the order given. `layered` marks pixels a drawing reaches with alpha over 1%.
+ * Composite held drawings over what is behind a frame, each resampled at the frame's camera position with
+ * the same cubic kernel the plate renders with, in the order given. `layered` marks pixels a drawing reaches
+ * with alpha over 1%.
  */
 export function composeCels(behind, camera, atlas, cels, frame) {
     const { width, height } = camera, data = behind.data.slice(), known = behind.known.slice(), layered = new Uint8Array(width * height);
     const sx = camera.positions[frame].dx + atlas.x, sy = camera.positions[frame].dy + atlas.y;
     for (const cel of cels) {
-        const x0 = Math.max(0, Math.floor(cel.x + sx)), x1 = Math.min(width - 1, Math.ceil(cel.x + cel.width + sx));
-        const y0 = Math.max(0, Math.floor(cel.y + sy)), y1 = Math.min(height - 1, Math.ceil(cel.y + cel.height + sy));
-        for (let y = y0; y <= y1; y++)
-            for (let x = x0; x <= x1; x++) {
-                const u = x - sx - cel.x, v = y - sy - cel.y, iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
-                if (iu < 0 || iv < 0 || iu + 1 >= cel.width || iv + 1 >= cel.height)
-                    continue;
-                const t00 = iv * cel.width + iu, t10 = t00 + 1, t01 = t00 + cel.width, t11 = t01 + 1;
-                const w00 = (1 - fu) * (1 - fv), w10 = fu * (1 - fv), w01 = (1 - fu) * fv, w11 = fu * fv;
-                const a = w00 * cel.alpha[t00] + w10 * cel.alpha[t10] + w01 * cel.alpha[t01] + w11 * cel.alpha[t11];
-                if (a < .01)
-                    continue;
-                const p = y * width + x;
-                layered[p] = 1;
-                for (let c = 0; c < 3; c++) {
-                    const g = w00 * cel.color[t00 * 3 + c] + w10 * cel.color[t10 * 3 + c] + w01 * cel.color[t01 * 3 + c] + w11 * cel.color[t11 * 3 + c];
-                    data[p * 3 + c] = g + (1 - a) * data[p * 3 + c];
-                }
-                if (a > .99)
-                    known[p] = 1;
+        const env_2 = { stack: [], error: void 0, hasError: false };
+        try {
+            const x0 = Math.max(0, Math.floor(cel.x + sx) - 2), x1 = Math.min(width, Math.ceil(cel.x + cel.width + sx) + 2);
+            const y0 = Math.max(0, Math.floor(cel.y + sy) - 2), y1 = Math.min(height, Math.ceil(cel.y + cel.height + sy) + 2);
+            if (x1 <= x0 || y1 <= y0)
+                continue;
+            const rgba = new Float32Array(cel.width * cel.height * 4);
+            for (let k = 0; k < cel.width * cel.height; k++) {
+                rgba[k * 4 + 3] = cel.alpha[k];
+                for (let c = 0; c < 3; c++)
+                    rgba[k * 4 + c] = cel.color[k * 3 + c];
             }
+            // Output pixel (x, y) of the window samples the cel at (x0 + x - sx - cel.x, y0 + y - sy - cel.y).
+            const image = __addDisposableResource(env_2, matFromArray(cel.height, cel.width, CV_32FC4, rgba), false), warped = __addDisposableResource(env_2, new Mat(), false);
+            const transform = __addDisposableResource(env_2, matFromArray(2, 3, CV_64FC1, [1, 0, x0 - sx - cel.x, 0, 1, y0 - sy - cel.y]), false);
+            warpAffine(image, warped, transform, { width: x1 - x0, height: y1 - y0 }, INTER_CUBIC | WARP_INVERSE_MAP, BORDER_CONSTANT, [0, 0, 0, 0]);
+            const w = warped.data32F, ww = x1 - x0;
+            for (let y = y0; y < y1; y++)
+                for (let x = x0; x < x1; x++) {
+                    const k = ((y - y0) * ww + x - x0) * 4, a = Math.min(1, Math.max(0, w[k + 3]));
+                    if (a < .01)
+                        continue;
+                    const p = y * width + x;
+                    layered[p] = 1;
+                    for (let c = 0; c < 3; c++)
+                        data[p * 3 + c] = w[k + c] + (1 - a) * data[p * 3 + c];
+                    if (a > .99)
+                        known[p] = 1;
+                }
+        }
+        catch (e_2) {
+            env_2.error = e_2;
+            env_2.hasError = true;
+        }
+        finally {
+            __disposeResources(env_2);
+        }
     }
     return { data, known, layered };
 }

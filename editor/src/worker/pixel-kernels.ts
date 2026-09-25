@@ -1,6 +1,6 @@
 import { Mat, matFromArray, putText, CV_8UC4, CV_32F, FONT_HERSHEY_SIMPLEX, LINE_AA } from '@banou/opencv-wasm'
 import {
-  annotateScenery, assembleCel, buildLayerPlate, buildRigidPlate, frameLayerLabels, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
+  annotateScenery, assembleCel, buildLayerPlate, buildRigidPlate, frameLayerLabels, growSilhouettes, renderPlate, renderScene, type HeldCel, refineRigidScene, refineSilhouettes, frameOffset, layerFrames, measureCameraPath, measureDrawingEvidence,
   matteRigidLayer, measureRigidCover, pixelFrameFromRgba, renderCover, rigidPaths, sceneSilhouettes, unpackMask, type PixelFrame, type PixelFrameSource, type RigidLayer,
 } from 'cadence/regional'
 import type { Step } from '../engine/plan'
@@ -10,7 +10,7 @@ import { payloadBundle, type Payload } from './payload'
 import type { RegionalData } from './regional-data'
 import { renderPixelPanels } from './pixel-render'
 
-const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelFrames', 'pixelInspect'])
+const PIXEL_TYPES = new Set(['pixelCamera', 'pixelRigid', 'pixelEvidence', 'pixelScenery', 'pixelSilhouettes', 'pixelPlate', 'pixelRefine', 'pixelRigidRefine', 'pixelGrow', 'pixelFrames', 'pixelInspect'])
 const THUMBNAIL = { width: 150, height: 200 }
 
 const decode = async (video: VideoSource, index: number, cancelled: () => boolean): Promise<PixelFrame> => {
@@ -97,6 +97,13 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
       const { carved, ...silhouettes } = second.silhouettes
       output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelCarved: carved ?? data.pixelCarved, pixelRigid: second.layers, pixelRigidDropped: second.dropped, ...(second.plate ? { pixelPlate: second.plate } : {}) }
     }
+  } else if (type === 'pixelGrow') {
+    if (!data.pixelCamera || !data.pixelSilhouettes || !data.pixelPlate) throw new Error('Grow Silhouettes needs Background Plate')
+    const grown = await growSilhouettes(source, data.pixelCamera, data.pixelSilhouettes, data.pixelPlate, {
+      band: Number(params.band), bay: Number(params.bay), tolerance: Number(params.tolerance), layers: (data.pixelRigid ?? []).filter(layer => layer.plate), progress,
+    })
+    const { grown: counts, ...silhouettes } = grown
+    output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelGrown: counts }
   } else if (type === 'pixelFrames') {
     if (!data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Layer Frames needs Drawing Silhouettes')
     const frames = layerFrames(data.pixelEvidence, data.pixelSilhouettes, { minimumChanges: Number(params.minimumChanges), minimumFraction: Number(params.minimumFraction) })

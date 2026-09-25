@@ -30,6 +30,8 @@ export type RegionalData = {
   pixelPlate?: LayerPlate
   /** Pixels carved from each frame's silhouettes by Refine Silhouettes. */
   pixelCarved?: number[]
+  /** Pixels Grow Silhouettes added to each frame's silhouettes. */
+  pixelGrown?: number[]
   pixelFrames?: LayerFrames
   /** One RGBA thumbnail per held drawing, cut from its first frame; alpha 0 outside the layer. */
   pixelDrawings?: { layer: number; drawing: number; width: number; height: number; rgba: Uint8Array }[]
@@ -81,6 +83,7 @@ export const regionalSummary = (data: RegionalData): string => {
     lines.push(`Drawing silhouettes: close ${data.pixelSilhouettes.options.closeRadius ?? 6} px, minimum area ${data.pixelSilhouettes.options.minimumArea ?? 800} px; frames with a drawing ${areas.filter(a => a > 0).length}/${areas.length}; largest ${Math.max(...areas)} px`)
   }
   if (data.pixelCarved) lines.push(`Refined silhouettes: ${data.pixelCarved.reduce((a, b) => a + b, 0)} pixels carved over ${data.pixelCarved.length} frames`)
+  if (data.pixelGrown) lines.push(`Grown silhouettes: ${data.pixelGrown.reduce((a, b) => a + b, 0)} pixels the scene could not explain added over ${data.pixelGrown.length} frames`)
   if (data.pixelPlate) {
     const known = data.pixelPlate.count.reduce((sum, n) => sum + Number(n > 0), 0)
     lines.push(`Background plate: ${data.pixelPlate.atlas.width} x ${data.pixelPlate.atlas.height}; observed ${(100 * known / data.pixelPlate.count.length).toFixed(1)}%`)

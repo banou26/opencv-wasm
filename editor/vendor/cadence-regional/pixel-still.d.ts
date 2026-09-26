@@ -15,10 +15,12 @@ export type EventIndex = {
 /** Index a shot's change events by world pixel. */
 export declare function indexEvents(evidence: DrawingEvidence): EventIndex;
 /**
- * What each world point shows first and holds, read bilinearly at each frame's exact camera position: the mean
- * of its earliest stretch of `hold` frames within `tolerance` of the stretch's luma and `chromaTolerance` of its
- * color. Scenery is seen before what walks over it; a stretch that starts after the point came into view and
- * lasts until it leaves is something that arrived and stayed, and is no plate. A frame shows the plate where
+ * What each world point holds longest, read bilinearly at each frame's exact camera position: the mean of its
+ * longest stretch of at least `hold` frames within `tolerance` of the stretch's luma and `chromaTolerance` of its
+ * color (the first such stretch with `pick` 'first'). A stretch that starts after the point came into view and
+ * lasts until it leaves is something that arrived and stayed, and is no plate; of the others, scenery shows
+ * longest where drawings only pass or stand a while (market-pan's wheel, held 44 to 85 after the man in white's
+ * robe stood on it 20 to 43, which the first stretch made the plate). A frame shows the plate where
  * the luma range over the point's 3x3 neighborhood holds it within `shownTolerance` and the point's color is
  * within `chromaTolerance`. `share` counts those frames among all that see the neighborhood; `consistency`
  * among those and the ones showing something else with no silhouette over the point, so a frame only counts
@@ -51,6 +53,8 @@ export type HeldPlateOptions = {
     shownTolerance?: number;
     /** Difference of each of blue and red less luma within a stretch, and at a point that still shows the plate (10). */
     chromaTolerance?: number;
+    /** Which held stretch is the plate: the longest that is not an arrival ('longest', the default), or the first. */
+    pick?: 'first' | 'longest';
 };
 /** The held plate of the atlas rows from `rows`' first up to its second (`HeldPlate`), with an atlas of those rows. */
 export declare function heldPlateRows(source: PixelFrameSource, camera: CameraPath, atlas: WorldAtlas, rows: [number, number], options?: HeldPlateOptions, silhouettes?: SceneSilhouettes): Promise<HeldPlate>;

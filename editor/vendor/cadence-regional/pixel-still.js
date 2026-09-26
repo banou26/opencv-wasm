@@ -81,7 +81,7 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
     const { width, height } = source, W = atlas.width, [v0, v1] = rows, size = W * (v1 - v0), count = camera.positions.length;
     const luma = new Float32Array(size).fill(-1), blue = new Float32Array(size), red = new Float32Array(size), first = new Int16Array(size).fill(-1), last = new Int16Array(size).fill(-1);
     const mean = new Float32Array(size), meanBlue = new Float32Array(size), meanRed = new Float32Array(size), length = new Uint16Array(size), start = new Int16Array(size), seen = new Int16Array(size).fill(-2);
-    const from = new Int16Array(size).fill(-1), to = new Int16Array(size).fill(-1);
+    const from = new Int16Array(size).fill(-1), to = new Int16Array(size).fill(-1), longest = (options.pick ?? 'longest') === 'longest';
     // Each frame's samples of the rows `lo` up to `hi`, handed to `take` by point or else kept in the row buffers.
     const rowLuma = new Float32Array(W * (v1 - v0 + 2)), rowBlue = new Float32Array(rowLuma.length), rowRed = new Float32Array(rowLuma.length);
     const sampleFrame = async (s, lo, hi, take) => {
@@ -122,13 +122,21 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
                 length[i] = Math.min(65535, n + 1);
             }
             else {
+                // A stretch that ended before the point left view is no arrival: the longest of them so far is the plate.
+                if (longest && n >= hold && n > to[i] - from[i] + 1) {
+                    luma[i] = mean[i];
+                    blue[i] = meanBlue[i];
+                    red[i] = meanRed[i];
+                    from[i] = start[i];
+                    to[i] = start[i] + n - 1;
+                }
                 mean[i] = y;
                 meanBlue[i] = b;
                 meanRed[i] = r;
                 length[i] = 1;
                 start[i] = s;
             }
-            if (length[i] >= hold && (from[i] < 0 || from[i] === start[i])) {
+            if (!longest && length[i] >= hold && (from[i] < 0 || from[i] === start[i])) {
                 luma[i] = mean[i];
                 blue[i] = meanBlue[i];
                 red[i] = meanRed[i];
@@ -136,9 +144,21 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
                 to[i] = s;
             }
         });
-    for (let i = 0; i < size; i++)
-        if (from[i] > first[i] + slack && to[i] === last[i])
-            luma[i] = -1;
+    if (longest) {
+        // The stretch running at the point's last view: an arrival unless it ran from its first.
+        for (let i = 0; i < size; i++)
+            if (length[i] >= hold && start[i] <= first[i] + slack && length[i] > to[i] - from[i] + 1) {
+                luma[i] = mean[i];
+                blue[i] = meanBlue[i];
+                red[i] = meanRed[i];
+                from[i] = start[i];
+                to[i] = last[i];
+            }
+    }
+    else
+        for (let i = 0; i < size; i++)
+            if (from[i] > first[i] + slack && to[i] === last[i])
+                luma[i] = -1;
     const share = new Float32Array(size), consistency = new Float32Array(size), firstShown = new Int16Array(size).fill(-1), lastShown = new Int16Array(size).fill(-1);
     const frames = new Uint16Array(size), bare = new Uint16Array(size);
     const lo = Math.max(0, v0 - 1), hi = Math.min(atlas.height, v1 + 1);

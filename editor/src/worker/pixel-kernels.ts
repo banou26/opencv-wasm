@@ -111,7 +111,7 @@ export const pixelKernel = async (step: Step, inputs: Record<string, Payload>, s
   } else if (type === 'pixelStill') {
     if (!data.pixelCamera || !data.pixelEvidence || !data.pixelSilhouettes) throw new Error('Carve What Holds Still needs Drawing Silhouettes')
     const carved = await carveStill(source, data.pixelCamera, data.pixelEvidence, data.pixelSilhouettes, {
-      hold: Number(params.hold), consistent: Number(params.consistent), span: Number(params.span), islands: Number(params.islands), lasting: Number(params.lasting), covering: Number(params.covering), progress,
+      hold: Number(params.hold), consistent: Number(params.consistent), span: Number(params.span), islands: Number(params.islands), lasting: Number(params.lasting), covering: Number(params.covering), ...(Number(params.vote) ? {} : { vote: false }), progress,
     })
     const { stilled, continued: _, taken, ...silhouettes } = carved
     output = { ...data, stage: 'pixel-refined', pixelSilhouettes: silhouettes, pixelStilled: stilled, pixelClear: taken }

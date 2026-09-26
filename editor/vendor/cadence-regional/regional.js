@@ -25,3 +25,4 @@ export * from "./pixel-matte.js";
 export * from "./pixel-rigid.js";
 export * from "./pixel-cels.js";
 export * from "./pixel-still.js";
+export * from "./pixel-vote.js";

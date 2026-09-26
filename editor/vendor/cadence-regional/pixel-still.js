@@ -56,6 +56,7 @@ import { frameLayerLabels, layerFrames } from "./pixel-frames.js";
 import { packMask, unpackMask } from "./pixel-layers.js";
 import { closeByDisc, silhouetteFrame } from "./pixel-refine.js";
 import { shareDeep, splitRange } from "./pixel-share.js";
+import { voteRegions, voteStretches } from "./pixel-vote.js";
 /** Index a shot's change events by world pixel. */
 export function indexEvents(evidence) {
     const { atlas, pairs } = evidence, size = atlas.width * atlas.height, start = new Uint32Array(size + 1);
@@ -75,41 +76,32 @@ function bilinear(gx, gy) {
     const ix = Math.floor(gx), iy = Math.floor(gy), ax = gx - ix, ay = gy - iy;
     return { ix, iy, ex: ax > 0 ? 1 : 0, ey: ay > 0 ? 1 : 0, w00: (1 - ax) * (1 - ay), w10: ax * (1 - ay), w01: (1 - ax) * ay, w11: ax * ay };
 }
-/** The held plate of the atlas rows from `rows`' first up to its second (`HeldPlate`), with an atlas of those rows. */
+/** Frame s over the atlas rows from lo up to hi, read at its exact camera position: each point by its index in the atlas. */
+async function sampleRows(source, camera, atlas, s, lo, hi, take) {
+    const { width, height } = source, W = atlas.width, data = (await source.frame(s)).data, { dx, dy } = camera.positions[s], k = bilinear(atlas.x + dx, atlas.y + dy);
+    const u0 = Math.max(0, -k.ix), u1 = Math.min(W - 1, width - 1 - k.ex - k.ix), va = Math.max(lo, -k.iy), vb = Math.min(hi - 1, height - 1 - k.ey - k.iy);
+    for (let v = va; v <= vb; v++) {
+        const base = ((v + k.iy) * width + k.ix) * 3, right = k.ex * 3, down = k.ey * width * 3;
+        for (let u = u0; u <= u1; u++) {
+            const q = base + u * 3, q10 = q + right, q01 = q + down, q11 = q01 + right;
+            const b = k.w00 * data[q] + k.w10 * data[q10] + k.w01 * data[q01] + k.w11 * data[q11];
+            const g = k.w00 * data[q + 1] + k.w10 * data[q10 + 1] + k.w01 * data[q01 + 1] + k.w11 * data[q11 + 1];
+            const r = k.w00 * data[q + 2] + k.w10 * data[q10 + 2] + k.w01 * data[q01 + 2] + k.w11 * data[q11 + 2];
+            const y = .0722 * b + .7152 * g + .2126 * r;
+            take(v * W + u, y, b - y, r - y);
+        }
+    }
+}
+/** The held plate of the atlas rows from `rows`' first up to its second without the vote (`HeldPlate`), with an atlas of those rows. */
 export async function heldPlateRows(source, camera, atlas, rows, options = {}, silhouettes) {
-    const hold = options.hold ?? 12, tolerance = options.tolerance ?? 8, slack = options.arrivalSlack ?? 2, shownTolerance = options.shownTolerance ?? 12, chromaTolerance = options.chromaTolerance ?? 10;
-    const { width, height } = source, W = atlas.width, [v0, v1] = rows, size = W * (v1 - v0), count = camera.positions.length;
+    const hold = options.hold ?? 12, tolerance = options.tolerance ?? 8, slack = options.arrivalSlack ?? 2, chromaTolerance = options.chromaTolerance ?? 10;
+    const W = atlas.width, [v0, v1] = rows, base = v0 * W, size = W * (v1 - v0), count = camera.positions.length;
     const luma = new Float32Array(size).fill(-1), blue = new Float32Array(size), red = new Float32Array(size), first = new Int16Array(size).fill(-1), last = new Int16Array(size).fill(-1);
     const mean = new Float32Array(size), meanBlue = new Float32Array(size), meanRed = new Float32Array(size), length = new Uint16Array(size), start = new Int16Array(size), seen = new Int16Array(size).fill(-2);
     const from = new Int16Array(size).fill(-1), to = new Int16Array(size).fill(-1), longest = (options.pick ?? 'longest') === 'longest';
-    // Each frame's samples of the rows `lo` up to `hi`, handed to `take` by point or else kept in the row buffers.
-    const rowLuma = new Float32Array(W * (v1 - v0 + 2)), rowBlue = new Float32Array(rowLuma.length), rowRed = new Float32Array(rowLuma.length);
-    const sampleFrame = async (s, lo, hi, take) => {
-        const data = (await source.frame(s)).data, { dx, dy } = camera.positions[s], k = bilinear(atlas.x + dx, atlas.y + dy);
-        const u0 = Math.max(0, -k.ix), u1 = Math.min(W - 1, width - 1 - k.ex - k.ix), va = Math.max(lo, -k.iy), vb = Math.min(hi - 1, height - 1 - k.ey - k.iy);
-        if (!take)
-            rowLuma.fill(-1);
-        for (let v = va; v <= vb; v++) {
-            const base = ((v + k.iy) * width + k.ix) * 3, right = k.ex * 3, down = k.ey * width * 3;
-            for (let u = u0; u <= u1; u++) {
-                const q = base + u * 3, q10 = q + right, q01 = q + down, q11 = q01 + right;
-                const b = k.w00 * data[q] + k.w10 * data[q10] + k.w01 * data[q01] + k.w11 * data[q11];
-                const g = k.w00 * data[q + 1] + k.w10 * data[q10 + 1] + k.w01 * data[q01 + 1] + k.w11 * data[q11 + 1];
-                const r = k.w00 * data[q + 2] + k.w10 * data[q10 + 2] + k.w01 * data[q01 + 2] + k.w11 * data[q11 + 2];
-                const y = .0722 * b + .7152 * g + .2126 * r;
-                if (take) {
-                    take((v - v0) * W + u, s, y, b - y, r - y);
-                    continue;
-                }
-                const j = (v - lo) * W + u;
-                rowLuma[j] = y;
-                rowBlue[j] = b - y;
-                rowRed[j] = r - y;
-            }
-        }
-    };
     for (let s = 0; s < count; s++)
-        await sampleFrame(s, v0, v1, (i, s, y, b, r) => {
+        await sampleRows(source, camera, atlas, s, v0, v1, (at, y, b, r) => {
+            const i = at - base;
             if (first[i] < 0)
                 first[i] = s;
             last[i] = s;
@@ -159,11 +151,34 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
         for (let i = 0; i < size; i++)
             if (from[i] > first[i] + slack && to[i] === last[i])
                 luma[i] = -1;
+    return { atlas: { ...atlas, y: atlas.y + v0, height: v1 - v0 }, luma, blue, red, first, last, ...await shownRows(source, camera, atlas, rows, luma, blue, red, options, silhouettes) };
+}
+/** Whether the stretch the vote kept at atlas point `a` that holds frame `s` is a layer's. */
+function layerAt(runs, a, s) {
+    for (let e = runs.start[a]; e < runs.start[a + 1]; e++)
+        if (runs.from[e] <= s && s <= runs.to[e])
+            return runs.layer[e] === 1;
+    return false;
+}
+/**
+ * `HeldPlate`'s share, consistency and first and last frame showing the plate over the atlas rows from `rows`'
+ * first up to its second, for a plate of the whole atlas: the second pass of the voted plate, which the pool
+ * works in bands of rows.
+ */
+export async function plateShown(source, camera, atlas, rows, plate, options = {}, silhouettes) {
+    const a = rows[0] * atlas.width, b = rows[1] * atlas.width, { runs } = plate;
+    return shownRows(source, camera, atlas, rows, plate.luma.subarray(a, b), plate.blue.subarray(a, b), plate.red.subarray(a, b), options, silhouettes, runs && ((i, s) => layerAt(runs, a + i, s)));
+}
+/** `plateShown` for the plate of the rows alone, indexed from their first; a frame at point i where `sheltered(i, s)` counts as covered. */
+async function shownRows(source, camera, atlas, rows, luma, blue, red, options, silhouettes, sheltered) {
+    const shownTolerance = options.shownTolerance ?? 12, chromaTolerance = options.chromaTolerance ?? 10;
+    const { width, height } = source, W = atlas.width, [v0, v1] = rows, size = W * (v1 - v0), count = camera.positions.length;
     const share = new Float32Array(size), consistency = new Float32Array(size), firstShown = new Int16Array(size).fill(-1), lastShown = new Int16Array(size).fill(-1);
     const frames = new Uint16Array(size), bare = new Uint16Array(size);
-    const lo = Math.max(0, v0 - 1), hi = Math.min(atlas.height, v1 + 1);
+    const lo = Math.max(0, v0 - 1), hi = Math.min(atlas.height, v1 + 1), rowLuma = new Float32Array(W * (v1 - v0 + 2)), rowBlue = new Float32Array(rowLuma.length), rowRed = new Float32Array(rowLuma.length);
     for (let s = 0; s < count; s++) {
-        await sampleFrame(s, lo, hi);
+        rowLuma.fill(-1);
+        await sampleRows(source, camera, atlas, s, lo, hi, (at, y, b, r) => { const j = at - lo * W; rowLuma[j] = y; rowBlue[j] = b; rowRed[j] = r; });
         const packed = silhouettes?.frames[s].packed, offset = frameOffset(camera, atlas, s);
         const covered = (u, v) => {
             const x = u - offset.x, y = v - offset.y;
@@ -195,7 +210,7 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
                 const j = (v - lo) * W + u;
                 if (Math.abs(rowBlue[j] - blue[i]) > chromaTolerance || Math.abs(rowRed[j] - red[i]) > chromaTolerance || plate < min - shownTolerance || plate > max + shownTolerance) {
                     frames[i]++;
-                    if (!covered(u, v))
+                    if (!covered(u, v) && !sheltered?.(i, s))
                         bare[i]++;
                     continue;
                 }
@@ -210,15 +225,17 @@ export async function heldPlateRows(source, camera, atlas, rows, options = {}, s
         consistency[i] = share[i] ? share[i] / (share[i] + bare[i]) : 0;
         share[i] = frames[i] ? share[i] / frames[i] : 0;
     }
-    return { atlas: { ...atlas, y: atlas.y + v0, height: v1 - v0 }, luma, blue, red, first, last, share, consistency, firstShown, lastShown };
+    return { share, consistency, firstShown, lastShown };
 }
-/** The held plate of the whole atlas (`HeldPlate`), checked against `silhouettes`; with `pool`, bands of its rows on the pool's threads. */
+/**
+ * The held plate of the whole atlas (`HeldPlate`), checked against `silhouettes`. With `pool`, bands of its rows
+ * are worked on the pool's threads; the vote's regions, which span the atlas, are joined on this one between its
+ * two banded passes (about .1 s on market-pan's 364,675 voting stretches).
+ */
 export async function heldPlate(source, camera, atlas, options = {}) {
-    const { pool, silhouettes, ...rest } = options;
-    if (!pool)
-        return heldPlateRows(source, camera, atlas, [0, atlas.height], rest, silhouettes);
-    const parts = await pool.map('heldPlate', shareDeep({ camera, atlas, options: rest, silhouettes }), splitRange(0, atlas.height, pool.size * 2));
-    const join = (key) => {
+    const { pool, silhouettes, ...rest } = options, whole = [0, atlas.height];
+    const ranges = pool ? splitRange(0, atlas.height, pool.size * 2) : [whole], shared = pool && shareDeep({ camera, atlas, options: rest, silhouettes });
+    const join = (parts, key) => {
         const list = parts.map(part => part[key]), out = new list[0].constructor(list.reduce((n, a) => n + a.length, 0));
         let at = 0;
         for (const a of list) {
@@ -227,7 +244,18 @@ export async function heldPlate(source, camera, atlas, options = {}) {
         }
         return out;
     };
-    return { atlas, luma: join('luma'), blue: join('blue'), red: join('red'), first: join('first'), last: join('last'), share: join('share'), consistency: join('consistency'), firstShown: join('firstShown'), lastShown: join('lastShown') };
+    if (rest.vote === false) {
+        if (!pool)
+            return heldPlateRows(source, camera, atlas, whole, rest, silhouettes);
+        const parts = await pool.map('heldPlate', shared, ranges);
+        return { atlas, luma: join(parts, 'luma'), blue: join(parts, 'blue'), red: join(parts, 'red'), first: join(parts, 'first'), last: join(parts, 'last'), share: join(parts, 'share'), consistency: join(parts, 'consistency'), firstShown: join(parts, 'firstShown'), lastShown: join(parts, 'lastShown') };
+    }
+    const bands = pool ? await pool.map('voteStretches', shared, ranges) : [await voteStretches(source, camera, atlas, whole, rest, silhouettes)];
+    const voted = voteRegions(atlas, bands, rest);
+    if (!pool)
+        return { atlas, ...voted, ...await plateShown(source, camera, atlas, whole, voted, rest, silhouettes) };
+    const plate = shareDeep(voted), parts = await pool.map('plateShown', { ...shared, plate }, ranges);
+    return { atlas, ...plate, share: join(parts, 'share'), consistency: join(parts, 'consistency'), firstShown: join(parts, 'firstShown'), lastShown: join(parts, 'lastShown') };
 }
 /**
  * Carve out of the silhouettes what holds still against the whole plate (`HeldPlate`): a point that shows the
@@ -238,12 +266,13 @@ export async function heldPlate(source, camera, atlas, options = {}) {
  * joined they would open each other's walls: one through trusted pixels, one through pixels that do not show
  * the plate and whose run without a change lasts `span` frames and ends while the point is in view (scenery the
  * plate does not know, uncovered and covered again), unless the point shows the plate before and after the run
- * (a drawing that stood over the scenery). Trusted pieces neither flood reached go when their median `share`
- * reaches `islands`. Of what is left, a piece under the silhouettes' minimum area goes when most of it shows
- * the plate, and a layer of such pieces (`layerFrames`) goes unless it lasts `lasting` frames. Last, what the
- * input silhouettes lost of a layer that stopped goes back into it (`continueLayers`). Only for scenery
- * held in the camera's coordinates: with a backdrop the camera holds the drawings instead. With `pool`, the
- * plate and the frames are worked on its threads.
+ * or the vote calls the point's stretch at that frame a layer's (a drawing that stood over the scenery: without
+ * the vote's say the carve takes 1.79M more of market-pan's silhouette pixels over the shot). Trusted pieces
+ * neither flood reached go when their median `share` reaches `islands`. Of what is left, a piece under the
+ * silhouettes' minimum area goes when most of it shows the plate, and a layer of such pieces (`layerFrames`)
+ * goes unless it lasts `lasting` frames. Last, what the input silhouettes lost of a layer that stopped goes back
+ * into it (`continueLayers`). Only for scenery held in the camera's coordinates: with a backdrop the camera holds
+ * the drawings instead. With `pool`, the plate and the frames are worked on its threads.
  */
 export async function carveStill(source, camera, evidence, silhouettes, options = {}) {
     const { pool, progress, ...rest } = options;
@@ -460,6 +489,9 @@ export async function stillFrames(source, camera, silhouettes, plate, index, opt
                 if (to - from + 1 < span || after >= plate.last[a])
                     continue;
                 if (plate.firstShown[a] >= 0 && plate.firstShown[a] < from && plate.lastShown[a] > to)
+                    continue;
+                // A run the vote calls a layer's is a drawing that stood there, whatever the plate knows.
+                if (plate.runs && layerAt(plate.runs, a, t))
                     continue;
                 revealed[p] = 1;
             }
